@@ -16,5 +16,12 @@
   "packageManager": "pnpm@12.3.4",
   "engines": {
     "node": "^24.20.0"
+  },
+  "scripts": {
+    "format": "prettier --write . --ignore-path .gitignore --ignore-path .prettierignore --ignore-path .prettierignore.local",
+    "format:check": "prettier --check . --ignore-path .gitignore --ignore-path .prettierignore --ignore-path .prettierignore.local"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
   }
 }
