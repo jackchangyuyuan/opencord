@@ -18,10 +18,13 @@
     "node": "^24.20.0"
   },
   "scripts": {
+    "lint": "eslint .",
     "format": "prettier --write . --ignore-path .gitignore --ignore-path .prettierignore --ignore-path .prettierignore.local",
     "format:check": "prettier --check . --ignore-path .gitignore --ignore-path .prettierignore --ignore-path .prettierignore.local"
   },
   "devDependencies": {
+    "@opencord/eslint-config": "workspace:*",
+    "eslint": "catalog:",
     "prettier": "^3.9.6"
   }
 }
