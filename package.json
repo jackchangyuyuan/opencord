@@ -20,6 +20,7 @@
   "scripts": {
     "prepare": "husky",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "format": "prettier --write . --ignore-path .gitignore --ignore-path .prettierignore --ignore-path .prettierignore.local",
     "format:check": "prettier --check . --ignore-path .gitignore --ignore-path .prettierignore --ignore-path .prettierignore.local"
   },
@@ -28,9 +29,12 @@
     "@commitlint/config-conventional": "^21.2.2",
     "@commitlint/types": "^21.2.0",
     "@opencord/eslint-config": "workspace:*",
+    "@opencord/typescript-config": "workspace:*",
+    "@types/node": "catalog:",
     "eslint": "catalog:",
     "husky": "^9.1.7",
     "lint-staged": "^17.4.1",
-    "prettier": "^3.9.6"
+    "prettier": "^3.9.6",
+    "typescript": "catalog:"
   }
 }
