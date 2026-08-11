@@ -9,16 +9,19 @@
   "scripts": {
     "dev": "tsx watch --env-file=../../.env src/index.ts",
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
   },
   "dependencies": {
     "express": "^5.2.1",
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@opencord/eslint-config": "workspace:*",
     "@opencord/typescript-config": "workspace:*",
     "@types/express": "^5.0.6",
     "@types/node": "catalog:",
+    "eslint": "catalog:",
     "tsx": "^4.23.13",
     "typescript": "catalog:"
   }
