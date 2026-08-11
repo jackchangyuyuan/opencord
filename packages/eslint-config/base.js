@@ -2,9 +2,10 @@ import js from "@eslint/js";
 import { defineConfig, globalIgnores } from "eslint/config";
 import prettier from "eslint-config-prettier/flat";
 import simpleImportSort from "eslint-plugin-simple-import-sort";
+import turbo from "eslint-plugin-turbo";
 
 export const baseConfig = defineConfig([
-  globalIgnores(["dist/"]),
+  globalIgnores(["dist/", ".turbo/"]),
 
   {
     name: "opencord/imports",
@@ -13,6 +14,12 @@ export const baseConfig = defineConfig([
       "simple-import-sort/exports": "error",
       "simple-import-sort/imports": "error",
     },
+  },
+
+  {
+    name: "opencord/turbo",
+    plugins: { turbo },
+    rules: { "turbo/no-undeclared-env-vars": "error" },
   },
 
   {

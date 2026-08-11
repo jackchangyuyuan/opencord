@@ -19,8 +19,10 @@
   },
   "scripts": {
     "prepare": "husky",
-    "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "lint": "turbo run lint lint:root",
+    "typecheck": "turbo run typecheck typecheck:root",
+    "lint:root": "eslint .",
+    "typecheck:root": "tsc --noEmit",
     "format": "prettier --write . --ignore-path .gitignore --ignore-path .prettierignore --ignore-path .prettierignore.local",
     "format:check": "prettier --check . --ignore-path .gitignore --ignore-path .prettierignore --ignore-path .prettierignore.local"
   },
@@ -35,6 +37,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.4.1",
     "prettier": "^3.9.6",
+    "turbo": "^2.10.12",
     "typescript": "catalog:"
   }
 }

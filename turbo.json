@@ -1,0 +1,13 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "ui": "tui",
+  "globalDependencies": [".nvmrc"],
+  "futureFlags": { "strictTaskEntrypointSelection": true },
+  "tasks": {
+    "topo": { "dependsOn": ["^topo"] },
+    "typecheck": { "dependsOn": ["topo"] },
+    "lint": { "dependsOn": ["topo"] },
+    "//#lint:root": {},
+    "//#typecheck:root": {}
+  }
+}
