@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@opencord/typescript-config": "workspace:*",
