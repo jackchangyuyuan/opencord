@@ -19,6 +19,8 @@
   },
   "scripts": {
     "prepare": "husky",
+    "dev": "turbo run dev",
+    "build": "turbo run build",
     "lint": "turbo run lint lint:root",
     "typecheck": "turbo run typecheck typecheck:root",
     "lint:root": "eslint .",

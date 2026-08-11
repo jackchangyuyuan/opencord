@@ -1,0 +1,4 @@
+{
+  "extends": "@opencord/typescript-config/node.json",
+  "include": ["src"]
+}

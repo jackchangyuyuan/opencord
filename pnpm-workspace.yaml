@@ -8,3 +8,6 @@ catalog:
   "@types/node": ^24.13.3
   eslint: ^10.9.0
   typescript: ~6.0.3
+
+allowBuilds:
+  esbuild: true
