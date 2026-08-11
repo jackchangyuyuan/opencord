@@ -30,5 +30,39 @@ services:
       start_period: 30s
       start_interval: 250ms
 
+  rustfs:
+    image: rustfs/rustfs:1.0.0-rc.5
+    environment:
+      RUSTFS_VOLUMES: "/data"
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_REGION: "${AWS_REGION:?AWS_REGION is required}"
+      RUSTFS_ACCESS_KEY: "${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}"
+      RUSTFS_SECRET_KEY: "${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}"
+    ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
+    volumes: ["rustfs-data:/data"]
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "wget -q -O- http://localhost:9000/health/ready || exit 1"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+      start_interval: 250ms
+
+  storage-init:
+    image: amazon/aws-cli:2.36.40
+    depends_on: { rustfs: { condition: service_healthy } }
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["/scripts/init-storage.sh"]
+    volumes: ["./scripts:/scripts:ro"]
+    environment:
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}"
+      AWS_DEFAULT_REGION: "${AWS_REGION:?AWS_REGION is required}"
+      S3_BUCKET: "${S3_BUCKET:?S3_BUCKET is required}"
+
 volumes:
   postgres-data:
+  rustfs-data:
