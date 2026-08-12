@@ -8,7 +8,13 @@ export default defineConfig([
   nodeConfig,
 
   {
+    files: ["src/**/*.ts"],
+    rules: { "no-console": "error" },
+  },
+
+  {
     files: ["src/**/*.test.ts", "tests/**"],
     extends: [vitestConfig],
+    rules: { "no-console": "off" },
   },
 ]);

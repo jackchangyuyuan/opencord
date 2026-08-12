@@ -2,13 +2,14 @@ import { createServer } from "node:http";
 
 import { app } from "./app.js";
 import { config } from "./config.js";
+import { logger } from "./lib/logger.js";
 
 const SHUTDOWN_TIMEOUT_MS = 15_000;
 
 const httpServer = createServer(app);
 
 httpServer.listen(config.PORT, () => {
-  console.log("API listening on port", config.PORT);
+  logger.info({ port: config.PORT }, "API listening");
 });
 
 let shuttingDown = false;
@@ -19,10 +20,10 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   }
   shuttingDown = true;
 
-  console.log("Shutting down on", signal);
+  logger.info({ signal }, "Shutting down");
 
   setTimeout(() => {
-    console.error("Shutdown timed out after", SHUTDOWN_TIMEOUT_MS, "ms");
+    logger.error({ timeoutMs: SHUTDOWN_TIMEOUT_MS }, "Shutdown timed out");
     process.exit(1);
   }, SHUTDOWN_TIMEOUT_MS);
 
@@ -38,7 +39,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
       httpServer.closeIdleConnections();
     });
   } catch (error) {
-    console.error("Shutdown failed", error);
+    logger.error({ err: error }, "Shutdown failed");
     process.exit(1);
   }
 
