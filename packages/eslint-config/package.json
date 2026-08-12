@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./base": "./base.js",
-    "./node": "./node.js"
+    "./node": "./node.js",
+    "./vitest": "./vitest.js"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -13,6 +14,7 @@
   },
   "dependencies": {
     "@eslint/js": "^10.0.1",
+    "@vitest/eslint-plugin": "^1.6.27",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-simple-import-sort": "^14.0.0",
     "eslint-plugin-turbo": "^2.10.12",
