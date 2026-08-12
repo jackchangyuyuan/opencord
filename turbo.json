@@ -8,6 +8,7 @@
     "build": { "outputs": ["dist/**"] },
     "typecheck": { "dependsOn": ["topo"] },
     "lint": { "dependsOn": ["topo"] },
+    "test": { "outputs": [] },
     "dev": { "cache": false, "persistent": true },
     "//#lint:root": {},
     "//#typecheck:root": {}

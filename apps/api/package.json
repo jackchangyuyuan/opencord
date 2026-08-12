@@ -10,7 +10,8 @@
     "dev": "tsx watch --env-file=../../.env src/index.ts",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run"
   },
   "dependencies": {
     "express": "^5.2.1",
@@ -21,8 +22,11 @@
     "@opencord/typescript-config": "workspace:*",
     "@types/express": "^5.0.6",
     "@types/node": "catalog:",
+    "@types/supertest": "^7.2.1",
     "eslint": "catalog:",
+    "supertest": "^7.2.2",
     "tsx": "^4.23.13",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }
