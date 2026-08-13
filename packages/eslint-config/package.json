@@ -6,6 +6,8 @@
   "exports": {
     "./base": "./base.js",
     "./node": "./node.js",
+    "./browser": "./browser.js",
+    "./react": "./react.js",
     "./vitest": "./vitest.js"
   },
   "scripts": {
@@ -13,9 +15,12 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@eslint-react/eslint-plugin": "^5.18.7",
     "@eslint/js": "^10.0.1",
     "@vitest/eslint-plugin": "^1.6.27",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.6",
     "eslint-plugin-simple-import-sort": "^14.0.0",
     "eslint-plugin-turbo": "^2.10.12",
     "globals": "^17.12.0",
