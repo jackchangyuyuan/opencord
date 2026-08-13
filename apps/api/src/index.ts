@@ -4,10 +4,12 @@ import { app } from "./app.js";
 import { config } from "./config.js";
 import { db } from "./db/index.js";
 import { logger } from "./lib/logger.js";
+import { createSocketServer } from "./socket/index.js";
 
 const SHUTDOWN_TIMEOUT_MS = 15_000;
 
 const httpServer = createServer(app);
+const io = createSocketServer(httpServer);
 
 httpServer.listen(config.PORT, () => {
   logger.info({ port: config.PORT }, "API listening");
@@ -29,17 +31,8 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   }, SHUTDOWN_TIMEOUT_MS);
 
   try {
-    await new Promise<void>((resolve, reject) => {
-      httpServer.close((error) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve();
-        }
-      });
-      httpServer.closeIdleConnections();
-    });
-
+    httpServer.closeIdleConnections();
+    await io.close();
     await db.$client.end();
   } catch (error) {
     logger.error({ err: error }, "Shutdown failed");
