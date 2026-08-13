@@ -1,0 +1,9 @@
+{
+  "extends": "@opencord/typescript-config/node.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "tsBuildInfoFile": "./node_modules/.cache/typescript/tsconfig.node.tsbuildinfo"
+  },
+  "include": ["vite.config.ts", "eslint.config.js"]
+}
