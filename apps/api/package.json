@@ -14,6 +14,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@opencord/shared": "workspace:*",
     "drizzle-orm": "1.0.0-rc.4",
     "express": "^5.2.1",
     "pino": "^10.3.1",

@@ -166,6 +166,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@opencord/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       drizzle-orm:
         specifier: 1.0.0-rc.4
         version: 1.0.0-rc.4(postgres@3.4.9)(zod@4.5.4)
@@ -292,6 +295,24 @@ importers:
         specifier: ^8.69.0
         version: 8.69.0(eslint@10.9.1(jiti@2.6.1))(typescript@6.0.3)
     devDependencies:
+      '@opencord/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.13.3
+      eslint:
+        specifier: 'catalog:'
+        version: 10.9.1(jiti@2.6.1)
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+
+  packages/shared:
+    devDependencies:
+      '@opencord/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
       '@opencord/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config

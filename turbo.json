@@ -5,11 +5,11 @@
   "futureFlags": { "strictTaskEntrypointSelection": true },
   "tasks": {
     "topo": { "dependsOn": ["^topo"] },
-    "build": { "outputs": ["dist/**"] },
+    "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
     "typecheck": { "dependsOn": ["topo"] },
     "lint": { "dependsOn": ["topo"] },
-    "test": { "outputs": [] },
-    "dev": { "cache": false, "persistent": true },
+    "test": { "dependsOn": ["^build"], "outputs": [] },
+    "dev": { "dependsOn": ["^build"], "cache": false, "persistent": true },
     "//#lint:root": {},
     "//#typecheck:root": {}
   }

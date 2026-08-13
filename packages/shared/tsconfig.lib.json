@@ -1,0 +1,9 @@
+{
+  "extends": "@opencord/typescript-config/base.json",
+  "compilerOptions": {
+    "lib": ["es2025"],
+    "module": "nodenext",
+    "tsBuildInfoFile": "./node_modules/.cache/typescript/tsconfig.lib.tsbuildinfo"
+  },
+  "include": ["src"]
+}
