@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const baseSchema = z.object({
+  DATABASE_URL: z.url(),
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .optional(),

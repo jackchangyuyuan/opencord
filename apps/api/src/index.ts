@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 
 import { app } from "./app.js";
 import { config } from "./config.js";
+import { db } from "./db/index.js";
 import { logger } from "./lib/logger.js";
 
 const SHUTDOWN_TIMEOUT_MS = 15_000;
@@ -38,6 +39,8 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
       });
       httpServer.closeIdleConnections();
     });
+
+    await db.$client.end();
   } catch (error) {
     logger.error({ err: error }, "Shutdown failed");
     process.exit(1);
