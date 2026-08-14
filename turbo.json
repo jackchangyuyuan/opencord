@@ -9,6 +9,7 @@
     "typecheck": { "dependsOn": ["topo"] },
     "lint": { "dependsOn": ["topo"] },
     "test": { "dependsOn": ["^build"], "outputs": [] },
+    "test:coverage": { "dependsOn": ["^build"], "outputs": ["coverage/**"] },
     "dev": { "dependsOn": ["^build"], "cache": false, "persistent": true },
     "//#lint:root": {},
     "//#typecheck:root": {}

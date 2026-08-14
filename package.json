@@ -24,6 +24,7 @@
     "lint": "turbo run lint lint:root",
     "typecheck": "turbo run typecheck typecheck:root",
     "test": "turbo run test",
+    "test:coverage": "turbo run test:coverage",
     "lint:root": "eslint .",
     "typecheck:root": "tsc --noEmit",
     "format": "prettier --write . --ignore-path .gitignore --ignore-path .prettierignore --ignore-path .prettierignore.local",

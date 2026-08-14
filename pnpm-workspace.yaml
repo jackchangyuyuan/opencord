@@ -6,6 +6,7 @@ minimumReleaseAge: 4320
 
 catalog:
   "@types/node": ^24.13.3
+  "@vitest/coverage-v8": ^5.0.0
   eslint: ^10.9.0
   socket.io-client: ^4.8.3
   typescript: ~6.0.3

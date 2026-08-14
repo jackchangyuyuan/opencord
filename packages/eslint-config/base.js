@@ -6,7 +6,7 @@ import turbo from "eslint-plugin-turbo";
 import tseslint from "typescript-eslint";
 
 export const baseConfig = defineConfig([
-  globalIgnores(["dist/", ".turbo/"]),
+  globalIgnores(["dist/", ".turbo/", "coverage/"]),
 
   {
     name: "opencord/imports",
