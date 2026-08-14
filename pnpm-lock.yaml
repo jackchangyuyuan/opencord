@@ -233,12 +233,18 @@ importers:
 
   apps/web:
     dependencies:
+      '@opencord/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       react:
         specifier: ^19.2.8
         version: 19.2.8
       react-dom:
         specifier: ^19.2.8
         version: 19.2.8(react@19.2.8)
+      socket.io-client:
+        specifier: 'catalog:'
+        version: 4.8.3
     devDependencies:
       '@opencord/eslint-config':
         specifier: workspace:*
