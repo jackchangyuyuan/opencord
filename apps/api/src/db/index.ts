@@ -3,6 +3,7 @@ import postgres from "postgres";
 
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
+import { relations } from "./relations.js";
 
 const client = postgres(config.DATABASE_URL, {
   onnotice: (notice) => {
@@ -10,7 +11,7 @@ const client = postgres(config.DATABASE_URL, {
   },
 });
 
-export const db = drizzle({ client });
+export const db = drizzle({ client, relations });
 
 export type Transaction = Parameters<
   Parameters<(typeof db)["transaction"]>[0]
