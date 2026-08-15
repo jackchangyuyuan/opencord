@@ -17,4 +17,14 @@ export default defineConfig([
     extends: [vitestConfig],
     rules: { "no-console": "off" },
   },
+
+  {
+    files: ["drizzle.config.ts"],
+    rules: {
+      "turbo/no-undeclared-env-vars": [
+        "error",
+        { allowList: ["^DATABASE_URL$"] },
+      ],
+    },
+  },
 ]);
