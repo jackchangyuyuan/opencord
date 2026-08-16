@@ -1,6 +1,8 @@
+import { toNodeHandler } from "better-auth/node";
 import { sql } from "drizzle-orm";
 import express from "express";
 
+import { auth } from "./auth.js";
 import { db } from "./db/index.js";
 import { notFound } from "./lib/errors.js";
 import { errorHandler } from "./middleware/error.js";
@@ -25,6 +27,8 @@ app.get("/readyz", async (req, res) => {
 
   res.json({ postgres: "ok" });
 });
+
+app.all("/api/auth/*splat", toNodeHandler(auth));
 
 const apiRouter = express.Router();
 

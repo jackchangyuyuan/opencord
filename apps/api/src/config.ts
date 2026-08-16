@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const baseSchema = z.object({
+  BETTER_AUTH_SECRET: z.string().min(32),
   DATABASE_URL: z.url(),
   INSTANCE_ID: z.string().min(1).default("api-dev"),
   LOG_LEVEL: z
@@ -10,6 +11,7 @@ const baseSchema = z.object({
     .enum(["development", "test", "production"])
     .default("development"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  PUBLIC_ORIGIN: z.url(),
 });
 
 const LOG_LEVEL_DEFAULT = {
