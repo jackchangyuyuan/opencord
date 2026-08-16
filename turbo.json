@@ -8,8 +8,16 @@
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
     "typecheck": { "dependsOn": ["topo"] },
     "lint": { "dependsOn": ["topo"] },
-    "test": { "dependsOn": ["^build"], "outputs": [] },
-    "test:coverage": { "dependsOn": ["^build"], "outputs": ["coverage/**"] },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "env": ["LOG_LEVEL", "TEST_DATABASE_URL"]
+    },
+    "test:coverage": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"],
+      "env": ["LOG_LEVEL", "TEST_DATABASE_URL"]
+    },
     "dev": { "dependsOn": ["^build"], "cache": false, "persistent": true },
     "//#lint:root": {},
     "//#typecheck:root": {}

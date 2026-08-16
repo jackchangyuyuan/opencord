@@ -29,4 +29,14 @@ export default defineConfig([
       ],
     },
   },
+
+  {
+    files: ["tests/setup.ts"],
+    rules: {
+      "turbo/no-undeclared-env-vars": [
+        "error",
+        { allowList: ["^DATABASE_URL$", "^VITEST_POOL_ID$"] },
+      ],
+    },
+  },
 ]);

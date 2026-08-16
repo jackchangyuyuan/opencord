@@ -8,6 +8,7 @@ export default defineConfig({
       PUBLIC_ORIGIN: "http://localhost:5173",
     },
     environment: "node",
+    setupFiles: ["./tests/setup.ts"],
     include: ["src/**/*.test.ts", "tests/integration/**/*.test.ts"],
     coverage: {
       provider: "v8",
