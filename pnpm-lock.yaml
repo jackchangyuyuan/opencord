@@ -318,6 +318,9 @@ importers:
       eslint-config-prettier:
         specifier: ^10.1.8
         version: 10.1.8(eslint@10.9.1(jiti@2.6.1))
+      eslint-plugin-drizzle:
+        specifier: ^0.2.3
+        version: 0.2.3(eslint@10.9.1(jiti@2.6.1))
       eslint-plugin-jest-dom:
         specifier: ^5.10.1
         version: 5.10.1(@testing-library/dom@10.4.1)(eslint@10.9.1(jiti@2.6.1))
@@ -1933,6 +1936,11 @@ packages:
     hasBin: true
     peerDependencies:
       eslint: '>=7.0.0'
+
+  eslint-plugin-drizzle@0.2.3:
+    resolution: {integrity: sha512-BO+ymHo33IUNoJlC0rbd7HP9EwwpW4VIp49R/tWQF/d2E1K2kgTf0tCXT0v9MSiBr6gGR1LtPwMLapTKEWSg9A==}
+    peerDependencies:
+      eslint: '>=8.0.0'
 
   eslint-plugin-jest-dom@5.10.1:
     resolution: {integrity: sha512-IIJdzbACbhJUJyMAqpA9E9gxp1Gv29TeQ3DtL+pepwP8Oq2WiqjOB2HbnEIs23h0ewdKIZRDI56yLro2eUO+DA==}
@@ -4440,6 +4448,10 @@ snapshots:
   escape-string-regexp@4.0.0: {}
 
   eslint-config-prettier@10.1.8(eslint@10.9.1(jiti@2.6.1)):
+    dependencies:
+      eslint: 10.9.1(jiti@2.6.1)
+
+  eslint-plugin-drizzle@0.2.3(eslint@10.9.1(jiti@2.6.1)):
     dependencies:
       eslint: 10.9.1(jiti@2.6.1)
 
