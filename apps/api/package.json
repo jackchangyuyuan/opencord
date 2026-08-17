@@ -20,6 +20,7 @@
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.7.2",
     "@opencord/shared": "workspace:*",
+    "@socket.io/redis-adapter": "^8.3.0",
     "better-auth": "^1.7.2",
     "drizzle-orm": "1.0.0-rc.4",
     "express": "^5.2.1",
