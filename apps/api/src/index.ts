@@ -4,6 +4,7 @@ import { app } from "./app.js";
 import { config } from "./config.js";
 import { db } from "./db/index.js";
 import { logger } from "./lib/logger.js";
+import { redis } from "./redis.js";
 import { createSocketServer } from "./socket/index.js";
 
 const SHUTDOWN_TIMEOUT_MS = 15_000;
@@ -34,6 +35,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     httpServer.closeIdleConnections();
     await io.close();
     await db.$client.end();
+    await redis.quit();
   } catch (error) {
     logger.error({ err: error }, "Shutdown failed");
     process.exit(1);

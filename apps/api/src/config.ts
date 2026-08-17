@@ -12,6 +12,7 @@ const baseSchema = z.object({
     .default("development"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   PUBLIC_ORIGIN: z.url(),
+  REDIS_URL: z.url(),
 });
 
 const LOG_LEVEL_DEFAULT = {

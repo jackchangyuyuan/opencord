@@ -7,6 +7,7 @@ import { db } from "./db/index.js";
 import { notFound } from "./lib/errors.js";
 import { errorHandler } from "./middleware/error.js";
 import { httpLogger } from "./middleware/http-logger.js";
+import { redis } from "./redis.js";
 
 export const app = express();
 
@@ -17,15 +18,29 @@ app.get("/livez", (_req, res) => {
 });
 
 app.get("/readyz", async (req, res) => {
-  try {
-    await db.execute(sql`select 1`);
-  } catch (error) {
-    req.log.error({ err: error }, "Readiness check failed");
-    res.status(503).json({ postgres: "error" });
-    return;
-  }
+  const probe = async (
+    dependency: string,
+    ping: () => Promise<unknown>,
+  ): Promise<"ok" | "error"> => {
+    try {
+      await ping();
+      return "ok";
+    } catch (error) {
+      req.log.error({ err: error, dependency }, "Readiness check failed");
+      return "error";
+    }
+  };
 
-  res.json({ postgres: "ok" });
+  const [postgres, redisStatus] = await Promise.all([
+    probe("postgres", () => db.execute(sql`select 1`)),
+    probe("redis", () => redis.ping()),
+  ]);
+
+  const status = { postgres, redis: redisStatus };
+
+  const ready = Object.values(status).every((value) => value === "ok");
+
+  res.status(ready ? 200 : 503).json(status);
 });
 
 app.all("/api/auth/*splat", toNodeHandler(auth));

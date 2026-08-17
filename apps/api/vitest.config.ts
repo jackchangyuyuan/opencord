@@ -6,6 +6,7 @@ export default defineConfig({
       BETTER_AUTH_SECRET: "test-secret-test-secret-test-secret",
       DATABASE_URL: "postgres://localhost:5432/opencord_test",
       PUBLIC_ORIGIN: "http://localhost:5173",
+      REDIS_URL: "redis://localhost:6379",
     },
     environment: "node",
     setupFiles: ["./tests/setup.ts"],
