@@ -1,6 +1,7 @@
 {
   "extends": "@opencord/typescript-config/browser.json",
   "compilerOptions": {
+    "paths": { "@/*": ["./src/*"] },
     "tsBuildInfoFile": "./node_modules/.cache/typescript/tsconfig.app.tsbuildinfo"
   },
   "include": ["src"]
