@@ -18,6 +18,9 @@
     "db:migrate": "tsx --env-file=../../.env src/db/migrate.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1127.0",
+    "@aws-sdk/s3-presigned-post": "^3.1127.0",
+    "@aws-sdk/s3-request-presigner": "^3.1127.0",
     "@better-auth/drizzle-adapter": "^1.7.2",
     "@opencord/shared": "workspace:*",
     "@socket.io/redis-adapter": "^8.3.0",

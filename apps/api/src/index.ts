@@ -4,6 +4,7 @@ import { app } from "./app.js";
 import { config } from "./config.js";
 import { db } from "./db/index.js";
 import { logger } from "./lib/logger.js";
+import { assertStorageOrigin } from "./lib/storage.js";
 import { redis } from "./redis.js";
 import { createSocketServer } from "./socket/index.js";
 
@@ -11,6 +12,13 @@ const SHUTDOWN_TIMEOUT_MS = 15_000;
 
 const httpServer = createServer(app);
 const io = createSocketServer(httpServer);
+
+try {
+  await assertStorageOrigin();
+} catch (error) {
+  logger.error({ err: error }, "Storage origin assertion failed");
+  process.exit(1);
+}
 
 httpServer.listen(config.PORT, () => {
   logger.info({ port: config.PORT }, "API listening");
