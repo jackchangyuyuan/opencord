@@ -5,11 +5,14 @@ import { expect, test } from "@playwright/test";
 const password = "correct horse battery staple";
 
 test("renders the SPA and reports the serving instance", async ({ page }) => {
+  const id = randomUUID();
+
   const signUp = await page.request.post("/api/auth/sign-up/email", {
     data: {
-      email: `e2e-${randomUUID()}@example.com`,
+      email: `e2e-${id}@example.com`,
       name: "E2E",
       password,
+      username: `e2e-${id.slice(0, 8)}`,
     },
   });
 

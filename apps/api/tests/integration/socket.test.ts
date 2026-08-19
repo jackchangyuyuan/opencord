@@ -24,6 +24,7 @@ async function signUp(): Promise<string> {
     email: "ada@example.com",
     name: "Ada",
     password: "correct horse battery staple",
+    username: "ada",
   });
 
   expect(res.status).toBe(200);

@@ -4,18 +4,20 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { app } from "../../src/app.js";
+import { auth } from "../../src/auth.js";
 import { db } from "../../src/db/index.js";
 import { requireTestDatabase } from "../setup.js";
 
 const email = "ada@example.com";
 const password = "correct horse battery staple";
+const username = "ada";
 
 const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 
-function signUp() {
+function signUp(overrides: Record<string, string> = {}) {
   return request(app)
     .post("/api/auth/sign-up/email")
-    .send({ email, name: "Ada", password });
+    .send({ email, name: "Ada", password, username, ...overrides });
 }
 
 function cookiesOf(res: request.Response): string[] {
@@ -31,16 +33,17 @@ describe("Better Auth email and password", () => {
     const res = await signUp();
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ user: { email, name: "Ada" } });
+    expect(res.body).toMatchObject({ user: { email, name: "Ada", username } });
 
     const stored = await db.query.users.findFirst({
-      columns: { email: true, emailVerified: true },
+      columns: { email: true, emailVerified: true, username: true },
       with: { accounts: { columns: { issuer: true, providerId: true } } },
     });
 
     expect(stored).toEqual({
       email,
       emailVerified: false,
+      username,
       accounts: [{ issuer: "local:credential", providerId: "credential" }],
     });
   });
@@ -58,7 +61,7 @@ describe("Better Auth email and password", () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       session: { userId: signUpBody.parse(created.body).user.id },
-      user: { email },
+      user: { email, username },
     });
   });
 
@@ -90,6 +93,47 @@ describe("Better Auth email and password", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toBeNull();
+  });
+});
+
+describe("the username column", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  it("is required on sign-up", async () => {
+    const res = await request(app)
+      .post("/api/auth/sign-up/email")
+      .send({ email, name: "Ada", password });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ code: "MISSING_FIELD" });
+    expect(await db.query.users.findMany({})).toHaveLength(0);
+  });
+
+  it("is unique, and the database is what rejects a duplicate", async () => {
+    expect((await signUp()).status).toBe(200);
+
+    const res = await signUp({ email: "grace@example.com" });
+
+    expect(res.status).toBe(422);
+    expect(await db.query.users.findMany({})).toHaveLength(1);
+  });
+
+  it("is filled with a guest-shaped name when the creator supplies none", async () => {
+    const { internalAdapter } = await auth.$context;
+
+    const user = await internalAdapter.createUser(
+      {
+        email: "anonymous@example.com",
+        emailVerified: false,
+        name: "Anonymous",
+      },
+      { method: "anonymous" },
+    );
+
+    expect(user["username"]).toMatch(/^guest-[0-9a-f]{16}$/);
+    expect(user["username"]).toMatch(/^[a-z0-9_.-]{3,32}$/);
   });
 });
 

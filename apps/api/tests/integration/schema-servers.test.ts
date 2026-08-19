@@ -16,7 +16,9 @@ const FOREIGN_KEY_VIOLATION = "23503";
 const UNIQUE_VIOLATION = "23505";
 
 async function seedUser(id: string): Promise<string> {
-  await db.insert(users).values({ id, name: id, email: `${id}@example.com` });
+  await db
+    .insert(users)
+    .values({ id, name: id, email: `${id}@example.com`, username: id });
 
   return id;
 }
