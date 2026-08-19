@@ -1,0 +1,25 @@
+{
+  "name": "@opencord/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "playwright test",
+    "e2e:a11y": "playwright test --grep \"@a11y\"",
+    "e2e:ui": "playwright test --ui",
+    "e2e:install": "playwright install chromium",
+    "typecheck": "tsc -b",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@opencord/api": "workspace:*",
+    "@opencord/eslint-config": "workspace:*",
+    "@opencord/typescript-config": "workspace:*",
+    "@opencord/web": "workspace:*",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "typescript": "catalog:"
+  }
+}

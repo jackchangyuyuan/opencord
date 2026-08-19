@@ -19,6 +19,11 @@
       "env": ["LOG_LEVEL", "TEST_DATABASE_URL"]
     },
     "dev": { "dependsOn": ["^build"], "cache": false, "persistent": true },
+    "e2e": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "passThroughEnv": ["CI", "E2E_BASE_URL", "PLAYWRIGHT_*"]
+    },
     "//#lint:root": {},
     "//#typecheck:root": {}
   }

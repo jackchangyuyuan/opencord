@@ -1,0 +1,8 @@
+{
+  "extends": "@opencord/typescript-config/node.json",
+  "compilerOptions": {
+    "lib": ["es2025", "dom", "dom.iterable"],
+    "tsBuildInfoFile": "./node_modules/.cache/typescript/tsconfig.test.tsbuildinfo"
+  },
+  "include": ["tests"]
+}
