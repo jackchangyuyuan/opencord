@@ -5,7 +5,7 @@ import { app } from "../../src/app.js";
 
 describe("the error envelope", () => {
   it("returns NOT_FOUND for an unmatched API route", async () => {
-    const res = await request(app).get("/api/v1/nope");
+    const res = await request(app).get("/api/nope");
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({
@@ -23,7 +23,7 @@ describe("the error envelope", () => {
   });
 
   it("still returns the request id header on a failure", async () => {
-    const res = await request(app).get("/api/v1/nope");
+    const res = await request(app).get("/api/nope");
 
     expect(res.get("x-request-id")).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,

@@ -5,8 +5,10 @@ import express from "express";
 import { auth } from "./auth.js";
 import { db } from "./db/index.js";
 import { notFound } from "./lib/errors.js";
+import { requireAuth } from "./middleware/auth.js";
 import { errorHandler } from "./middleware/error.js";
 import { httpLogger } from "./middleware/http-logger.js";
+import { usersRouter } from "./modules/users/router.js";
 import { redis } from "./redis.js";
 
 export const app = express();
@@ -46,6 +48,9 @@ app.get("/readyz", async (req, res) => {
 app.all("/api/auth/*splat", toNodeHandler(auth));
 
 const apiRouter = express.Router();
+
+apiRouter.use(requireAuth);
+apiRouter.use("/users", usersRouter);
 
 app.use("/api/v1", apiRouter);
 

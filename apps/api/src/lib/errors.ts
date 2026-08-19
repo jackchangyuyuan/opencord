@@ -17,6 +17,14 @@ export class AppError extends Error {
   }
 }
 
+export function unauthorized(
+  code = "UNAUTHORIZED",
+  message = "Authentication required",
+  details?: unknown,
+): AppError {
+  return new AppError(401, code, message, details);
+}
+
 export function notFound(
   code = "NOT_FOUND",
   message = "Resource not found",

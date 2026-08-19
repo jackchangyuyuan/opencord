@@ -20,6 +20,8 @@ export const auth = betterAuth({
   user: {
     additionalFields: {
       username: { type: "string", required: true, unique: true },
+      deactivatedAt: { type: "date", required: false, input: false },
+      guestExpiresAt: { type: "date", required: false, input: false },
     },
   },
   databaseHooks: {
@@ -44,3 +46,12 @@ export const auth = betterAuth({
 });
 
 export type SessionUser = (typeof auth.$Infer.Session)["user"];
+
+export function isRevoked(user: SessionUser, now: Date): boolean {
+  const deactivatedAt = user.deactivatedAt ?? null;
+  const guestExpiresAt = user.guestExpiresAt ?? null;
+
+  return (
+    deactivatedAt !== null || (guestExpiresAt !== null && guestExpiresAt <= now)
+  );
+}

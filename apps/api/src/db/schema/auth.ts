@@ -20,6 +20,8 @@ export const users = pgTable("users", {
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
   username: text("username").notNull().unique(),
+  deactivatedAt: timestamp("deactivated_at"),
+  guestExpiresAt: timestamp("guest_expires_at"),
 });
 
 export const sessions = pgTable(
