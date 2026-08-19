@@ -5,5 +5,5 @@
     "checkJs": true,
     "tsBuildInfoFile": "./node_modules/.cache/typescript/tsconfig.node.tsbuildinfo"
   },
-  "include": ["eslint.config.js"]
+  "include": ["vitest.config.ts", "eslint.config.js"]
 }

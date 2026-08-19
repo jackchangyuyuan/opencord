@@ -7,6 +7,10 @@
     "dist"
   ],
   "exports": {
+    "./permissions": {
+      "types": "./src/permissions/index.ts",
+      "default": "./dist/permissions/index.js"
+    },
     "./events": {
       "types": "./src/events.ts",
       "default": "./dist/events.js"
@@ -16,13 +20,17 @@
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
     "typecheck": "tsc -b",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
     "@opencord/eslint-config": "workspace:*",
     "@opencord/typescript-config": "workspace:*",
     "@types/node": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
     "eslint": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }
