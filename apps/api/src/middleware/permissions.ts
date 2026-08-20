@@ -61,7 +61,11 @@ export function requireChannelPermission(
       return;
     }
 
-    const context = await loadServerContext(channel.serverId, req.user.id);
+    const context = await loadServerContext(
+      channel.serverId,
+      req.user.id,
+      channel.id,
+    );
 
     if ((context.permissions & bit) !== bit) {
       next(forbidden());

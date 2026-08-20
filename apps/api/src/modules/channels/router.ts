@@ -11,6 +11,7 @@ import {
   requirePermission,
 } from "../../middleware/permissions.js";
 import { validate } from "../../middleware/validate.js";
+import { overwritesRouter } from "./overwrites/router.js";
 import { listServerChannels, serializeChannel } from "./queries.js";
 import { createChannel, deleteChannel, updateChannel } from "./service.js";
 
@@ -40,6 +41,8 @@ serverChannelsRouter.post(
 );
 
 export const channelsRouter = Router();
+
+channelsRouter.use("/:channelId/overwrites", overwritesRouter);
 
 channelsRouter.get(
   "/:channelId",

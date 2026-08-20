@@ -1,8 +1,10 @@
-import { resolve } from "@opencord/shared/permissions";
+import { resolve, type ResolveInput } from "@opencord/shared/permissions";
 import { and, eq } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import {
+  channelMemberOverwrites,
+  channelRoleOverwrites,
   channels,
   memberRoles,
   roles,
@@ -22,9 +24,42 @@ export interface ServerContext {
   permissions: number;
 }
 
+async function loadChannelOverwrites(
+  channelId: string,
+  userId: string,
+): Promise<Pick<ResolveInput, "roleOverwrites" | "memberOverwrite">> {
+  const roleOverwrites = await db
+    .select({
+      roleId: channelRoleOverwrites.roleId,
+      allow: channelRoleOverwrites.allow,
+      deny: channelRoleOverwrites.deny,
+    })
+    .from(channelRoleOverwrites)
+    .where(eq(channelRoleOverwrites.channelId, channelId));
+
+  const [memberOverwrite] = await db
+    .select({
+      allow: channelMemberOverwrites.allow,
+      deny: channelMemberOverwrites.deny,
+    })
+    .from(channelMemberOverwrites)
+    .where(
+      and(
+        eq(channelMemberOverwrites.channelId, channelId),
+        eq(channelMemberOverwrites.userId, userId),
+      ),
+    );
+
+  return {
+    roleOverwrites,
+    ...(memberOverwrite === undefined ? {} : { memberOverwrite }),
+  };
+}
+
 export async function loadServerContext(
   serverId: string,
   userId: string,
+  channelId?: string,
 ): Promise<ServerContext> {
   const server = await db.query.servers.findFirst({ where: { id: serverId } });
 
@@ -64,6 +99,11 @@ export async function loadServerContext(
 
   const held = rows.filter((row) => row.heldBy !== null).map((row) => row.role);
 
+  const overwrites =
+    channelId === undefined
+      ? {}
+      : await loadChannelOverwrites(channelId, userId);
+
   return {
     server,
     everyoneRole: everyoneRole.role,
@@ -73,6 +113,7 @@ export async function loadServerContext(
       serverOwnerId: server.ownerId,
       everyoneRole: everyoneRole.role,
       memberRoles: held,
+      ...overwrites,
     }),
   };
 }

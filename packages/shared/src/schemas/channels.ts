@@ -5,6 +5,7 @@ import {
   NAME_MAX_LENGTH,
   NAME_MIN_LENGTH,
 } from "../constants/index.js";
+import { ALL_PERMISSIONS } from "../permissions/index.js";
 
 export const channelNameSchema = z
   .string()
@@ -37,3 +38,12 @@ export const updateChannelSchema = z
   );
 
 export type UpdateChannelInput = z.infer<typeof updateChannelSchema>;
+
+export const permissionMaskSchema = z.int().min(0).max(ALL_PERMISSIONS);
+
+export const overwriteSchema = z.object({
+  allow: permissionMaskSchema.default(0),
+  deny: permissionMaskSchema.default(0),
+});
+
+export type OverwriteInput = z.infer<typeof overwriteSchema>;
