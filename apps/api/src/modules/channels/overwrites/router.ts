@@ -28,7 +28,7 @@ export const overwritesRouter = Router({ mergeParams: true });
 overwritesRouter.get(
   "/",
   validate({ params: channelParamsSchema }),
-  requireChannelPermission(Permissions.VIEW_CHANNEL),
+  requireChannelPermission(),
   async (req, res) => {
     res.json(await listChannelOverwrites(req.channel.id));
   },

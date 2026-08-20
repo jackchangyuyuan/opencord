@@ -6,6 +6,7 @@ import {
 import { Router } from "express";
 import { z } from "zod";
 
+import { resolveAccessibleChannels } from "../../access/channels.js";
 import {
   requireChannelPermission,
   requirePermission,
@@ -23,9 +24,14 @@ export const serverChannelsRouter = Router({ mergeParams: true });
 serverChannelsRouter.get(
   "/",
   validate({ params: serverParamsSchema }),
-  requirePermission(Permissions.VIEW_CHANNEL),
+  requirePermission(),
   async (req, res) => {
-    res.json(await listServerChannels(req.server.server.id));
+    res.json(
+      await listServerChannels(
+        req.server.server.id,
+        await resolveAccessibleChannels(req.user.id),
+      ),
+    );
   },
 );
 
@@ -47,7 +53,7 @@ channelsRouter.use("/:channelId/overwrites", overwritesRouter);
 channelsRouter.get(
   "/:channelId",
   validate({ params: channelParamsSchema }),
-  requireChannelPermission(Permissions.VIEW_CHANNEL),
+  requireChannelPermission(),
   (req, res) => {
     res.json(serializeChannel(req.channel));
   },

@@ -1,3 +1,4 @@
+import { Permissions } from "@opencord/shared/permissions";
 import type { RequestHandler } from "express";
 
 import {
@@ -66,6 +67,11 @@ export function requireChannelPermission(
       req.user.id,
       channel.id,
     );
+
+    if ((context.permissions & Permissions.VIEW_CHANNEL) === 0) {
+      next(notFound("NOT_FOUND", "Channel not found"));
+      return;
+    }
 
     if ((context.permissions & bit) !== bit) {
       next(forbidden());

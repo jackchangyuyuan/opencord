@@ -30,6 +30,7 @@ export function serializeChannel(channel: ChannelRow): ChannelSummary {
 
 export async function listServerChannels(
   serverId: string,
+  accessible: ReadonlySet<string>,
 ): Promise<ChannelSummary[]> {
   const rows = await db
     .select()
@@ -37,5 +38,7 @@ export async function listServerChannels(
     .where(eq(channels.serverId, serverId))
     .orderBy(asc(channels.position), asc(channels.id));
 
-  return rows.map(serializeChannel);
+  return rows
+    .filter((channel) => accessible.has(channel.id))
+    .map(serializeChannel);
 }

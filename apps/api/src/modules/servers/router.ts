@@ -43,7 +43,7 @@ serversRouter.post(
 serversRouter.get(
   "/:serverId",
   validate({ params: serverParamsSchema }),
-  requirePermission(Permissions.VIEW_CHANNEL),
+  requirePermission(),
   (req, res) => {
     res.json(serializeServerDetail(req.server));
   },
@@ -52,7 +52,7 @@ serversRouter.get(
 serversRouter.get(
   "/:serverId/members",
   validate({ params: serverParamsSchema, query: paginationSchema }),
-  requirePermission(Permissions.VIEW_CHANNEL),
+  requirePermission(),
   async (req, res) => {
     res.json(await listServerMembers(req.server.server.id, req.query));
   },

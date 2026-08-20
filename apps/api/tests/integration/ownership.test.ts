@@ -129,14 +129,16 @@ describe("POST /api/v1/servers/:serverId/owner", () => {
     expect((await transfer(ada, serverId, grace.id)).status).toBe(200);
 
     const asGrace = await request(app)
-      .get(`/api/v1/servers/${serverId}`)
-      .set("Cookie", grace.cookies);
+      .patch(`/api/v1/servers/${serverId}`)
+      .set("Cookie", grace.cookies)
+      .send({ name: "Difference Engine" });
 
     expect(asGrace.status).toBe(200);
 
     const asAda = await request(app)
-      .get(`/api/v1/servers/${serverId}`)
-      .set("Cookie", ada.cookies);
+      .patch(`/api/v1/servers/${serverId}`)
+      .set("Cookie", ada.cookies)
+      .send({ name: "Analytical Engine" });
 
     expect(asAda.status).toBe(403);
   });

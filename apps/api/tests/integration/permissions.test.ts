@@ -69,6 +69,13 @@ function getServer(account: Account, serverId: string) {
     .set("Cookie", account.cookies);
 }
 
+function renameServer(account: Account, serverId: string) {
+  return request(app)
+    .patch(`/api/v1/servers/${serverId}`)
+    .set("Cookie", account.cookies)
+    .send({ name: "Difference Engine" });
+}
+
 function setEveryonePermissions(
   serverId: string,
   permissions: number,
@@ -176,11 +183,9 @@ describe("requirePermission on GET /api/v1/servers/:serverId", () => {
     const serverId = await createServer(ada, "Analytical Engine");
 
     await join(serverId, grace);
-    await setEveryonePermissions(serverId, Permissions.SEND_MESSAGES);
 
-    const res = await getServer(grace, serverId);
-
-    expect(res.status).toBe(403);
+    expect((await getServer(grace, serverId)).status).toBe(200);
+    expect((await renameServer(grace, serverId)).status).toBe(403);
   });
 
   it("resolves the owner to ALL without reading a role row", async () => {
@@ -189,8 +194,8 @@ describe("requirePermission on GET /api/v1/servers/:serverId", () => {
 
     await setEveryonePermissions(serverId, 0);
 
-    expect((await getServer(ada, serverId)).status).toBe(200);
-    expect(ALL_PERMISSIONS & Permissions.VIEW_CHANNEL).not.toBe(0);
+    expect((await renameServer(ada, serverId)).status).toBe(200);
+    expect(ALL_PERMISSIONS & Permissions.MANAGE_SERVER).not.toBe(0);
   });
 
   it("resolves an ADMINISTRATOR past an @everyone role with nothing", async () => {
@@ -201,11 +206,11 @@ describe("requirePermission on GET /api/v1/servers/:serverId", () => {
     await join(serverId, grace);
     await setEveryonePermissions(serverId, 0);
 
-    expect((await getServer(grace, serverId)).status).toBe(403);
+    expect((await renameServer(grace, serverId)).status).toBe(403);
 
     await grantRole(serverId, grace, Permissions.ADMINISTRATOR);
 
-    expect((await getServer(grace, serverId)).status).toBe(200);
+    expect((await renameServer(grace, serverId)).status).toBe(200);
   });
 
   it("requires a session", async () => {

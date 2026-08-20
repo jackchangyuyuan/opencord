@@ -327,7 +327,7 @@ describe("resolve() step 4, end to end", () => {
     );
 
     expect((await getChannel(fixture.grace, fixture.channelId)).status).toBe(
-      403,
+      404,
     );
 
     const server = await request(app)
@@ -348,7 +348,7 @@ describe("resolve() step 4, end to end", () => {
     );
 
     expect((await getChannel(fixture.grace, fixture.channelId)).status).toBe(
-      403,
+      404,
     );
 
     await putMemberOverwrite(fixture.ada, fixture.channelId, fixture.grace.id, {
@@ -391,7 +391,7 @@ describe("resolve() step 4, end to end", () => {
     });
 
     expect((await getChannel(fixture.grace, fixture.channelId)).status).toBe(
-      403,
+      404,
     );
 
     const hopper = await signUp("hopper");
