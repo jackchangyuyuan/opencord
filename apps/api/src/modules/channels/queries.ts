@@ -1,11 +1,8 @@
 import { asc, eq } from "drizzle-orm";
 
+import type { ChannelRow } from "../../access/context.js";
 import { db } from "../../db/index.js";
-import {
-  type ChannelRow,
-  channels,
-  type ChannelType,
-} from "../../db/schema/index.js";
+import { channels, type ChannelType } from "../../db/schema/index.js";
 
 export interface ChannelSummary {
   id: string;

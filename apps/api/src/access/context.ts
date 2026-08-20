@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import {
+  channels,
   memberRoles,
   roles,
   serverMembers,
@@ -12,6 +13,7 @@ import { forbidden, notFound } from "../lib/errors.js";
 
 export type ServerRow = typeof servers.$inferSelect;
 export type RoleRow = typeof roles.$inferSelect;
+export type ChannelRow = typeof channels.$inferSelect;
 
 export interface ServerContext {
   server: ServerRow;

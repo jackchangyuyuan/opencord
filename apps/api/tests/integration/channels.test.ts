@@ -96,6 +96,37 @@ function listChannels(account: Account, serverId: string) {
     .set("Cookie", account.cookies);
 }
 
+function getChannel(account: Account, channelId: string) {
+  return request(app)
+    .get(`/api/v1/channels/${channelId}`)
+    .set("Cookie", account.cookies);
+}
+
+function patchChannel(
+  account: Account,
+  channelId: string,
+  body: Record<string, unknown>,
+) {
+  return request(app)
+    .patch(`/api/v1/channels/${channelId}`)
+    .set("Cookie", account.cookies)
+    .send(body);
+}
+
+async function firstChannel(
+  account: Account,
+  serverId: string,
+): Promise<string> {
+  const res = await listChannels(account, serverId);
+  const [channel] = channelList.parse(res.body);
+
+  if (channel === undefined) {
+    throw new Error("the server has no channels");
+  }
+
+  return channel.id;
+}
+
 function postChannel(
   account: Account,
   serverId: string,
@@ -278,5 +309,199 @@ describe("channel deletion follows the server", () => {
       .set("Cookie", ada.cookies);
 
     expect(await db.select().from(channels)).toEqual([]);
+  });
+});
+
+describe("GET /api/v1/channels/:channelId", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  it("serves a channel by id alone", async () => {
+    const ada = await signUp("ada");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const channelId = await firstChannel(ada, serverId);
+
+    const res = await getChannel(ada, channelId);
+
+    expect(res.status).toBe(200);
+    expect(channelBody.parse(res.body)).toMatchObject({
+      id: channelId,
+      serverId,
+      name: "general",
+    });
+  });
+
+  it("rejects a caller who is not a member of its server", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const channelId = await firstChannel(ada, serverId);
+
+    expect((await getChannel(grace, channelId)).status).toBe(403);
+  });
+
+  it("answers 404 for an unknown channel", async () => {
+    const ada = await signUp("ada");
+
+    const res = await getChannel(ada, "00000000-0000-7000-8000-000000000000");
+
+    expect(res.status).toBe(404);
+  });
+
+  it("answers 404 for a channel with no server", async () => {
+    const ada = await signUp("ada");
+    const [dm] = await db
+      .insert(channels)
+      .values({ serverId: null, type: "dm" })
+      .returning({ id: channels.id });
+
+    expect((await getChannel(ada, dm?.id ?? "")).status).toBe(404);
+  });
+});
+
+describe("PATCH /api/v1/channels/:channelId", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  it("renames and retopics the channel, and audits it", async () => {
+    const ada = await signUp("ada");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const channelId = await firstChannel(ada, serverId);
+
+    const res = await patchChannel(ada, channelId, {
+      name: "engines",
+      topic: "cogs",
+    });
+
+    expect(res.status).toBe(200);
+    expect(channelBody.parse(res.body)).toMatchObject({
+      name: "engines",
+      topic: "cogs",
+    });
+
+    const entries = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.serverId, serverId));
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      action: "channel_update",
+      targetType: "channel",
+      targetId: channelId,
+      metadata: { name: "engines", topic: "cogs" },
+    });
+  });
+
+  it("clears a topic with an explicit null", async () => {
+    const ada = await signUp("ada");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const channelId = await firstChannel(ada, serverId);
+
+    await patchChannel(ada, channelId, { topic: "cogs" });
+
+    const res = await patchChannel(ada, channelId, { topic: null });
+
+    expect(res.status).toBe(200);
+    expect(channelBody.parse(res.body).topic).toBeNull();
+  });
+
+  it("reorders one channel at a time, ties broken by id", async () => {
+    const ada = await signUp("ada");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const channelId = await firstChannel(ada, serverId);
+
+    expect((await patchChannel(ada, channelId, { position: 9 })).status).toBe(
+      200,
+    );
+
+    const res = await listChannels(ada, serverId);
+
+    expect(channelList.parse(res.body).map((channel) => channel.name)).toEqual([
+      "random",
+      "general",
+    ]);
+  });
+
+  it("rejects an uppercase name", async () => {
+    const ada = await signUp("ada");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const channelId = await firstChannel(ada, serverId);
+
+    const res = await patchChannel(ada, channelId, { name: "General" });
+
+    expect(res.status).toBe(400);
+    expect(await db.select().from(auditLog)).toEqual([]);
+  });
+
+  it("rejects a body with nothing to update", async () => {
+    const ada = await signUp("ada");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const channelId = await firstChannel(ada, serverId);
+
+    expect((await patchChannel(ada, channelId, {})).status).toBe(400);
+  });
+
+  it("rejects a member without MANAGE_CHANNELS", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const channelId = await firstChannel(ada, serverId);
+
+    await join(serverId, grace);
+
+    const res = await patchChannel(grace, channelId, { name: "engines" });
+
+    expect(res.status).toBe(403);
+    expect(await db.select().from(auditLog)).toEqual([]);
+  });
+});
+
+describe("DELETE /api/v1/channels/:channelId", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  it("removes the channel and audits it", async () => {
+    const ada = await signUp("ada");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const channelId = await firstChannel(ada, serverId);
+
+    const res = await request(app)
+      .delete(`/api/v1/channels/${channelId}`)
+      .set("Cookie", ada.cookies);
+
+    expect(res.status).toBe(204);
+    expect(await db.select().from(channels)).toHaveLength(1);
+
+    const entries = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.serverId, serverId));
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      action: "channel_delete",
+      targetId: channelId,
+      metadata: { name: "general" },
+    });
+  });
+
+  it("rejects a member without MANAGE_CHANNELS", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const channelId = await firstChannel(ada, serverId);
+
+    await join(serverId, grace);
+
+    const res = await request(app)
+      .delete(`/api/v1/channels/${channelId}`)
+      .set("Cookie", grace.cookies);
+
+    expect(res.status).toBe(403);
+    expect(await db.select().from(channels)).toHaveLength(2);
   });
 });

@@ -24,3 +24,16 @@ export const createChannelSchema = z.object({
 });
 
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
+
+export const updateChannelSchema = z
+  .object({
+    name: channelNameSchema.optional(),
+    topic: channelTopicSchema.nullable().optional(),
+    position: z.int().min(0).optional(),
+  })
+  .refine(
+    (input) => Object.values(input).some((value) => value !== undefined),
+    "Supply at least one field to update",
+  );
+
+export type UpdateChannelInput = z.infer<typeof updateChannelSchema>;

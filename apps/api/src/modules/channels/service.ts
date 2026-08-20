@@ -1,7 +1,10 @@
-import type { CreateChannelInput } from "@opencord/shared/schemas";
+import type {
+  CreateChannelInput,
+  UpdateChannelInput,
+} from "@opencord/shared/schemas";
 import { eq, sql } from "drizzle-orm";
 
-import type { ServerContext } from "../../access/context.js";
+import type { ChannelRow, ServerContext } from "../../access/context.js";
 import { db, type Transaction } from "../../db/index.js";
 import { channels } from "../../db/schema/index.js";
 import { writeAudit } from "../../lib/audit.js";
@@ -61,5 +64,54 @@ export function createChannel(
     });
 
     return serializeChannel(channel);
+  });
+}
+
+export function updateChannel(
+  context: ServerContext,
+  channel: ChannelRow,
+  actorId: string,
+  input: UpdateChannelInput,
+): Promise<ChannelSummary> {
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(channels)
+      .set(input)
+      .where(eq(channels.id, channel.id))
+      .returning();
+
+    if (updated === undefined) {
+      throw new Error("Channel update returned no row");
+    }
+
+    await writeAudit(tx, {
+      serverId: context.server.id,
+      actorId,
+      action: "channel_update",
+      targetType: "channel",
+      targetId: channel.id,
+      metadata: input,
+    });
+
+    return serializeChannel(updated);
+  });
+}
+
+export function deleteChannel(
+  context: ServerContext,
+  channel: ChannelRow,
+  actorId: string,
+): Promise<void> {
+  return db.transaction(async (tx) => {
+    await tx.delete(channels).where(eq(channels.id, channel.id));
+
+    await writeAudit(tx, {
+      serverId: context.server.id,
+      actorId,
+      action: "channel_delete",
+      targetType: "channel",
+      targetId: channel.id,
+      metadata: { name: channel.name },
+    });
   });
 }

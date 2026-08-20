@@ -1,14 +1,21 @@
 import { Permissions } from "@opencord/shared/permissions";
-import { createChannelSchema } from "@opencord/shared/schemas";
+import {
+  createChannelSchema,
+  updateChannelSchema,
+} from "@opencord/shared/schemas";
 import { Router } from "express";
 import { z } from "zod";
 
-import { requirePermission } from "../../middleware/permissions.js";
+import {
+  requireChannelPermission,
+  requirePermission,
+} from "../../middleware/permissions.js";
 import { validate } from "../../middleware/validate.js";
-import { listServerChannels } from "./queries.js";
-import { createChannel } from "./service.js";
+import { listServerChannels, serializeChannel } from "./queries.js";
+import { createChannel, deleteChannel, updateChannel } from "./service.js";
 
 const serverParamsSchema = z.object({ serverId: z.uuid() });
+const channelParamsSchema = z.object({ channelId: z.uuid() });
 
 export const serverChannelsRouter = Router({ mergeParams: true });
 
@@ -29,5 +36,37 @@ serverChannelsRouter.post(
     res
       .status(201)
       .json(await createChannel(req.server, req.user.id, req.body));
+  },
+);
+
+export const channelsRouter = Router();
+
+channelsRouter.get(
+  "/:channelId",
+  validate({ params: channelParamsSchema }),
+  requireChannelPermission(Permissions.VIEW_CHANNEL),
+  (req, res) => {
+    res.json(serializeChannel(req.channel));
+  },
+);
+
+channelsRouter.patch(
+  "/:channelId",
+  validate({ params: channelParamsSchema, body: updateChannelSchema }),
+  requireChannelPermission(Permissions.MANAGE_CHANNELS),
+  async (req, res) => {
+    res.json(
+      await updateChannel(req.server, req.channel, req.user.id, req.body),
+    );
+  },
+);
+
+channelsRouter.delete(
+  "/:channelId",
+  validate({ params: channelParamsSchema }),
+  requireChannelPermission(Permissions.MANAGE_CHANNELS),
+  async (req, res) => {
+    await deleteChannel(req.server, req.channel, req.user.id);
+    res.status(204).end();
   },
 );

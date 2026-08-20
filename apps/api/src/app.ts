@@ -8,7 +8,10 @@ import { notFound } from "./lib/errors.js";
 import { requireAuth } from "./middleware/auth.js";
 import { errorHandler } from "./middleware/error.js";
 import { httpLogger } from "./middleware/http-logger.js";
-import { serverChannelsRouter } from "./modules/channels/router.js";
+import {
+  channelsRouter,
+  serverChannelsRouter,
+} from "./modules/channels/router.js";
 import { serversRouter } from "./modules/servers/router.js";
 import { usersRouter } from "./modules/users/router.js";
 import { redis } from "./redis.js";
@@ -53,6 +56,7 @@ const apiRouter = express.Router();
 
 apiRouter.use(requireAuth);
 apiRouter.use(express.json());
+apiRouter.use("/channels", channelsRouter);
 apiRouter.use("/servers", serversRouter);
 apiRouter.use("/servers/:serverId/channels", serverChannelsRouter);
 apiRouter.use("/users", usersRouter);
