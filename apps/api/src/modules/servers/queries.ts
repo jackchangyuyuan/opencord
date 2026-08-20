@@ -1,7 +1,15 @@
-import { eq } from "drizzle-orm";
+import type { Pagination } from "@opencord/shared/schemas";
+import { and, eq, gte, inArray } from "drizzle-orm";
 
+import type { ServerContext } from "../../access/context.js";
 import { db } from "../../db/index.js";
-import { serverMembers, servers } from "../../db/schema/index.js";
+import {
+  memberRoles,
+  serverMembers,
+  servers,
+  users,
+} from "../../db/schema/index.js";
+import { type PublicUser, serializeUser } from "../users/queries.js";
 
 export interface ServerSummary {
   id: string;
@@ -44,4 +52,108 @@ export async function listServersForUser(
     .orderBy(servers.id);
 
   return rows.map(serializeServer);
+}
+
+export interface PublicRole {
+  id: string;
+  name: string;
+  color: number | null;
+  position: number;
+  permissions: number;
+  isDefault: boolean;
+}
+
+export interface ServerDetail extends ServerSummary {
+  everyoneRole: PublicRole;
+  roles: PublicRole[];
+}
+
+export interface ServerMemberEntry {
+  user: PublicUser;
+  nickname: string | null;
+  joinedAt: string;
+  roleIds: string[];
+}
+
+export interface Page<Entry> {
+  data: Entry[];
+  nextCursor: string | null;
+}
+
+export function serializeRole(role: PublicRole): PublicRole {
+  return {
+    id: role.id,
+    name: role.name,
+    color: role.color,
+    position: role.position,
+    permissions: role.permissions,
+    isDefault: role.isDefault,
+  };
+}
+
+export function serializeServerDetail(context: ServerContext): ServerDetail {
+  return {
+    ...serializeServer(context.server),
+    everyoneRole: serializeRole(context.everyoneRole),
+    roles: context.memberRoles.map(serializeRole),
+  };
+}
+
+export async function listServerMembers(
+  serverId: string,
+  page: Pagination,
+): Promise<Page<ServerMemberEntry>> {
+  const rows = await db
+    .select({
+      id: users.id,
+      username: users.username,
+      name: users.name,
+      image: users.image,
+      nickname: serverMembers.nickname,
+      joinedAt: serverMembers.joinedAt,
+    })
+    .from(serverMembers)
+    .innerJoin(users, eq(users.id, serverMembers.userId))
+    .where(
+      and(
+        eq(serverMembers.serverId, serverId),
+        page.cursor === undefined
+          ? undefined
+          : gte(serverMembers.userId, page.cursor),
+      ),
+    )
+    .orderBy(serverMembers.userId)
+    .limit(page.limit + 1);
+
+  const visible = rows.slice(0, page.limit);
+  const next = rows[page.limit];
+
+  const assignments =
+    visible.length === 0
+      ? []
+      : await db
+          .select({ userId: memberRoles.userId, roleId: memberRoles.roleId })
+          .from(memberRoles)
+          .where(
+            and(
+              eq(memberRoles.serverId, serverId),
+              inArray(
+                memberRoles.userId,
+                visible.map((row) => row.id),
+              ),
+            ),
+          )
+          .orderBy(memberRoles.roleId);
+
+  return {
+    data: visible.map((row) => ({
+      user: serializeUser(row),
+      nickname: row.nickname,
+      joinedAt: row.joinedAt.toISOString(),
+      roleIds: assignments
+        .filter((assignment) => assignment.userId === row.id)
+        .map((assignment) => assignment.roleId),
+    })),
+    nextCursor: next === undefined ? null : next.id,
+  };
 }
