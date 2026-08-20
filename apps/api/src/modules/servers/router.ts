@@ -15,9 +15,16 @@ import {
   listServersForUser,
   serializeServerDetail,
 } from "./queries.js";
-import { createServer, updateServer } from "./service.js";
+import {
+  createServer,
+  deleteServer,
+  leaveServer,
+  transferOwnership,
+  updateServer,
+} from "./service.js";
 
 const serverParamsSchema = z.object({ serverId: z.uuid() });
+const transferOwnershipSchema = z.object({ userId: z.string().min(1) });
 
 export const serversRouter = Router();
 
@@ -66,5 +73,34 @@ serversRouter.get(
   requirePermission(Permissions.MANAGE_SERVER),
   async (req, res) => {
     res.json(await listAuditLog(req.server.server.id, req.query));
+  },
+);
+
+serversRouter.post(
+  "/:serverId/owner",
+  validate({ params: serverParamsSchema, body: transferOwnershipSchema }),
+  requirePermission(),
+  async (req, res) => {
+    res.json(await transferOwnership(req.server, req.user.id, req.body.userId));
+  },
+);
+
+serversRouter.delete(
+  "/:serverId/members/@me",
+  validate({ params: serverParamsSchema }),
+  requirePermission(),
+  async (req, res) => {
+    await leaveServer(req.server, req.user.id);
+    res.status(204).end();
+  },
+);
+
+serversRouter.delete(
+  "/:serverId",
+  validate({ params: serverParamsSchema }),
+  requirePermission(),
+  async (req, res) => {
+    await deleteServer(req.server, req.user.id);
+    res.status(204).end();
   },
 );

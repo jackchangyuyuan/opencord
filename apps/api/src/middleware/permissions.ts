@@ -17,7 +17,7 @@ export interface ServerParams {
 }
 
 export function requirePermission(
-  bit: number,
+  bit = 0,
 ): RequestHandler<ServerParams, unknown, unknown, unknown> {
   return async (req, _res, next) => {
     const context = await loadServerContext(req.params.serverId, req.user.id);

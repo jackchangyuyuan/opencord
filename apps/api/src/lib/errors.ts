@@ -48,3 +48,10 @@ export function conflict(
 ): AppError {
   return new AppError(409, code, message, details);
 }
+
+export function ownerMustTransfer(): AppError {
+  return conflict(
+    "OWNER_MUST_TRANSFER",
+    "Transfer ownership before leaving this server",
+  );
+}

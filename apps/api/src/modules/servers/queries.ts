@@ -99,6 +99,23 @@ export function serializeServerDetail(context: ServerContext): ServerDetail {
   };
 }
 
+export async function isServerMember(
+  serverId: string,
+  userId: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({ userId: serverMembers.userId })
+    .from(serverMembers)
+    .where(
+      and(
+        eq(serverMembers.serverId, serverId),
+        eq(serverMembers.userId, userId),
+      ),
+    );
+
+  return rows.length > 0;
+}
+
 export async function listServerMembers(
   serverId: string,
   page: Pagination,
