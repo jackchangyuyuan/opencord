@@ -15,6 +15,7 @@ import {
   notFound,
   ownerMustTransfer,
 } from "../../lib/errors.js";
+import { createDefaultChannels } from "../channels/service.js";
 import {
   isServerMember,
   serializeServer,
@@ -52,6 +53,8 @@ export function createServer(
       position: 0,
       isDefault: true,
     });
+
+    await createDefaultChannels(tx, server.id);
 
     await tx
       .insert(serverMembers)
