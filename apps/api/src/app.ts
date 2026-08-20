@@ -8,6 +8,7 @@ import { notFound } from "./lib/errors.js";
 import { requireAuth } from "./middleware/auth.js";
 import { errorHandler } from "./middleware/error.js";
 import { httpLogger } from "./middleware/http-logger.js";
+import { serversRouter } from "./modules/servers/router.js";
 import { usersRouter } from "./modules/users/router.js";
 import { redis } from "./redis.js";
 
@@ -50,6 +51,8 @@ app.all("/api/auth/*splat", toNodeHandler(auth));
 const apiRouter = express.Router();
 
 apiRouter.use(requireAuth);
+apiRouter.use(express.json());
+apiRouter.use("/servers", serversRouter);
 apiRouter.use("/users", usersRouter);
 
 app.use("/api/v1", apiRouter);

@@ -14,6 +14,14 @@
     "./events": {
       "types": "./src/events.ts",
       "default": "./dist/events.js"
+    },
+    "./constants": {
+      "types": "./src/constants/index.ts",
+      "default": "./dist/constants/index.js"
+    },
+    "./schemas": {
+      "types": "./src/schemas/index.ts",
+      "default": "./dist/schemas/index.js"
     }
   },
   "scripts": {
@@ -23,6 +31,9 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@opencord/eslint-config": "workspace:*",

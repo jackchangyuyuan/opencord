@@ -23,6 +23,14 @@ export default defineConfig({
       reporter: ["text", "html"],
       include: ["src/**"],
       exclude: ["src/**/*.test.ts", "src/db/migrations/**"],
+      thresholds: {
+        "src/modules/**": {
+          statements: 85,
+          branches: 85,
+          functions: 85,
+          lines: 85,
+        },
+      },
     },
   },
 });
