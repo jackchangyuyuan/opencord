@@ -121,6 +121,28 @@ function deleteRole(account: Account, serverId: string, roleId: string) {
     .set("Cookie", account.cookies);
 }
 
+function putMemberRole(
+  account: Account,
+  serverId: string,
+  userId: string,
+  roleId: string,
+) {
+  return request(app)
+    .put(`/api/v1/servers/${serverId}/members/${userId}/roles/${roleId}`)
+    .set("Cookie", account.cookies);
+}
+
+function deleteMemberRole(
+  account: Account,
+  serverId: string,
+  userId: string,
+  roleId: string,
+) {
+  return request(app)
+    .delete(`/api/v1/servers/${serverId}/members/${userId}/roles/${roleId}`)
+    .set("Cookie", account.cookies);
+}
+
 function everyoneRoleId(serverId: string): Promise<string> {
   return db.query.roles
     .findFirst({ columns: { id: true }, where: { serverId, isDefault: true } })
@@ -408,5 +430,200 @@ describe("PATCH and DELETE a role", () => {
     expect(
       (await patchRole(ada, serverId, roleId, { permissions: 1 << 20 })).status,
     ).toBe(400);
+  });
+});
+
+describe("assigning and removing member roles", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  it("assigns a role, audits it, and is idempotent", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const roleId = await seedRole(serverId, "moderator", 0, 1);
+
+    await join(serverId, grace);
+
+    const res = await putMemberRole(ada, serverId, grace.id, roleId);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ roleIds: [roleId] });
+
+    expect((await putMemberRole(ada, serverId, grace.id, roleId)).status).toBe(
+      200,
+    );
+    expect(await db.select().from(memberRoles)).toHaveLength(1);
+
+    const entries = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.serverId, serverId));
+
+    expect(entries.map((entry) => entry.action)).toEqual([
+      "role_assign",
+      "role_assign",
+    ]);
+    expect(entries[0]).toMatchObject({
+      targetType: "member",
+      targetId: grace.id,
+      metadata: { roleId },
+    });
+  });
+
+  it("removes a role and audits it", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const roleId = await seedRole(serverId, "moderator", 0, 1);
+
+    await join(serverId, grace);
+    await assign(serverId, grace, roleId);
+
+    const res = await deleteMemberRole(ada, serverId, grace.id, roleId);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ roleIds: [] });
+    expect(await db.select().from(memberRoles)).toEqual([]);
+
+    const entries = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.serverId, serverId));
+
+    expect(entries.map((entry) => entry.action)).toEqual(["role_unassign"]);
+  });
+
+  it("refuses the @everyone role outright", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const everyone = await everyoneRoleId(serverId);
+
+    await join(serverId, grace);
+
+    const res = await putMemberRole(ada, serverId, grace.id, everyone);
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: { code: "ROLE_IS_DEFAULT" } });
+    expect(await db.select().from(memberRoles)).toEqual([]);
+  });
+
+  it("refuses any action on the owner", async () => {
+    const ada = await signUp("ada");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const roleId = await seedRole(serverId, "moderator", 0, 1);
+
+    const res = await putMemberRole(ada, serverId, ada.id, roleId);
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: { code: "TARGET_IS_OWNER" } });
+  });
+
+  it("refuses a role at or above the caller's own position", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+    const hopper = await signUp("hopper");
+    const serverId = await createServer(ada, "Analytical Engine");
+
+    await join(serverId, grace);
+    await join(serverId, hopper);
+    await assign(
+      serverId,
+      grace,
+      await seedRole(
+        serverId,
+        "staff",
+        Permissions.VIEW_CHANNEL | Permissions.MANAGE_ROLES,
+        5,
+      ),
+    );
+
+    const peer = await seedRole(serverId, "peer", 0, 5);
+    const below = await seedRole(serverId, "below", 0, 4);
+
+    expect((await putMemberRole(grace, serverId, hopper.id, peer)).status).toBe(
+      403,
+    );
+    expect(
+      (await putMemberRole(grace, serverId, hopper.id, below)).status,
+    ).toBe(200);
+  });
+
+  it("requires the target to sit below the caller before removing a role", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+    const hopper = await signUp("hopper");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const low = await seedRole(serverId, "low", 0, 1);
+
+    await join(serverId, grace);
+    await join(serverId, hopper);
+    await assign(
+      serverId,
+      grace,
+      await seedRole(
+        serverId,
+        "staff",
+        Permissions.VIEW_CHANNEL | Permissions.MANAGE_ROLES,
+        5,
+      ),
+    );
+    await assign(serverId, hopper, low);
+    await assign(serverId, hopper, await seedRole(serverId, "senior", 0, 9));
+
+    expect(
+      (await deleteMemberRole(grace, serverId, hopper.id, low)).status,
+    ).toBe(403);
+    expect((await deleteMemberRole(ada, serverId, hopper.id, low)).status).toBe(
+      200,
+    );
+  });
+
+  it("refuses a role from another server, and the database refuses it too", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const other = await createServer(ada, "Difference Engine");
+    const foreign = await seedRole(other, "moderator", 0, 1);
+
+    await join(serverId, grace);
+
+    const res = await putMemberRole(ada, serverId, grace.id, foreign);
+
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ error: { code: "ROLE_NOT_FOUND" } });
+
+    await expect(
+      db
+        .insert(memberRoles)
+        .values({ serverId, userId: grace.id, roleId: foreign }),
+    ).rejects.toThrow();
+  });
+
+  it("refuses a target who is not a member", async () => {
+    const ada = await signUp("ada");
+    const stranger = await signUp("grace");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const roleId = await seedRole(serverId, "moderator", 0, 1);
+
+    const res = await putMemberRole(ada, serverId, stranger.id, roleId);
+
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ error: { code: "MEMBER_NOT_FOUND" } });
+  });
+
+  it("rejects a member without MANAGE_ROLES", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const roleId = await seedRole(serverId, "moderator", 0, 1);
+
+    await join(serverId, grace);
+
+    expect(
+      (await putMemberRole(grace, serverId, grace.id, roleId)).status,
+    ).toBe(403);
   });
 });
