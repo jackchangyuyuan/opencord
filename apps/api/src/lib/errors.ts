@@ -55,3 +55,10 @@ export function ownerMustTransfer(): AppError {
     "Transfer ownership before leaving this server",
   );
 }
+
+export function nonceReused(): AppError {
+  return conflict(
+    "NONCE_REUSED",
+    "That nonce already belongs to a different message",
+  );
+}

@@ -22,6 +22,10 @@
     "./schemas": {
       "types": "./src/schemas/index.ts",
       "default": "./dist/schemas/index.js"
+    },
+    "./types": {
+      "types": "./src/types.ts",
+      "default": "./dist/types.js"
     }
   },
   "scripts": {

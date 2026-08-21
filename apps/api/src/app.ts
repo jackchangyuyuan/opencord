@@ -13,6 +13,7 @@ import {
   serverChannelsRouter,
 } from "./modules/channels/router.js";
 import { serverMembersRouter } from "./modules/members/router.js";
+import { messagesRouter } from "./modules/messages/router.js";
 import { serverRolesRouter } from "./modules/roles/router.js";
 import { serversRouter } from "./modules/servers/router.js";
 import { usersRouter } from "./modules/users/router.js";
@@ -59,6 +60,7 @@ const apiRouter = express.Router();
 apiRouter.use(requireAuth);
 apiRouter.use(express.json());
 apiRouter.use("/channels", channelsRouter);
+apiRouter.use("/channels/:channelId/messages", messagesRouter);
 apiRouter.use("/servers", serversRouter);
 apiRouter.use("/servers/:serverId/channels", serverChannelsRouter);
 apiRouter.use("/servers/:serverId/members", serverMembersRouter);
