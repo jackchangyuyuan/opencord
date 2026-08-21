@@ -11,24 +11,33 @@ import {
 } from "../../../db/schema/index.js";
 import { writeAudit } from "../../../lib/audit.js";
 import { notFound } from "../../../lib/errors.js";
+import { actorPosition, highestPositionOf } from "../../roles/queries.js";
+import {
+  requireBelowActor,
+  requireHeldPermissions,
+} from "../../roles/service.js";
 import { type ChannelOverwrites, listChannelOverwrites } from "./queries.js";
 
-async function requireRoleOfServer(
-  serverId: string,
+async function requireEditableRole(
+  context: ServerContext,
+  actorId: string,
   roleId: string,
 ): Promise<void> {
-  const rows = await db
-    .select({ id: roles.id })
+  const [role] = await db
+    .select({ position: roles.position })
     .from(roles)
-    .where(and(eq(roles.id, roleId), eq(roles.serverId, serverId)));
+    .where(and(eq(roles.id, roleId), eq(roles.serverId, context.server.id)));
 
-  if (rows.length === 0) {
+  if (role === undefined) {
     throw notFound("ROLE_NOT_FOUND", "That role is not part of this server");
   }
+
+  requireBelowActor(role.position, actorPosition(context, actorId));
 }
 
-async function requireMemberOfServer(
-  serverId: string,
+async function requireEditableMember(
+  context: ServerContext,
+  actorId: string,
   userId: string,
 ): Promise<void> {
   const rows = await db
@@ -36,7 +45,7 @@ async function requireMemberOfServer(
     .from(serverMembers)
     .where(
       and(
-        eq(serverMembers.serverId, serverId),
+        eq(serverMembers.serverId, context.server.id),
         eq(serverMembers.userId, userId),
       ),
     );
@@ -47,6 +56,15 @@ async function requireMemberOfServer(
       "That user is not a member of this server",
     );
   }
+
+  if (userId === actorId || context.server.ownerId === userId) {
+    return;
+  }
+
+  requireBelowActor(
+    await highestPositionOf(context.server.id, userId),
+    actorPosition(context, actorId),
+  );
 }
 
 export async function putRoleOverwrite(
@@ -56,7 +74,8 @@ export async function putRoleOverwrite(
   roleId: string,
   input: OverwriteInput,
 ): Promise<ChannelOverwrites> {
-  await requireRoleOfServer(context.server.id, roleId);
+  await requireEditableRole(context, actorId, roleId);
+  requireHeldPermissions(context, input.allow | input.deny);
 
   await db.transaction(async (tx) => {
     await tx
@@ -92,6 +111,8 @@ export async function deleteRoleOverwrite(
   actorId: string,
   roleId: string,
 ): Promise<void> {
+  await requireEditableRole(context, actorId, roleId);
+
   await db.transaction(async (tx) => {
     await tx
       .delete(channelRoleOverwrites)
@@ -120,7 +141,8 @@ export async function putMemberOverwrite(
   userId: string,
   input: OverwriteInput,
 ): Promise<ChannelOverwrites> {
-  await requireMemberOfServer(context.server.id, userId);
+  await requireEditableMember(context, actorId, userId);
+  requireHeldPermissions(context, input.allow | input.deny);
 
   await db.transaction(async (tx) => {
     await tx
@@ -159,6 +181,8 @@ export async function deleteMemberOverwrite(
   actorId: string,
   userId: string,
 ): Promise<void> {
+  await requireEditableMember(context, actorId, userId);
+
   await db.transaction(async (tx) => {
     await tx
       .delete(channelMemberOverwrites)

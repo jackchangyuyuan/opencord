@@ -149,6 +149,28 @@ function putMemberOverwrite(
     .send(body);
 }
 
+async function promoteToModerator(fixture: Fixture): Promise<void> {
+  const [role] = await db
+    .insert(roles)
+    .values({
+      serverId: fixture.serverId,
+      name: "Moderator",
+      permissions: Permissions.VIEW_CHANNEL | Permissions.MANAGE_ROLES,
+      position: 5,
+    })
+    .returning();
+
+  if (role === undefined) {
+    throw new Error("the fixture is incomplete");
+  }
+
+  await db.insert(memberRoles).values({
+    serverId: fixture.serverId,
+    userId: fixture.grace.id,
+    roleId: role.id,
+  });
+}
+
 function getChannel(account: Account, channelId: string) {
   return request(app)
     .get(`/api/v1/channels/${channelId}`)
@@ -295,6 +317,115 @@ describe("the overwrite routes", () => {
 
     expect(res.status).toBe(403);
     expect(await db.select().from(channelRoleOverwrites)).toEqual([]);
+  });
+
+  it("refuses to grant a permission the caller does not itself hold", async () => {
+    const fixture = await seed();
+
+    await promoteToModerator(fixture);
+
+    const res = await putMemberOverwrite(
+      fixture.grace,
+      fixture.channelId,
+      fixture.grace.id,
+      {
+        allow: Permissions.MANAGE_MESSAGES | Permissions.MENTION_EVERYONE,
+      },
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({
+      error: { code: "PERMISSION_NOT_HELD" },
+    });
+    expect(await db.select().from(channelMemberOverwrites)).toEqual([]);
+  });
+
+  it("lets a moderator pass on a permission it does hold", async () => {
+    const fixture = await seed();
+
+    await promoteToModerator(fixture);
+
+    const res = await putMemberOverwrite(
+      fixture.grace,
+      fixture.channelId,
+      fixture.grace.id,
+      { allow: Permissions.VIEW_CHANNEL },
+    );
+
+    expect(res.status).toBe(200);
+  });
+
+  it("refuses an overwrite for a role at or above the caller's own", async () => {
+    const fixture = await seed();
+
+    await promoteToModerator(fixture);
+
+    const [admin] = await db
+      .insert(roles)
+      .values({
+        serverId: fixture.serverId,
+        name: "Admin",
+        permissions: Permissions.VIEW_CHANNEL,
+        position: 9,
+      })
+      .returning();
+
+    if (admin === undefined) {
+      throw new Error("the fixture is incomplete");
+    }
+
+    const res = await putRoleOverwrite(
+      fixture.grace,
+      fixture.channelId,
+      admin.id,
+      { deny: Permissions.VIEW_CHANNEL },
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: { code: "ROLE_HIERARCHY" } });
+    expect(await db.select().from(channelRoleOverwrites)).toEqual([]);
+  });
+
+  it("refuses a member overwrite for someone the caller does not outrank", async () => {
+    const fixture = await seed();
+
+    await promoteToModerator(fixture);
+
+    const hopper = await signUp("hopper");
+
+    await db
+      .insert(serverMembers)
+      .values({ serverId: fixture.serverId, userId: hopper.id });
+
+    const [admin] = await db
+      .insert(roles)
+      .values({
+        serverId: fixture.serverId,
+        name: "Admin",
+        permissions: Permissions.VIEW_CHANNEL,
+        position: 9,
+      })
+      .returning();
+
+    if (admin === undefined) {
+      throw new Error("the fixture is incomplete");
+    }
+
+    await db.insert(memberRoles).values({
+      serverId: fixture.serverId,
+      userId: hopper.id,
+      roleId: admin.id,
+    });
+
+    const res = await putMemberOverwrite(
+      fixture.grace,
+      fixture.channelId,
+      hopper.id,
+      { deny: Permissions.VIEW_CHANNEL },
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: { code: "ROLE_HIERARCHY" } });
   });
 
   it("rejects a mask outside the twelve bits", async () => {

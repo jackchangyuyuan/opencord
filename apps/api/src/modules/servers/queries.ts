@@ -9,6 +9,7 @@ import {
   servers,
   users,
 } from "../../db/schema/index.js";
+import { type PublicRole, serializeRole } from "../roles/queries.js";
 import { type PublicUser, serializeUser } from "../users/queries.js";
 
 export interface ServerSummary {
@@ -54,15 +55,6 @@ export async function listServersForUser(
   return rows.map(serializeServer);
 }
 
-export interface PublicRole {
-  id: string;
-  name: string;
-  color: number | null;
-  position: number;
-  permissions: number;
-  isDefault: boolean;
-}
-
 export interface ServerDetail extends ServerSummary {
   everyoneRole: PublicRole;
   roles: PublicRole[];
@@ -78,17 +70,6 @@ export interface ServerMemberEntry {
 export interface Page<Entry> {
   data: Entry[];
   nextCursor: string | null;
-}
-
-export function serializeRole(role: PublicRole): PublicRole {
-  return {
-    id: role.id,
-    name: role.name,
-    color: role.color,
-    position: role.position,
-    permissions: role.permissions,
-    isDefault: role.isDefault,
-  };
 }
 
 export function serializeServerDetail(context: ServerContext): ServerDetail {

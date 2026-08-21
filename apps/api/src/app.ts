@@ -12,6 +12,7 @@ import {
   channelsRouter,
   serverChannelsRouter,
 } from "./modules/channels/router.js";
+import { serverRolesRouter } from "./modules/roles/router.js";
 import { serversRouter } from "./modules/servers/router.js";
 import { usersRouter } from "./modules/users/router.js";
 import { redis } from "./redis.js";
@@ -59,6 +60,7 @@ apiRouter.use(express.json());
 apiRouter.use("/channels", channelsRouter);
 apiRouter.use("/servers", serversRouter);
 apiRouter.use("/servers/:serverId/channels", serverChannelsRouter);
+apiRouter.use("/servers/:serverId/roles", serverRolesRouter);
 apiRouter.use("/users", usersRouter);
 
 app.use("/api/v1", apiRouter);

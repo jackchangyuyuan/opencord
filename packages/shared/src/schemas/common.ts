@@ -7,6 +7,9 @@ import {
   USERNAME_MAX_LENGTH,
   USERNAME_MIN_LENGTH,
 } from "../constants/index.js";
+import { ALL_PERMISSIONS } from "../permissions/index.js";
+
+export const permissionMaskSchema = z.int().min(0).max(ALL_PERMISSIONS);
 
 export const usernameSchema = z
   .string()
