@@ -6,21 +6,97 @@ import type {
 import { and, eq, sql } from "drizzle-orm";
 
 import type { ChannelRow, ServerContext } from "../../access/context.js";
-import { db } from "../../db/index.js";
-import { channels, messages } from "../../db/schema/index.js";
+import { db, type Transaction } from "../../db/index.js";
+import { channels, mentions, messages } from "../../db/schema/index.js";
 import { writeAudit } from "../../lib/audit.js";
 import { forbidden, nonceReused, notFound } from "../../lib/errors.js";
 import { actorPosition, highestPositionOf } from "../roles/queries.js";
 import { requireBelowActor } from "../roles/service.js";
+import { applyMentions, findMentionCandidates } from "./mentions.js";
 import {
   findLiveMessage,
   findMessageByNonce,
   type MessageRow,
+  resolveMentions,
 } from "./queries.js";
 
 export interface SendMessageResult {
   created: boolean;
   row: MessageRow;
+}
+
+function mayMentionEveryone(context: ServerContext): boolean {
+  return (context.permissions & Permissions.MENTION_EVERYONE) !== 0;
+}
+
+interface PreparedContent {
+  content: string;
+  mentionedUserIds: string[];
+  everyone: boolean;
+}
+
+async function prepareContent(
+  serverId: string,
+  authorId: string,
+  raw: string,
+): Promise<PreparedContent> {
+  const candidates = findMentionCandidates(raw);
+  const resolution = await resolveMentions(serverId, candidates);
+
+  return {
+    content: applyMentions(raw, resolution),
+    mentionedUserIds: [...resolution.users.values()].filter(
+      (userId) => userId !== authorId,
+    ),
+    everyone: candidates.everyone,
+  };
+}
+
+function writeMentions(
+  tx: Transaction,
+  channelId: string,
+  messageId: string,
+  userIds: string[],
+): Promise<unknown> {
+  if (userIds.length === 0) {
+    return Promise.resolve();
+  }
+
+  return tx
+    .insert(mentions)
+    .values(userIds.map((userId) => ({ userId, messageId, channelId })))
+    .onConflictDoNothing();
+}
+
+function advanceEveryoneWatermark(
+  tx: Transaction,
+  channelId: string,
+  messageId: string,
+): Promise<unknown> {
+  return tx
+    .update(channels)
+    .set({
+      lastEveryoneMentionId: sql`greatest(${channels.lastEveryoneMentionId}, ${messageId}::uuid)`,
+    })
+    .where(eq(channels.id, channelId));
+}
+
+function repairEveryoneWatermark(
+  tx: Transaction,
+  channelId: string,
+  affectedMessageId: string,
+): Promise<unknown> {
+  return tx
+    .update(channels)
+    .set({
+      lastEveryoneMentionId: sql`(select ${messages.id} from ${messages} where ${messages.channelId} = ${channelId} and ${messages.deletedAt} is null and ${messages.mentionsEveryone} order by ${messages.id} desc limit 1)`,
+    })
+    .where(
+      and(
+        eq(channels.id, channelId),
+        eq(channels.lastEveryoneMentionId, affectedMessageId),
+      ),
+    );
 }
 
 function isReplay(
@@ -37,11 +113,18 @@ function isReplay(
 }
 
 export async function sendMessage(
+  context: ServerContext,
   channel: ChannelRow,
   authorId: string,
   input: SendMessageInput,
 ): Promise<SendMessageResult> {
   const replyToId = input.replyToId ?? null;
+  const prepared = await prepareContent(
+    context.server.id,
+    authorId,
+    input.content,
+  );
+  const broadcast = prepared.everyone && mayMentionEveryone(context);
 
   if (
     replyToId !== null &&
@@ -49,7 +132,7 @@ export async function sendMessage(
   ) {
     const existing = await findMessageByNonce(authorId, input.nonce);
 
-    if (isReplay(existing, channel.id, input.content, replyToId)) {
+    if (isReplay(existing, channel.id, prepared.content, replyToId)) {
       return { created: false, row: existing };
     }
 
@@ -65,9 +148,10 @@ export async function sendMessage(
       .values({
         channelId: channel.id,
         authorId,
-        content: input.content,
+        content: prepared.content,
         nonce: input.nonce,
         replyToId,
+        mentionsEveryone: broadcast,
       })
       .onConflictDoNothing({
         target: [messages.authorId, messages.nonce],
@@ -83,7 +167,7 @@ export async function sendMessage(
           and(eq(messages.authorId, authorId), eq(messages.nonce, input.nonce)),
         );
 
-      if (!isReplay(existing, channel.id, input.content, replyToId)) {
+      if (!isReplay(existing, channel.id, prepared.content, replyToId)) {
         throw nonceReused();
       }
 
@@ -96,6 +180,12 @@ export async function sendMessage(
         lastMessageId: sql`greatest(${channels.lastMessageId}, ${inserted.id}::uuid)`,
       })
       .where(eq(channels.id, channel.id));
+
+    await writeMentions(tx, channel.id, inserted.id, prepared.mentionedUserIds);
+
+    if (broadcast) {
+      await advanceEveryoneWatermark(tx, channel.id, inserted.id);
+    }
 
     return { created: true, row: inserted };
   });
@@ -121,6 +211,7 @@ async function requireLiveMessage(
 }
 
 export async function editMessage(
+  context: ServerContext,
   channel: ChannelRow,
   actorId: string,
   messageId: string,
@@ -132,17 +223,40 @@ export async function editMessage(
     throw forbidden("NOT_THE_AUTHOR", "Only the author may edit a message");
   }
 
-  const [edited] = await db
-    .update(messages)
-    .set({ content: input.content, editedAt: new Date() })
-    .where(eq(messages.id, message.id))
-    .returning();
+  const prepared = await prepareContent(
+    context.server.id,
+    actorId,
+    input.content,
+  );
 
-  if (edited === undefined) {
-    throw new Error("Message edit returned no row");
-  }
+  const broadcast = prepared.everyone && mayMentionEveryone(context);
 
-  return edited;
+  return db.transaction(async (tx) => {
+    const [edited] = await tx
+      .update(messages)
+      .set({
+        content: prepared.content,
+        mentionsEveryone: broadcast,
+        editedAt: new Date(),
+      })
+      .where(eq(messages.id, message.id))
+      .returning();
+
+    if (edited === undefined) {
+      throw new Error("Message edit returned no row");
+    }
+
+    await tx.delete(mentions).where(eq(mentions.messageId, message.id));
+    await writeMentions(tx, channel.id, message.id, prepared.mentionedUserIds);
+
+    if (broadcast) {
+      await advanceEveryoneWatermark(tx, channel.id, message.id);
+    } else {
+      await repairEveryoneWatermark(tx, channel.id, message.id);
+    }
+
+    return edited;
+  });
 }
 
 export async function deleteMessage(
@@ -177,6 +291,8 @@ export async function deleteMessage(
       .set({ deletedAt })
       .where(eq(messages.id, message.id));
 
+    await tx.delete(mentions).where(eq(mentions.messageId, message.id));
+
     await tx
       .update(channels)
       .set({
@@ -188,6 +304,8 @@ export async function deleteMessage(
           eq(channels.lastMessageId, message.id),
         ),
       );
+
+    await repairEveryoneWatermark(tx, channel.id, message.id);
 
     if (byModerator) {
       await writeAudit(tx, {

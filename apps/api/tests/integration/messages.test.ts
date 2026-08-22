@@ -12,6 +12,7 @@ import {
   auditLog,
   channelRoleOverwrites,
   memberRoles,
+  mentions,
   messages,
   roles,
   serverMembers,
@@ -187,6 +188,15 @@ function watermark(channelId: string): Promise<string | null> {
   return db.query.channels
     .findFirst({ columns: { lastMessageId: true }, where: { id: channelId } })
     .then((channel) => channel?.lastMessageId ?? null);
+}
+
+function everyoneWatermark(channelId: string): Promise<string | null> {
+  return db.query.channels
+    .findFirst({
+      columns: { lastEveryoneMentionId: true },
+      where: { id: channelId },
+    })
+    .then((channel) => channel?.lastEveryoneMentionId ?? null);
 }
 
 async function liveMax(channelId: string): Promise<string | null> {
@@ -1009,5 +1019,368 @@ describe("editing and soft-deleting messages", () => {
     await removeMessage(fixture.ada, fixture.channelId, ids[0] ?? "");
 
     expect(await watermark(fixture.channelId)).toBe(ids[1]);
+  });
+});
+
+describe("mentions are parsed, stored and repaired", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  it("rewrites a user mention and writes one row", async () => {
+    const fixture = await seed();
+
+    const res = await send(fixture.ada, fixture.channelId, {
+      content: "hi @grace",
+      nonce: randomUUID(),
+    });
+
+    expect(res.status).toBe(201);
+    expect(messageBody.parse(res.body).content).toBe(
+      `hi <@${fixture.grace.id}>`,
+    );
+
+    const rows = await db.select().from(mentions);
+
+    expect(rows).toEqual([
+      {
+        userId: fixture.grace.id,
+        messageId: messageBody.parse(res.body).id,
+        channelId: fixture.channelId,
+      },
+    ]);
+  });
+
+  it("writes no row for a self-mention", async () => {
+    const fixture = await seed();
+
+    await send(fixture.ada, fixture.channelId, {
+      content: "note to @ada",
+      nonce: randomUUID(),
+    });
+
+    expect(await db.select().from(mentions)).toEqual([]);
+  });
+
+  it("leaves an unresolvable marker literal", async () => {
+    const fixture = await seed();
+
+    const res = await send(fixture.ada, fixture.channelId, {
+      content: "hi @nobody and #nowhere",
+      nonce: randomUUID(),
+    });
+
+    expect(messageBody.parse(res.body).content).toBe("hi @nobody and #nowhere");
+    expect(await db.select().from(mentions)).toEqual([]);
+  });
+
+  it("rewrites role and channel mentions without writing rows", async () => {
+    const fixture = await seed();
+
+    const [role] = await db
+      .insert(roles)
+      .values({ serverId: fixture.serverId, name: "staff", position: 1 })
+      .returning({ id: roles.id });
+
+    const res = await send(fixture.ada, fixture.channelId, {
+      content: "@staff see #general",
+      nonce: randomUUID(),
+    });
+
+    expect(messageBody.parse(res.body).content).toBe(
+      `<@&${role?.id ?? ""}> see <#${fixture.channelId}>`,
+    );
+    expect(await db.select().from(mentions)).toEqual([]);
+  });
+
+  it("does not resolve a user who is not a member of the server", async () => {
+    const fixture = await seed();
+
+    await signUp("hopper");
+
+    const res = await send(fixture.ada, fixture.channelId, {
+      content: "hi @hopper",
+      nonce: randomUUID(),
+    });
+
+    expect(messageBody.parse(res.body).content).toBe("hi @hopper");
+  });
+});
+
+describe("the @everyone watermark", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  it("advances only when the author holds MENTION_EVERYONE", async () => {
+    const fixture = await seed();
+
+    const denied = await send(fixture.grace, fixture.channelId, {
+      content: "@everyone listen",
+      nonce: randomUUID(),
+    });
+
+    expect(denied.status).toBe(201);
+    expect(await everyoneWatermark(fixture.channelId)).toBeNull();
+    expect(await db.select().from(mentions)).toEqual([]);
+
+    const allowed = await send(fixture.ada, fixture.channelId, {
+      content: "@everyone listen",
+      nonce: randomUUID(),
+    });
+
+    expect(await everyoneWatermark(fixture.channelId)).toBe(
+      messageBody.parse(allowed.body).id,
+    );
+  });
+
+  it("clears the badge when the pointing message is deleted", async () => {
+    const fixture = await seed();
+
+    const broadcast = messageBody.parse(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "@everyone listen",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+
+    expect(await everyoneWatermark(fixture.channelId)).toBe(broadcast.id);
+
+    await removeMessage(fixture.ada, fixture.channelId, broadcast.id);
+
+    expect(await everyoneWatermark(fixture.channelId)).toBeNull();
+  });
+
+  it("clears the badge when the mention is edited away", async () => {
+    const fixture = await seed();
+
+    const broadcast = messageBody.parse(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "@everyone listen",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+
+    await editMessage(
+      fixture.ada,
+      fixture.channelId,
+      broadcast.id,
+      "never mind",
+    );
+
+    expect(await everyoneWatermark(fixture.channelId)).toBeNull();
+  });
+
+  it("advances when an edit adds the mention", async () => {
+    const fixture = await seed();
+
+    const plain = messageBody.parse(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "just a message",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+
+    expect(await everyoneWatermark(fixture.channelId)).toBeNull();
+
+    await editMessage(
+      fixture.ada,
+      fixture.channelId,
+      plain.id,
+      "@everyone actually",
+    );
+
+    expect(await everyoneWatermark(fixture.channelId)).toBe(plain.id);
+  });
+
+  it("does not clobber a newer broadcast when an older one is deleted", async () => {
+    const fixture = await seed();
+
+    const older = messageBody.parse(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "@everyone first",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+    const newer = messageBody.parse(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "@everyone second",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+
+    expect(await everyoneWatermark(fixture.channelId)).toBe(newer.id);
+
+    await removeMessage(fixture.ada, fixture.channelId, older.id);
+
+    expect(await everyoneWatermark(fixture.channelId)).toBe(newer.id);
+  });
+
+  it("never falls back to a broadcast its author was not allowed to send", async () => {
+    const fixture = await seed();
+
+    const authorized = messageBody.parse(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "@everyone standup",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+
+    const denied = messageBody.parse(
+      (
+        await send(fixture.grace, fixture.channelId, {
+          content: "@everyone read this",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+
+    expect(await everyoneWatermark(fixture.channelId)).toBe(authorized.id);
+
+    await removeMessage(fixture.ada, fixture.channelId, authorized.id);
+
+    expect(await everyoneWatermark(fixture.channelId)).toBeNull();
+
+    const [row] = await db
+      .select({ mentionsEveryone: messages.mentionsEveryone })
+      .from(messages)
+      .where(eq(messages.id, denied.id));
+
+    expect(row?.mentionsEveryone).toBe(false);
+  });
+
+  it("never falls back to an email-like string that only looks like a broadcast", async () => {
+    const fixture = await seed();
+
+    const authorized = messageBody.parse(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "@everyone standup",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+
+    expect(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "mail me at bob@here.com",
+          nonce: randomUUID(),
+        })
+      ).status,
+    ).toBe(201);
+
+    await removeMessage(fixture.ada, fixture.channelId, authorized.id);
+
+    expect(await everyoneWatermark(fixture.channelId)).toBeNull();
+  });
+
+  it("falls back to the newest surviving broadcast", async () => {
+    const fixture = await seed();
+
+    const older = messageBody.parse(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "@everyone first",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+    const newer = messageBody.parse(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "@everyone second",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+
+    await removeMessage(fixture.ada, fixture.channelId, newer.id);
+
+    expect(await everyoneWatermark(fixture.channelId)).toBe(older.id);
+  });
+});
+
+describe("mention rows follow the message", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  it("disappear on a soft delete", async () => {
+    const fixture = await seed();
+
+    const posted = messageBody.parse(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "hi @grace",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+
+    expect(await db.select().from(mentions)).toHaveLength(1);
+
+    await removeMessage(fixture.ada, fixture.channelId, posted.id);
+
+    expect(await db.select().from(mentions)).toEqual([]);
+  });
+
+  it("disappear when the mention is edited away", async () => {
+    const fixture = await seed();
+
+    const posted = messageBody.parse(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "hi @grace",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+
+    expect(await db.select().from(mentions)).toHaveLength(1);
+
+    await editMessage(fixture.ada, fixture.channelId, posted.id, "never mind");
+
+    expect(await db.select().from(mentions)).toEqual([]);
+  });
+
+  it("are rewritten when an edit changes who is mentioned", async () => {
+    const fixture = await seed();
+    const hopper = await signUp("hopper");
+
+    await db
+      .insert(serverMembers)
+      .values({ serverId: fixture.serverId, userId: hopper.id });
+
+    const posted = messageBody.parse(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "hi @grace",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+
+    await editMessage(fixture.ada, fixture.channelId, posted.id, "hi @hopper");
+
+    expect(await db.select().from(mentions)).toEqual([
+      {
+        userId: hopper.id,
+        messageId: posted.id,
+        channelId: fixture.channelId,
+      },
+    ]);
   });
 });

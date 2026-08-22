@@ -26,7 +26,12 @@ messagesRouter.post(
   validate({ params: channelParamsSchema, body: sendMessageSchema }),
   requireChannelPermission(Permissions.SEND_MESSAGES),
   async (req, res) => {
-    const result = await sendMessage(req.channel, req.user.id, req.body);
+    const result = await sendMessage(
+      req.server,
+      req.channel,
+      req.user.id,
+      req.body,
+    );
 
     res
       .status(result.created ? 201 : 200)
@@ -54,6 +59,7 @@ messagesRouter.patch(
   requireChannelPermission(),
   async (req, res) => {
     const edited = await editMessage(
+      req.server,
       req.channel,
       req.user.id,
       req.params.messageId,

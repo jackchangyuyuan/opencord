@@ -1,11 +1,30 @@
 import type { MessagePageQuery } from "@opencord/shared/schemas";
 import type { Message } from "@opencord/shared/types";
-import { and, asc, desc, eq, gt, isNull, lt, lte, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 
 import { db } from "../../db/index.js";
-import { messages } from "../../db/schema/index.js";
+import {
+  channels,
+  messages,
+  roles,
+  serverMembers,
+  users,
+} from "../../db/schema/index.js";
 import { decodeCursor, encodeCursor } from "../../lib/cursor.js";
 import { AppError } from "../../lib/errors.js";
+import type { MentionCandidates, MentionResolution } from "./mentions.js";
 
 export type MessageRow = typeof messages.$inferSelect;
 
@@ -147,5 +166,56 @@ function paginate(rows: MessageRow[], limit: number): MessagePage {
     rows: page,
     nextCursor:
       rows.length > limit && last !== undefined ? encodeCursor(last.id) : null,
+  };
+}
+
+export async function resolveMentions(
+  serverId: string,
+  candidates: MentionCandidates,
+): Promise<MentionResolution> {
+  const userRows =
+    candidates.names.length === 0
+      ? []
+      : await db
+          .select({ id: users.id, username: users.username })
+          .from(serverMembers)
+          .innerJoin(users, eq(users.id, serverMembers.userId))
+          .where(
+            and(
+              eq(serverMembers.serverId, serverId),
+              inArray(users.username, candidates.names),
+            ),
+          );
+
+  const roleRows =
+    candidates.names.length === 0
+      ? []
+      : await db
+          .select({ id: roles.id, name: roles.name })
+          .from(roles)
+          .where(
+            and(
+              eq(roles.serverId, serverId),
+              inArray(sql`lower(${roles.name})`, candidates.names),
+            ),
+          );
+
+  const channelRows =
+    candidates.channels.length === 0
+      ? []
+      : await db
+          .select({ id: channels.id, name: channels.name })
+          .from(channels)
+          .where(
+            and(
+              eq(channels.serverId, serverId),
+              inArray(channels.name, candidates.channels),
+            ),
+          );
+
+  return {
+    users: new Map(userRows.map((row) => [row.username, row.id])),
+    roles: new Map(roleRows.map((row) => [row.name.toLowerCase(), row.id])),
+    channels: new Map(channelRows.map((row) => [row.name ?? "", row.id])),
   };
 }

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   foreignKey,
   index,
   pgTable,
@@ -28,6 +29,7 @@ export const messages = pgTable(
     content: text("content").notNull(),
     nonce: uuid("nonce"),
     replyToId: uuid("reply_to_id"),
+    mentionsEveryone: boolean("mentions_everyone").default(false).notNull(),
     editedAt: timestamp("edited_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })

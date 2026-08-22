@@ -12,6 +12,7 @@ export interface ChannelSummary {
   topic: string | null;
   position: number;
   lastMessageId: string | null;
+  lastEveryoneMentionId: string | null;
   createdAt: string;
 }
 
@@ -24,6 +25,7 @@ export function serializeChannel(channel: ChannelRow): ChannelSummary {
     topic: channel.topic,
     position: channel.position,
     lastMessageId: channel.lastMessageId,
+    lastEveryoneMentionId: channel.lastEveryoneMentionId,
     createdAt: channel.createdAt.toISOString(),
   };
 }
