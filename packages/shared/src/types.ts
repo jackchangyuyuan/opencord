@@ -1,3 +1,10 @@
+export interface MessagePreview {
+  id: string;
+  authorId: string;
+  content: string;
+  deletedAt: string | null;
+}
+
 export interface Message {
   id: string;
   channelId: string;
@@ -5,6 +12,7 @@ export interface Message {
   content: string;
   nonce: string | null;
   replyToId: string | null;
+  replyTo: MessagePreview | null;
   editedAt: string | null;
   deletedAt: string | null;
   createdAt: string;

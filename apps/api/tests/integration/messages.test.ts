@@ -115,6 +115,53 @@ function send(
     .send(body);
 }
 
+const messagePage = z.object({
+  data: z.array(
+    messageBody.extend({
+      replyTo: z
+        .object({
+          id: z.string(),
+          authorId: z.string(),
+          content: z.string(),
+          deletedAt: z.string().nullable(),
+        })
+        .nullable(),
+    }),
+  ),
+  nextCursor: z.string().nullable(),
+});
+
+function listMessages(
+  account: Account,
+  channelId: string,
+  query: Record<string, unknown> = {},
+) {
+  return request(app)
+    .get(`/api/v1/channels/${channelId}/messages`)
+    .query(query)
+    .set("Cookie", account.cookies);
+}
+
+async function sendMany(
+  account: Account,
+  channelId: string,
+  count: number,
+): Promise<string[]> {
+  const ids: string[] = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const res = await send(account, channelId, {
+      content: `message ${String(index)}`,
+      nonce: randomUUID(),
+    });
+
+    expect(res.status).toBe(201);
+    ids.push(messageBody.parse(res.body).id);
+  }
+
+  return ids;
+}
+
 function watermark(channelId: string): Promise<string | null> {
   return db.query.channels
     .findFirst({ columns: { lastMessageId: true }, where: { id: channelId } })
@@ -469,5 +516,216 @@ describe("the watermark is monotonic under concurrency", () => {
     );
 
     expect(await watermark(fixture.channelId)).toBe(first.id);
+  });
+});
+
+describe("GET /api/v1/channels/:channelId/messages", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  it("returns the newest page first and pages backwards with before", async () => {
+    const fixture = await seed();
+    const ids = await sendMany(fixture.ada, fixture.channelId, 5);
+
+    const first = messagePage.parse(
+      (await listMessages(fixture.ada, fixture.channelId, { limit: 2 })).body,
+    );
+
+    expect(first.data.map((message) => message.id)).toEqual(
+      [ids[4], ids[3]].map((id) => id ?? ""),
+    );
+    expect(first.nextCursor).not.toBeNull();
+
+    const second = messagePage.parse(
+      (
+        await listMessages(fixture.ada, fixture.channelId, {
+          limit: 2,
+          before: first.nextCursor,
+        })
+      ).body,
+    );
+
+    expect(second.data.map((message) => message.id)).toEqual(
+      [ids[2], ids[1]].map((id) => id ?? ""),
+    );
+
+    const third = messagePage.parse(
+      (
+        await listMessages(fixture.ada, fixture.channelId, {
+          limit: 2,
+          before: second.nextCursor,
+        })
+      ).body,
+    );
+
+    expect(third.data.map((message) => message.id)).toEqual([ids[0] ?? ""]);
+    expect(third.nextCursor).toBeNull();
+  });
+
+  it("gap-fills forwards with after, oldest first", async () => {
+    const fixture = await seed();
+    const ids = await sendMany(fixture.ada, fixture.channelId, 5);
+
+    const newest = messagePage.parse(
+      (await listMessages(fixture.ada, fixture.channelId, { limit: 1 })).body,
+    );
+
+    const gap = messagePage.parse(
+      (
+        await listMessages(fixture.ada, fixture.channelId, {
+          after: Buffer.from(ids[1] ?? "", "utf8").toString("base64url"),
+        })
+      ).body,
+    );
+
+    expect(gap.data.map((message) => message.id)).toEqual(
+      [ids[2], ids[3], ids[4]].map((id) => id ?? ""),
+    );
+    expect(gap.nextCursor).toBeNull();
+    expect(newest.data[0]?.id).toBe(ids[4]);
+  });
+
+  it("centres a window on a message with around", async () => {
+    const fixture = await seed();
+    const ids = await sendMany(fixture.ada, fixture.channelId, 9);
+
+    const page = messagePage.parse(
+      (
+        await listMessages(fixture.ada, fixture.channelId, {
+          limit: 4,
+          around: Buffer.from(ids[4] ?? "", "utf8").toString("base64url"),
+        })
+      ).body,
+    );
+
+    expect(page.data.map((message) => message.id)).toEqual(
+      [ids[3], ids[4], ids[5], ids[6]].map((id) => id ?? ""),
+    );
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("returns exactly the requested number of messages around an anchor", async () => {
+    const fixture = await seed();
+    const ids = await sendMany(fixture.ada, fixture.channelId, 9);
+
+    const page = async (limit: number) =>
+      messagePage.parse(
+        (
+          await listMessages(fixture.ada, fixture.channelId, {
+            limit,
+            around: Buffer.from(ids[4] ?? "", "utf8").toString("base64url"),
+          })
+        ).body,
+      ).data;
+
+    expect(await page(1)).toHaveLength(1);
+    expect((await page(1))[0]?.id).toBe(ids[4]);
+    expect(await page(3)).toHaveLength(3);
+    expect(await page(5)).toHaveLength(5);
+    expect((await page(5)).map((message) => message.id)).toEqual(
+      [ids[2], ids[3], ids[4], ids[5], ids[6]].map((id) => id ?? ""),
+    );
+  });
+
+  it("rejects two cursors at once", async () => {
+    const fixture = await seed();
+    const ids = await sendMany(fixture.ada, fixture.channelId, 2);
+    const cursor = Buffer.from(ids[0] ?? "", "utf8").toString("base64url");
+
+    const res = await listMessages(fixture.ada, fixture.channelId, {
+      before: cursor,
+      after: cursor,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: { code: "VALIDATION_FAILED" } });
+  });
+
+  it("rejects a malformed cursor", async () => {
+    const fixture = await seed();
+
+    const res = await listMessages(fixture.ada, fixture.channelId, {
+      before: "not-a-cursor",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: { code: "INVALID_CURSOR" } });
+  });
+
+  it("rejects a limit above the cap", async () => {
+    const fixture = await seed();
+
+    expect(
+      (await listMessages(fixture.ada, fixture.channelId, { limit: 101 }))
+        .status,
+    ).toBe(400);
+  });
+
+  it("excludes tombstoned messages through the partial index", async () => {
+    const fixture = await seed();
+    const ids = await sendMany(fixture.ada, fixture.channelId, 3);
+
+    await db
+      .update(messages)
+      .set({ deletedAt: new Date() })
+      .where(eq(messages.id, ids[1] ?? ""));
+
+    const page = messagePage.parse(
+      (await listMessages(fixture.ada, fixture.channelId)).body,
+    );
+
+    expect(page.data.map((message) => message.id)).toEqual(
+      [ids[2], ids[0]].map((id) => id ?? ""),
+    );
+  });
+
+  it("carries the quoted preview on both the read and the write path", async () => {
+    const fixture = await seed();
+
+    const quoted = messageBody.parse(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "original",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+
+    const posted = await send(fixture.grace, fixture.channelId, {
+      content: "reply",
+      nonce: randomUUID(),
+      replyToId: quoted.id,
+    });
+
+    expect(posted.body).toMatchObject({
+      replyTo: { id: quoted.id, authorId: fixture.ada.id, content: "original" },
+    });
+
+    const page = messagePage.parse(
+      (await listMessages(fixture.grace, fixture.channelId)).body,
+    );
+
+    expect(page.data[0]?.replyTo).toMatchObject({
+      id: quoted.id,
+      content: "original",
+      deletedAt: null,
+    });
+    expect(page.data[1]?.replyTo).toBeNull();
+  });
+
+  it("hides the channel from a caller who cannot view it", async () => {
+    const fixture = await seed();
+
+    await db.insert(channelRoleOverwrites).values({
+      channelId: fixture.channelId,
+      serverId: fixture.serverId,
+      roleId: fixture.everyoneRoleId,
+      deny: Permissions.VIEW_CHANNEL,
+    });
+
+    expect((await listMessages(fixture.grace, fixture.channelId)).status).toBe(
+      404,
+    );
   });
 });

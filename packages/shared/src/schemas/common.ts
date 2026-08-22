@@ -35,3 +35,25 @@ export const paginationSchema = z.object({
 });
 
 export type Pagination = z.infer<typeof paginationSchema>;
+
+export const messagePageSchema = z
+  .object({
+    before: z.string().min(1).optional(),
+    after: z.string().min(1).optional(),
+    around: z.string().min(1).optional(),
+    limit: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_PAGE_SIZE)
+      .default(DEFAULT_PAGE_SIZE),
+  })
+  .refine(
+    (input) =>
+      [input.before, input.after, input.around].filter(
+        (cursor) => cursor !== undefined,
+      ).length <= 1,
+    "Supply at most one of before, after or around",
+  );
+
+export type MessagePageQuery = z.infer<typeof messagePageSchema>;
