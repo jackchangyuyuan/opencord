@@ -26,6 +26,8 @@ import { requireTestDatabase } from "../setup.js";
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 const password = "correct horse battery staple";
+const SETTLE_TIMEOUT_MS = 2000;
+const SETTLE_POLL_MS = 25;
 
 const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
@@ -141,6 +143,25 @@ describe("socket rooms", () => {
     return client;
   }
 
+  async function settle(
+    client: Client,
+    predicate: (rooms: Set<string>) => boolean,
+  ): Promise<Set<string>> {
+    const deadline = Date.now() + SETTLE_TIMEOUT_MS;
+
+    for (;;) {
+      const rooms = await roomsOf(client);
+
+      if (predicate(rooms) || Date.now() > deadline) {
+        return rooms;
+      }
+
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, SETTLE_POLL_MS);
+      });
+    }
+  }
+
   async function roomsOf(client: Client): Promise<Set<string>> {
     const [socket] = await io.local.fetchSockets();
 
@@ -218,6 +239,33 @@ describe("socket rooms", () => {
 
     expect(rooms.has(`channel:${channels[0]?.id ?? ""}`)).toBe(false);
     expect(rooms.has(`channel:${channels[1]?.id ?? ""}`)).toBe(true);
+  });
+
+  it("joins the rooms of a server created while the socket is connected", async () => {
+    const ada = await signUp("ada");
+
+    const client = await open(ada);
+
+    expect(
+      [...(await roomsOf(client))].filter(
+        (room) => room.startsWith("server:") || room.startsWith("channel:"),
+      ),
+    ).toEqual([]);
+
+    const serverId = await createServerFor(ada, "Analytical Engine");
+    const channels = await listChannels(ada, serverId);
+
+    expect(channels).toHaveLength(2);
+
+    const rooms = await settle(client, (current) =>
+      channels.every((channel) => current.has(`channel:${channel.id}`)),
+    );
+
+    expect(rooms).toContain(`server:${serverId}`);
+
+    for (const channel of channels) {
+      expect(rooms).toContain(`channel:${channel.id}`);
+    }
   });
 
   it("joins no channel room for a user who has joined nothing", async () => {

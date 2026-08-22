@@ -6,6 +6,11 @@ import { memberRoles } from "../../db/schema/index.js";
 import { writeAudit } from "../../lib/audit.js";
 import { forbidden, notFound } from "../../lib/errors.js";
 import {
+  emitPermissionsChanged,
+  emitRoleUpdate,
+  rederiveRoomsFor,
+} from "../../socket/emit.js";
+import {
   actorPosition,
   findServerRole,
   highestPositionOf,
@@ -80,6 +85,11 @@ export async function assignRole(
     });
   });
 
+  await rederiveRoomsFor([targetUserId]);
+
+  emitRoleUpdate(context.server.id);
+  emitPermissionsChanged(context.server.id);
+
   return listMemberRoleIds(context.server.id, targetUserId);
 }
 
@@ -116,6 +126,11 @@ export async function unassignRole(
       metadata: { roleId },
     });
   });
+
+  await rederiveRoomsFor([targetUserId]);
+
+  emitRoleUpdate(context.server.id);
+  emitPermissionsChanged(context.server.id);
 
   return listMemberRoleIds(context.server.id, targetUserId);
 }

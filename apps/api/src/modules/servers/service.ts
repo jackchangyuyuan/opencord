@@ -15,6 +15,14 @@ import {
   notFound,
   ownerMustTransfer,
 } from "../../lib/errors.js";
+import {
+  emitMemberEvent,
+  emitPermissionsChanged,
+  emitServerEvent,
+  joinCreatedServerRooms,
+  rederiveRoomsFor,
+  serverMemberIds,
+} from "../../socket/emit.js";
 import { createDefaultChannels } from "../channels/service.js";
 import {
   isServerMember,
@@ -32,11 +40,11 @@ const EVERYONE_PERMISSIONS =
   Permissions.ADD_REACTIONS |
   Permissions.CREATE_INVITE;
 
-export function createServer(
+export async function createServer(
   ownerId: string,
   input: CreateServerInput,
 ): Promise<ServerSummary> {
-  return db.transaction(async (tx) => {
+  const created = await db.transaction(async (tx) => {
     const [server] = await tx
       .insert(servers)
       .values({ name: input.name, ownerId })
@@ -54,22 +62,26 @@ export function createServer(
       isDefault: true,
     });
 
-    await createDefaultChannels(tx, server.id);
+    const channelIds = await createDefaultChannels(tx, server.id);
 
     await tx
       .insert(serverMembers)
       .values({ serverId: server.id, userId: ownerId });
 
-    return serializeServer(server);
+    return { channelIds, summary: serializeServer(server) };
   });
+
+  joinCreatedServerRooms(ownerId, created.summary.id, created.channelIds);
+
+  return created.summary;
 }
 
-export function updateServer(
+export async function updateServer(
   context: ServerContext,
   actorId: string,
   input: UpdateServerInput,
 ): Promise<ServerDetail> {
-  return db.transaction(async (tx) => {
+  const detail = await db.transaction(async (tx) => {
     const [server] = await tx
       .update(servers)
       .set(input)
@@ -91,6 +103,10 @@ export function updateServer(
 
     return serializeServerDetail({ ...context, server });
   });
+
+  emitServerEvent("server:update", context.server.id);
+
+  return detail;
 }
 
 export async function transferOwnership(
@@ -113,7 +129,7 @@ export async function transferOwnership(
     );
   }
 
-  return db.transaction(async (tx) => {
+  const detail = await db.transaction(async (tx) => {
     const [server] = await tx
       .update(servers)
       .set({ ownerId: targetUserId })
@@ -135,6 +151,13 @@ export async function transferOwnership(
 
     return serializeServerDetail({ ...context, server });
   });
+
+  await rederiveRoomsFor([actorId, targetUserId]);
+
+  emitServerEvent("server:update", context.server.id);
+  emitPermissionsChanged(context.server.id);
+
+  return detail;
 }
 
 export async function leaveServer(
@@ -153,6 +176,10 @@ export async function leaveServer(
         eq(serverMembers.userId, userId),
       ),
     );
+
+  emitMemberEvent("member:leave", context.server.id, userId);
+
+  await rederiveRoomsFor([userId]);
 }
 
 export async function deleteServer(
@@ -163,5 +190,11 @@ export async function deleteServer(
     throw forbidden();
   }
 
+  const memberIds = await serverMemberIds(context.server.id);
+
   await db.delete(servers).where(eq(servers.id, context.server.id));
+
+  emitServerEvent("server:delete", context.server.id);
+
+  await rederiveRoomsFor(memberIds);
 }

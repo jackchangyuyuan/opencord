@@ -10,11 +10,24 @@ import { roles } from "../../db/schema/index.js";
 import { writeAudit } from "../../lib/audit.js";
 import { forbidden, notFound } from "../../lib/errors.js";
 import {
+  emitPermissionsChanged,
+  emitRoleUpdate,
+  rederiveRoomsFor,
+  serverMemberIds,
+} from "../../socket/emit.js";
+import {
   actorPosition,
   findServerRole,
   type PublicRole,
   serializeRole,
 } from "./queries.js";
+
+export async function announceRoleChange(serverId: string): Promise<void> {
+  await rederiveRoomsFor(await serverMemberIds(serverId));
+
+  emitRoleUpdate(serverId);
+  emitPermissionsChanged(serverId);
+}
 
 export function requireBelowActor(position: number, actor: number): void {
   if (position >= actor) {
@@ -60,7 +73,7 @@ async function requireEditableRole(
   return role;
 }
 
-export function createRole(
+export async function createRole(
   context: ServerContext,
   actorId: string,
   input: CreateRoleInput,
@@ -68,7 +81,7 @@ export function createRole(
   requireBelowActor(input.position, actorPosition(context, actorId));
   requireHeldPermissions(context, input.permissions);
 
-  return db.transaction(async (tx) => {
+  const created = await db.transaction(async (tx) => {
     const [role] = await tx
       .insert(roles)
       .values({
@@ -95,6 +108,10 @@ export function createRole(
 
     return serializeRole(role);
   });
+
+  await announceRoleChange(context.server.id);
+
+  return created;
 }
 
 export async function updateRole(
@@ -113,7 +130,7 @@ export async function updateRole(
     requireBelowActor(input.position, actorPosition(context, actorId));
   }
 
-  return db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx) => {
     const [role] = await tx
       .update(roles)
       .set(input)
@@ -135,6 +152,10 @@ export async function updateRole(
 
     return serializeRole(role);
   });
+
+  await announceRoleChange(context.server.id);
+
+  return updated;
 }
 
 export async function deleteRole(
@@ -156,4 +177,6 @@ export async function deleteRole(
       metadata: { name: role.name },
     });
   });
+
+  await announceRoleChange(context.server.id);
 }

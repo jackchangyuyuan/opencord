@@ -1,0 +1,340 @@
+import { randomUUID } from "node:crypto";
+import { createServer } from "node:http";
+
+import type {
+  ClientToServerEvents,
+  ServerToClientEvents,
+} from "@opencord/shared/events";
+import { Permissions } from "@opencord/shared/permissions";
+import { io as connect, type Socket } from "socket.io-client";
+import request from "supertest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
+
+import { app } from "../../src/app.js";
+import { db } from "../../src/db/index.js";
+import { serverMembers } from "../../src/db/schema/index.js";
+import { createSocketServer } from "../../src/socket/index.js";
+import type { SocketServer } from "../../src/socket/types.js";
+import { requireTestDatabase } from "../setup.js";
+
+type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
+
+interface Instance {
+  io: SocketServer;
+  origin: string;
+}
+
+const password = "correct horse battery staple";
+const SETTLE_TIMEOUT_MS = 3000;
+const SETTLE_POLL_MS = 25;
+const SILENCE_MS = 250;
+
+const signUpBody = z.object({ user: z.object({ id: z.string() }) });
+const serverBody = z.object({ id: z.string() });
+const channelList = z.array(z.object({ id: z.string(), name: z.string() }));
+
+interface Account {
+  id: string;
+  cookie: string;
+  cookies: string[];
+}
+
+async function signUp(username: string): Promise<Account> {
+  const res = await request(app)
+    .post("/api/auth/sign-up/email")
+    .send({
+      email: `${username}@example.com`,
+      name: username,
+      password,
+      username,
+    });
+
+  expect(res.status).toBe(200);
+
+  const cookies = res.get("Set-Cookie") ?? [];
+
+  return {
+    id: signUpBody.parse(res.body).user.id,
+    cookie: cookies.flatMap((cookie) => cookie.split(";", 1)).join("; "),
+    cookies,
+  };
+}
+
+async function startInstance(): Promise<Instance> {
+  const httpServer = createServer(app);
+  const io = createSocketServer(httpServer);
+
+  await new Promise<void>((resolve) => {
+    httpServer.listen(0, "127.0.0.1", resolve);
+  });
+
+  const address = httpServer.address();
+
+  if (address === null || typeof address === "string") {
+    throw new Error("Expected the server to listen on a TCP port");
+  }
+
+  return { io, origin: `http://127.0.0.1:${String(address.port)}` };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+describe("cross-instance permission revocation", () => {
+  let holder: Instance;
+  let mutator: Instance;
+  const clients: Client[] = [];
+
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  beforeEach(async () => {
+    holder = await startInstance();
+    mutator = await startInstance();
+  });
+
+  afterEach(async () => {
+    for (const client of clients.splice(0)) {
+      client.close();
+    }
+
+    await Promise.all([holder.io.close(), mutator.io.close()]);
+  });
+
+  async function open(instance: Instance, account: Account): Promise<Client> {
+    const client: Client = connect(instance.origin, {
+      autoConnect: false,
+      extraHeaders: { cookie: account.cookie },
+      reconnection: false,
+      transports: ["websocket"],
+    });
+
+    clients.push(client);
+
+    const greeted = new Promise<void>((resolve) => {
+      client.once("connection:ready", () => {
+        resolve();
+      });
+    });
+
+    client.connect();
+
+    await greeted;
+
+    return client;
+  }
+
+  async function roomsOn(instance: Instance): Promise<Set<string>> {
+    const [socket] = await instance.io.local.fetchSockets();
+
+    return new Set(socket?.rooms ?? []);
+  }
+
+  async function settle(
+    instance: Instance,
+    predicate: (rooms: Set<string>) => boolean,
+  ): Promise<Set<string>> {
+    const deadline = Date.now() + SETTLE_TIMEOUT_MS;
+
+    for (;;) {
+      const rooms = await roomsOn(instance);
+
+      if (predicate(rooms) || Date.now() > deadline) {
+        return rooms;
+      }
+
+      await sleep(SETTLE_POLL_MS);
+    }
+  }
+
+  function silence(client: Client, ms: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        resolve(true);
+      }, ms);
+
+      client.once("message:create", () => {
+        clearTimeout(timer);
+        resolve(false);
+      });
+    });
+  }
+
+  async function seed(): Promise<{
+    ada: Account;
+    grace: Account;
+    serverId: string;
+    channelId: string;
+    everyoneRoleId: string;
+  }> {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+
+    const created = await request(app)
+      .post("/api/v1/servers")
+      .set("Cookie", ada.cookies)
+      .send({ name: "Analytical Engine" });
+
+    const serverId = serverBody.parse(created.body).id;
+
+    await db.insert(serverMembers).values({ serverId, userId: grace.id });
+
+    const listed = await request(app)
+      .get(`/api/v1/servers/${serverId}/channels`)
+      .set("Cookie", ada.cookies);
+
+    const [channel] = channelList.parse(listed.body);
+    const everyone = await db.query.roles.findFirst({
+      columns: { id: true },
+      where: { serverId, isDefault: true },
+    });
+
+    if (channel === undefined || everyone === undefined) {
+      throw new Error("the fixture is incomplete");
+    }
+
+    return {
+      ada,
+      grace,
+      serverId,
+      channelId: channel.id,
+      everyoneRoleId: everyone.id,
+    };
+  }
+
+  it("removes the channel room of a socket held by the other instance", async () => {
+    const fixture = await seed();
+    const client = await open(holder, fixture.grace);
+
+    expect((await roomsOn(holder)).has(`channel:${fixture.channelId}`)).toBe(
+      true,
+    );
+
+    const announced = new Promise<{ serverId: string }>((resolve) => {
+      client.once("permissions:changed", resolve);
+    });
+
+    const denied = await request(app)
+      .put(
+        `/api/v1/channels/${fixture.channelId}/overwrites/roles/${fixture.everyoneRoleId}`,
+      )
+      .set("Cookie", fixture.ada.cookies)
+      .send({ deny: Permissions.VIEW_CHANNEL });
+
+    expect(denied.status).toBe(200);
+
+    await expect(announced).resolves.toEqual({ serverId: fixture.serverId });
+
+    const rooms = await settle(
+      holder,
+      (current) => !current.has(`channel:${fixture.channelId}`),
+    );
+
+    expect(rooms.has(`channel:${fixture.channelId}`)).toBe(false);
+    expect(rooms.has(`server:${fixture.serverId}`)).toBe(true);
+
+    const quiet = silence(client, SILENCE_MS);
+
+    const posted = await request(app)
+      .post(`/api/v1/channels/${fixture.channelId}/messages`)
+      .set("Cookie", fixture.ada.cookies)
+      .send({ content: "after the revocation", nonce: randomUUID() });
+
+    expect(posted.status).toBe(201);
+    await expect(quiet).resolves.toBe(true);
+  });
+
+  it("restores the room when the overwrite is removed", async () => {
+    const fixture = await seed();
+
+    await open(holder, fixture.grace);
+
+    await request(app)
+      .put(
+        `/api/v1/channels/${fixture.channelId}/overwrites/roles/${fixture.everyoneRoleId}`,
+      )
+      .set("Cookie", fixture.ada.cookies)
+      .send({ deny: Permissions.VIEW_CHANNEL });
+
+    await settle(holder, (rooms) => !rooms.has(`channel:${fixture.channelId}`));
+
+    await request(app)
+      .delete(
+        `/api/v1/channels/${fixture.channelId}/overwrites/roles/${fixture.everyoneRoleId}`,
+      )
+      .set("Cookie", fixture.ada.cookies);
+
+    const rooms = await settle(holder, (current) =>
+      current.has(`channel:${fixture.channelId}`),
+    );
+
+    expect(rooms.has(`channel:${fixture.channelId}`)).toBe(true);
+  });
+
+  it("adds the room for a channel created on the other instance", async () => {
+    const fixture = await seed();
+
+    await open(holder, fixture.grace);
+
+    const created = await request(app)
+      .post(`/api/v1/servers/${fixture.serverId}/channels`)
+      .set("Cookie", fixture.ada.cookies)
+      .send({ name: "engines" });
+
+    expect(created.status).toBe(201);
+
+    const channelId = serverBody.parse(created.body).id;
+
+    const rooms = await settle(holder, (current) =>
+      current.has(`channel:${channelId}`),
+    );
+
+    expect(rooms.has(`channel:${channelId}`)).toBe(true);
+  });
+
+  it("drops every room of a server deleted on the other instance", async () => {
+    const fixture = await seed();
+
+    await open(holder, fixture.grace);
+
+    const removed = await request(app)
+      .delete(`/api/v1/servers/${fixture.serverId}`)
+      .set("Cookie", fixture.ada.cookies);
+
+    expect(removed.status).toBe(204);
+
+    const rooms = await settle(
+      holder,
+      (current) => !current.has(`server:${fixture.serverId}`),
+    );
+
+    expect(rooms.has(`server:${fixture.serverId}`)).toBe(false);
+    expect(rooms.has(`channel:${fixture.channelId}`)).toBe(false);
+    expect(rooms.has(`user:${fixture.grace.id}`)).toBe(true);
+  });
+
+  it("keeps the mutating instance's own view consistent", async () => {
+    const fixture = await seed();
+
+    await open(mutator, fixture.grace);
+
+    await request(app)
+      .put(
+        `/api/v1/channels/${fixture.channelId}/overwrites/roles/${fixture.everyoneRoleId}`,
+      )
+      .set("Cookie", fixture.ada.cookies)
+      .send({ deny: Permissions.VIEW_CHANNEL });
+
+    const rooms = await settle(
+      mutator,
+      (current) => !current.has(`channel:${fixture.channelId}`),
+    );
+
+    expect(rooms.has(`channel:${fixture.channelId}`)).toBe(false);
+  });
+});

@@ -11,12 +11,23 @@ import {
 } from "../../../db/schema/index.js";
 import { writeAudit } from "../../../lib/audit.js";
 import { notFound } from "../../../lib/errors.js";
+import {
+  emitPermissionsChanged,
+  rederiveRoomsFor,
+  serverMemberIds,
+} from "../../../socket/emit.js";
 import { actorPosition, highestPositionOf } from "../../roles/queries.js";
 import {
   requireBelowActor,
   requireHeldPermissions,
 } from "../../roles/service.js";
 import { type ChannelOverwrites, listChannelOverwrites } from "./queries.js";
+
+async function announceOverwriteChange(serverId: string): Promise<void> {
+  await rederiveRoomsFor(await serverMemberIds(serverId));
+
+  emitPermissionsChanged(serverId);
+}
 
 async function requireEditableRole(
   context: ServerContext,
@@ -102,6 +113,8 @@ export async function putRoleOverwrite(
     });
   });
 
+  await announceOverwriteChange(context.server.id);
+
   return listChannelOverwrites(channel.id);
 }
 
@@ -132,6 +145,8 @@ export async function deleteRoleOverwrite(
       metadata: { channelId: channel.id },
     });
   });
+
+  await announceOverwriteChange(context.server.id);
 }
 
 export async function putMemberOverwrite(
@@ -172,6 +187,8 @@ export async function putMemberOverwrite(
     });
   });
 
+  await announceOverwriteChange(context.server.id);
+
   return listChannelOverwrites(channel.id);
 }
 
@@ -202,4 +219,6 @@ export async function deleteMemberOverwrite(
       metadata: { channelId: channel.id },
     });
   });
+
+  await announceOverwriteChange(context.server.id);
 }

@@ -15,6 +15,8 @@ import { registerSocketServer, unregisterSocketServer } from "./emit.js";
 import { joinRooms } from "./rooms.js";
 import type { SocketServer } from "./types.js";
 
+const ADAPTER_REQUEST_TIMEOUT_MS = 1000;
+
 export function createSocketServer(httpServer: HttpServer): SocketServer {
   const io: SocketServer = new Server(httpServer, {
     transports: ["websocket"],
@@ -29,7 +31,11 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
     });
   }
 
-  io.adapter(createAdapter(publisher, subscriber));
+  io.adapter(
+    createAdapter(publisher, subscriber, {
+      requestsTimeout: ADAPTER_REQUEST_TIMEOUT_MS,
+    }),
+  );
 
   authenticateSockets(io);
 

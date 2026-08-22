@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { resolveAccessibleChannels } from "../access/channels.js";
 import { db } from "../db/index.js";
 import { serverMembers } from "../db/schema/index.js";
-import type { AppSocket } from "./types.js";
+import type { AppSocket, SocketServer } from "./types.js";
 
 export function channelRoom(channelId: string): string {
   return `channel:${channelId}`;
@@ -21,9 +21,19 @@ export function sessionRoom(sessionId: string): string {
   return `session:${sessionId}`;
 }
 
-export async function resolveRooms(
+const DERIVED_PREFIXES = ["user:", "server:", "channel:"];
+
+export async function listServerMemberIds(serverId: string): Promise<string[]> {
+  const rows = await db
+    .select({ userId: serverMembers.userId })
+    .from(serverMembers)
+    .where(eq(serverMembers.serverId, serverId));
+
+  return rows.map((row) => row.userId);
+}
+
+export async function resolveMembershipRooms(
   userId: string,
-  sessionId: string,
 ): Promise<string[]> {
   const memberships = await db
     .select({ serverId: serverMembers.serverId })
@@ -34,14 +44,58 @@ export async function resolveRooms(
 
   return [
     userRoom(userId),
-    sessionRoom(sessionId),
     ...memberships.map((membership) => serverRoom(membership.serverId)),
     ...[...accessible].map(channelRoom),
   ];
 }
 
 export async function joinRooms(socket: AppSocket): Promise<void> {
-  const rooms = await resolveRooms(socket.data.user.id, socket.data.sessionId);
+  const rooms = await resolveMembershipRooms(socket.data.user.id);
 
-  await socket.join(rooms);
+  await socket.join([...rooms, sessionRoom(socket.data.sessionId)]);
+}
+
+export function joinServerRooms(
+  io: SocketServer,
+  userId: string,
+  serverId: string,
+  channelIds: readonly string[],
+): void {
+  io.in(userRoom(userId)).socketsJoin([
+    serverRoom(serverId),
+    ...channelIds.map(channelRoom),
+  ]);
+}
+
+export async function rederiveRooms(
+  io: SocketServer,
+  userIds: readonly string[],
+): Promise<void> {
+  for (const userId of new Set(userIds)) {
+    const sockets = await io.in(userRoom(userId)).fetchSockets();
+
+    if (sockets.length === 0) {
+      continue;
+    }
+
+    const next = await resolveMembershipRooms(userId);
+    const wanted = new Set(next);
+
+    for (const socket of sockets) {
+      const derived = [...socket.rooms].filter((room) =>
+        DERIVED_PREFIXES.some((prefix) => room.startsWith(prefix)),
+      );
+
+      const leaving = derived.filter((room) => !wanted.has(room));
+      const joining = next.filter((room) => !socket.rooms.has(room));
+
+      if (leaving.length > 0) {
+        io.in(socket.id).socketsLeave(leaving);
+      }
+
+      if (joining.length > 0) {
+        io.in(socket.id).socketsJoin(joining);
+      }
+    }
+  }
 }
