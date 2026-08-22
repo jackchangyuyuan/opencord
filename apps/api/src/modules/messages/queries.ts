@@ -25,6 +25,18 @@ export function serializeMessage(message: MessageRow): MessageBase {
   };
 }
 
+export async function findMessageByNonce(
+  authorId: string,
+  nonce: string,
+): Promise<MessageRow | undefined> {
+  const [message] = await db
+    .select()
+    .from(messages)
+    .where(and(eq(messages.authorId, authorId), eq(messages.nonce, nonce)));
+
+  return message;
+}
+
 export async function findLiveMessage(
   channelId: string,
   messageId: string,

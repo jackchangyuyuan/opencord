@@ -9,8 +9,11 @@ import { z } from "zod";
 import { app } from "../../src/app.js";
 import { db } from "../../src/db/index.js";
 import {
+  auditLog,
   channelRoleOverwrites,
+  memberRoles,
   messages,
+  roles,
   serverMembers,
 } from "../../src/db/schema/index.js";
 import { requireTestDatabase } from "../setup.js";
@@ -160,6 +163,24 @@ async function sendMany(
   }
 
   return ids;
+}
+
+function editMessage(
+  account: Account,
+  channelId: string,
+  messageId: string,
+  content: string,
+) {
+  return request(app)
+    .patch(`/api/v1/channels/${channelId}/messages/${messageId}`)
+    .set("Cookie", account.cookies)
+    .send({ content });
+}
+
+function removeMessage(account: Account, channelId: string, messageId: string) {
+  return request(app)
+    .delete(`/api/v1/channels/${channelId}/messages/${messageId}`)
+    .set("Cookie", account.cookies);
 }
 
 function watermark(channelId: string): Promise<string | null> {
@@ -412,6 +433,69 @@ describe("nonce idempotency", () => {
     });
 
     expect(res.status).toBe(409);
+  });
+
+  it("replays a reply whose quoted message was deleted after the first send", async () => {
+    const fixture = await seed();
+
+    const quoted = messageBody.parse(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "the original",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+
+    const nonce = randomUUID();
+    const first = await send(fixture.ada, fixture.channelId, {
+      content: "quoting you",
+      nonce,
+      replyToId: quoted.id,
+    });
+
+    expect(first.status).toBe(201);
+
+    expect(
+      (await removeMessage(fixture.ada, fixture.channelId, quoted.id)).status,
+    ).toBe(200);
+
+    const retry = await send(fixture.ada, fixture.channelId, {
+      content: "quoting you",
+      nonce,
+      replyToId: quoted.id,
+    });
+
+    expect(retry.status).toBe(200);
+    expect(messageBody.parse(retry.body).id).toBe(
+      messageBody.parse(first.body).id,
+    );
+  });
+
+  it("still refuses a first reply to a message that is not live", async () => {
+    const fixture = await seed();
+
+    const quoted = messageBody.parse(
+      (
+        await send(fixture.ada, fixture.channelId, {
+          content: "the original",
+          nonce: randomUUID(),
+        })
+      ).body,
+    );
+
+    await removeMessage(fixture.ada, fixture.channelId, quoted.id);
+
+    const res = await send(fixture.ada, fixture.channelId, {
+      content: "quoting a tombstone",
+      nonce: randomUUID(),
+      replyToId: quoted.id,
+    });
+
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({
+      error: { code: "MESSAGE_NOT_FOUND" },
+    });
   });
 
   it("rejects a send with no nonce", async () => {
@@ -727,5 +811,203 @@ describe("GET /api/v1/channels/:channelId/messages", () => {
     expect((await listMessages(fixture.grace, fixture.channelId)).status).toBe(
       404,
     );
+  });
+});
+
+describe("editing and soft-deleting messages", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  it("lets the author edit and stamps editedAt", async () => {
+    const fixture = await seed();
+    const [id] = await sendMany(fixture.grace, fixture.channelId, 1);
+
+    const res = await editMessage(
+      fixture.grace,
+      fixture.channelId,
+      id ?? "",
+      "  corrected  ",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ content: "corrected" });
+    expect(messageBody.parse(res.body).editedAt).not.toBeNull();
+  });
+
+  it("refuses an edit of someone else's message", async () => {
+    const fixture = await seed();
+    const [id] = await sendMany(fixture.grace, fixture.channelId, 1);
+
+    const res = await editMessage(
+      fixture.ada,
+      fixture.channelId,
+      id ?? "",
+      "not mine",
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: { code: "NOT_THE_AUTHOR" } });
+  });
+
+  it("refuses an edit of a tombstone", async () => {
+    const fixture = await seed();
+    const [id] = await sendMany(fixture.grace, fixture.channelId, 1);
+
+    expect(
+      (await removeMessage(fixture.grace, fixture.channelId, id ?? "")).status,
+    ).toBe(200);
+
+    const res = await editMessage(
+      fixture.grace,
+      fixture.channelId,
+      id ?? "",
+      "resurrected",
+    );
+
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ error: { code: "MESSAGE_NOT_FOUND" } });
+  });
+
+  it("writes no audit row when the author deletes their own message", async () => {
+    const fixture = await seed();
+    const [id] = await sendMany(fixture.grace, fixture.channelId, 1);
+
+    const res = await removeMessage(fixture.grace, fixture.channelId, id ?? "");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      channelId: fixture.channelId,
+      messageId: id,
+    });
+    expect(await db.select().from(auditLog)).toEqual([]);
+
+    const stored = await db.query.messages.findFirst({ where: { id } });
+
+    expect(stored?.deletedAt).not.toBeNull();
+  });
+
+  it("audits a moderator delete as message_delete", async () => {
+    const fixture = await seed();
+    const [id] = await sendMany(fixture.grace, fixture.channelId, 1);
+
+    expect(
+      (await removeMessage(fixture.ada, fixture.channelId, id ?? "")).status,
+    ).toBe(200);
+
+    const entries = await db.select().from(auditLog);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      actorId: fixture.ada.id,
+      action: "message_delete",
+      targetType: "message",
+      targetId: id,
+      metadata: { channelId: fixture.channelId, authorId: fixture.grace.id },
+    });
+  });
+
+  it("refuses a delete by someone without MANAGE_MESSAGES", async () => {
+    const fixture = await seed();
+    const hopper = await signUp("hopper");
+
+    await db
+      .insert(serverMembers)
+      .values({ serverId: fixture.serverId, userId: hopper.id });
+
+    const [id] = await sendMany(fixture.grace, fixture.channelId, 1);
+
+    const res = await removeMessage(hopper, fixture.channelId, id ?? "");
+
+    expect(res.status).toBe(403);
+
+    const stored = await db.query.messages.findFirst({ where: { id } });
+
+    expect(stored?.deletedAt).toBeNull();
+  });
+
+  it("refuses a moderator delete of the owner's message", async () => {
+    const fixture = await seed();
+
+    await db
+      .update(roles)
+      .set({
+        permissions:
+          Permissions.VIEW_CHANNEL |
+          Permissions.SEND_MESSAGES |
+          Permissions.MANAGE_MESSAGES,
+      })
+      .where(eq(roles.id, fixture.everyoneRoleId));
+
+    const [id] = await sendMany(fixture.ada, fixture.channelId, 1);
+
+    const res = await removeMessage(fixture.grace, fixture.channelId, id ?? "");
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: { code: "TARGET_IS_OWNER" } });
+  });
+
+  it("refuses a moderator delete of a peer's message", async () => {
+    const fixture = await seed();
+    const hopper = await signUp("hopper");
+
+    await db
+      .insert(serverMembers)
+      .values({ serverId: fixture.serverId, userId: hopper.id });
+
+    const [role] = await db
+      .insert(roles)
+      .values({
+        serverId: fixture.serverId,
+        name: "moderator",
+        permissions:
+          Permissions.VIEW_CHANNEL |
+          Permissions.SEND_MESSAGES |
+          Permissions.MANAGE_MESSAGES,
+        position: 3,
+      })
+      .returning({ id: roles.id });
+
+    for (const account of [fixture.grace, hopper]) {
+      await db.insert(memberRoles).values({
+        serverId: fixture.serverId,
+        userId: account.id,
+        roleId: role?.id ?? "",
+      });
+    }
+
+    const [id] = await sendMany(hopper, fixture.channelId, 1);
+
+    expect(
+      (await removeMessage(fixture.grace, fixture.channelId, id ?? "")).status,
+    ).toBe(403);
+  });
+
+  it("repairs the watermark to the newest live message", async () => {
+    const fixture = await seed();
+    const ids = await sendMany(fixture.ada, fixture.channelId, 3);
+
+    expect(await watermark(fixture.channelId)).toBe(ids[2]);
+
+    await removeMessage(fixture.ada, fixture.channelId, ids[2] ?? "");
+
+    expect(await watermark(fixture.channelId)).toBe(ids[1]);
+
+    await removeMessage(fixture.ada, fixture.channelId, ids[0] ?? "");
+
+    expect(await watermark(fixture.channelId)).toBe(ids[1]);
+
+    await removeMessage(fixture.ada, fixture.channelId, ids[1] ?? "");
+
+    expect(await watermark(fixture.channelId)).toBeNull();
+  });
+
+  it("leaves the watermark alone when the deleted message was not the tail", async () => {
+    const fixture = await seed();
+    const ids = await sendMany(fixture.ada, fixture.channelId, 2);
+
+    await removeMessage(fixture.ada, fixture.channelId, ids[0] ?? "");
+
+    expect(await watermark(fixture.channelId)).toBe(ids[1]);
   });
 });

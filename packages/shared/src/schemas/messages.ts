@@ -15,3 +15,7 @@ export const sendMessageSchema = z.object({
 });
 
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
+
+export const editMessageSchema = z.object({ content: messageContentSchema });
+
+export type EditMessageInput = z.infer<typeof editMessageSchema>;
