@@ -10,7 +10,7 @@ import { z } from "zod";
 import { requireChannelPermission } from "../../middleware/permissions.js";
 import { validate } from "../../middleware/validate.js";
 import { listChannelMessages } from "./queries.js";
-import { serializeMessages, serializeOneMessage } from "./serialize.js";
+import { serializeMessages } from "./serialize.js";
 import { deleteMessage, editMessage, sendMessage } from "./service.js";
 
 const channelParamsSchema = z.object({ channelId: z.uuid() });
@@ -33,9 +33,7 @@ messagesRouter.post(
       req.body,
     );
 
-    res
-      .status(result.created ? 201 : 200)
-      .json(await serializeOneMessage(result.row));
+    res.status(result.created ? 201 : 200).json(result.message);
   },
 );
 
@@ -58,15 +56,15 @@ messagesRouter.patch(
   validate({ params: messageParamsSchema, body: editMessageSchema }),
   requireChannelPermission(),
   async (req, res) => {
-    const edited = await editMessage(
-      req.server,
-      req.channel,
-      req.user.id,
-      req.params.messageId,
-      req.body,
+    res.json(
+      await editMessage(
+        req.server,
+        req.channel,
+        req.user.id,
+        req.params.messageId,
+        req.body,
+      ),
     );
-
-    res.json(await serializeOneMessage(edited));
   },
 );
 

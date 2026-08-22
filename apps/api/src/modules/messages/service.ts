@@ -3,6 +3,7 @@ import type {
   EditMessageInput,
   SendMessageInput,
 } from "@opencord/shared/schemas";
+import type { Message } from "@opencord/shared/types";
 import { and, eq, sql } from "drizzle-orm";
 
 import type { ChannelRow, ServerContext } from "../../access/context.js";
@@ -10,6 +11,11 @@ import { db, type Transaction } from "../../db/index.js";
 import { channels, mentions, messages } from "../../db/schema/index.js";
 import { writeAudit } from "../../lib/audit.js";
 import { forbidden, nonceReused, notFound } from "../../lib/errors.js";
+import {
+  emitMessageCreate,
+  emitMessageDelete,
+  emitMessageUpdate,
+} from "../../socket/emit.js";
 import { actorPosition, highestPositionOf } from "../roles/queries.js";
 import { requireBelowActor } from "../roles/service.js";
 import { applyMentions, findMentionCandidates } from "./mentions.js";
@@ -19,10 +25,11 @@ import {
   type MessageRow,
   resolveMentions,
 } from "./queries.js";
+import { serializeOneMessage } from "./serialize.js";
 
 export interface SendMessageResult {
   created: boolean;
-  row: MessageRow;
+  message: Message;
 }
 
 function mayMentionEveryone(context: ServerContext): boolean {
@@ -133,7 +140,7 @@ export async function sendMessage(
     const existing = await findMessageByNonce(authorId, input.nonce);
 
     if (isReplay(existing, channel.id, prepared.content, replyToId)) {
-      return { created: false, row: existing };
+      return { created: false, message: await serializeOneMessage(existing) };
     }
 
     throw notFound(
@@ -142,7 +149,7 @@ export async function sendMessage(
     );
   }
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(messages)
       .values({
@@ -189,6 +196,14 @@ export async function sendMessage(
 
     return { created: true, row: inserted };
   });
+
+  const serialized = await serializeOneMessage(result.row);
+
+  if (result.created) {
+    emitMessageCreate(serialized);
+  }
+
+  return { created: result.created, message: serialized };
 }
 
 export interface DeletedMessage {
@@ -216,7 +231,7 @@ export async function editMessage(
   actorId: string,
   messageId: string,
   input: EditMessageInput,
-): Promise<MessageRow> {
+): Promise<Message> {
   const message = await requireLiveMessage(channel.id, messageId);
 
   if (message.authorId !== actorId) {
@@ -231,8 +246,8 @@ export async function editMessage(
 
   const broadcast = prepared.everyone && mayMentionEveryone(context);
 
-  return db.transaction(async (tx) => {
-    const [edited] = await tx
+  const edited = await db.transaction(async (tx) => {
+    const [row] = await tx
       .update(messages)
       .set({
         content: prepared.content,
@@ -242,7 +257,7 @@ export async function editMessage(
       .where(eq(messages.id, message.id))
       .returning();
 
-    if (edited === undefined) {
+    if (row === undefined) {
       throw new Error("Message edit returned no row");
     }
 
@@ -255,8 +270,14 @@ export async function editMessage(
       await repairEveryoneWatermark(tx, channel.id, message.id);
     }
 
-    return edited;
+    return row;
   });
+
+  const serialized = await serializeOneMessage(edited);
+
+  emitMessageUpdate(serialized);
+
+  return serialized;
 }
 
 export async function deleteMessage(
@@ -319,9 +340,13 @@ export async function deleteMessage(
     }
   });
 
-  return {
+  const payload = {
     channelId: channel.id,
     messageId: message.id,
     deletedAt: deletedAt.toISOString(),
   };
+
+  emitMessageDelete(payload);
+
+  return payload;
 }

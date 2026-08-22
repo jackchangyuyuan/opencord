@@ -11,6 +11,7 @@ import {
   revalidateSessions,
   REVALIDATION_INTERVAL_MS,
 } from "./auth.js";
+import { registerSocketServer, unregisterSocketServer } from "./emit.js";
 import { joinRooms } from "./rooms.js";
 import type { SocketServer } from "./types.js";
 
@@ -31,6 +32,8 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
   io.adapter(createAdapter(publisher, subscriber));
 
   authenticateSockets(io);
+
+  registerSocketServer(io);
 
   io.on("connection", (socket) => {
     joinRooms(socket).then(
@@ -54,6 +57,7 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
 
   io.on("close", () => {
     clearInterval(revalidating);
+    unregisterSocketServer(io);
   });
 
   return io;
