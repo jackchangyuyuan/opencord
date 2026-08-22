@@ -1,25 +1,18 @@
-import type { IncomingHttpHeaders, Server as HttpServer } from "node:http";
+import type { Server as HttpServer } from "node:http";
 
 import { createAdapter } from "@socket.io/redis-adapter";
-import { fromNodeHeaders } from "better-auth/node";
 import { Server } from "socket.io";
 
-import { auth } from "../auth.js";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
 import { redis } from "../redis.js";
-import type { SocketData, SocketServer } from "./types.js";
-
-async function resolveUser(
-  headers: IncomingHttpHeaders,
-): Promise<SocketData["user"] | null> {
-  const session = await auth.api.getSession({
-    headers: fromNodeHeaders(headers),
-    query: { disableRefresh: true },
-  });
-
-  return session?.user ?? null;
-}
+import {
+  authenticateSockets,
+  revalidateSessions,
+  REVALIDATION_INTERVAL_MS,
+} from "./auth.js";
+import { joinRooms } from "./rooms.js";
+import type { SocketServer } from "./types.js";
 
 export function createSocketServer(httpServer: HttpServer): SocketServer {
   const io: SocketServer = new Server(httpServer, {
@@ -37,26 +30,30 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
 
   io.adapter(createAdapter(publisher, subscriber));
 
-  io.use((socket, next) => {
-    resolveUser(socket.handshake.headers).then(
-      (user) => {
-        if (user === null) {
-          next(new Error("Unauthorized"));
-          return;
-        }
+  authenticateSockets(io);
 
-        socket.data.user = user;
-        next();
+  io.on("connection", (socket) => {
+    joinRooms(socket).then(
+      () => {
+        socket.emit("connection:ready", { instanceId: config.INSTANCE_ID });
       },
       (error: unknown) => {
-        logger.error({ err: error }, "Socket authentication failed");
-        next(new Error("Unauthorized"));
+        logger.error({ err: error }, "Socket room join failed");
+        socket.disconnect(true);
       },
     );
   });
 
-  io.on("connection", (socket) => {
-    socket.emit("connection:ready", { instanceId: config.INSTANCE_ID });
+  const revalidating = setInterval(() => {
+    revalidateSessions(io).catch((error: unknown) => {
+      logger.error({ err: error }, "Socket session revalidation failed");
+    });
+  }, REVALIDATION_INTERVAL_MS);
+
+  revalidating.unref();
+
+  io.on("close", () => {
+    clearInterval(revalidating);
   });
 
   return io;
