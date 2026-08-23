@@ -16,6 +16,7 @@ export const auth = betterAuth({
   baseURL: config.PUBLIC_ORIGIN,
   database: drizzleAdapter(db, { provider: "pg", schema, usePlural: true }),
   emailAndPassword: { enabled: true },
+  rateLimit: { enabled: false },
   secret: config.BETTER_AUTH_SECRET,
   user: {
     additionalFields: {

@@ -31,6 +31,16 @@ export default defineConfig([
   },
 
   {
+    files: ["tests/integration/rate-limit*.test.ts"],
+    rules: {
+      "turbo/no-undeclared-env-vars": [
+        "error",
+        { allowList: ["^RATE_LIMIT_", "^TRUST_PROXY_HOPS$"] },
+      ],
+    },
+  },
+
+  {
     files: ["tests/setup.ts"],
     rules: {
       "turbo/no-undeclared-env-vars": [

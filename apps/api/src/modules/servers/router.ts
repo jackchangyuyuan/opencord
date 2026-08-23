@@ -8,6 +8,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { requirePermission } from "../../middleware/permissions.js";
+import { createResourceRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
 import { listAuditLog } from "./audit-log.js";
 import {
@@ -35,6 +36,7 @@ serversRouter.get("/", async (req, res) => {
 serversRouter.post(
   "/",
   validate({ body: createServerSchema }),
+  createResourceRateLimit,
   async (req, res) => {
     res.status(201).json(await createServer(req.user.id, req.body));
   },

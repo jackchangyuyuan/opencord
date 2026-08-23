@@ -8,6 +8,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { requireChannelPermission } from "../../middleware/permissions.js";
+import { sendMessageRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
 import { listChannelMessages } from "./queries.js";
 import { serializeMessages } from "./serialize.js";
@@ -25,6 +26,7 @@ messagesRouter.post(
   "/",
   validate({ params: channelParamsSchema, body: sendMessageSchema }),
   requireChannelPermission(Permissions.SEND_MESSAGES),
+  sendMessageRateLimit,
   async (req, res) => {
     const result = await sendMessage(
       req.server,

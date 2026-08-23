@@ -31,6 +31,7 @@
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
     "postgres": "^3.4.9",
+    "rate-limiter-flexible": "^11.2.0",
     "socket.io": "^4.8.3",
     "zod": "catalog:"
   },

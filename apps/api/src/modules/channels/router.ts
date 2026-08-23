@@ -11,6 +11,7 @@ import {
   requireChannelPermission,
   requirePermission,
 } from "../../middleware/permissions.js";
+import { createResourceRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
 import { overwritesRouter } from "./overwrites/router.js";
 import { listServerChannels, serializeChannel } from "./queries.js";
@@ -39,6 +40,7 @@ serverChannelsRouter.post(
   "/",
   validate({ params: serverParamsSchema, body: createChannelSchema }),
   requirePermission(Permissions.MANAGE_CHANNELS),
+  createResourceRateLimit,
   async (req, res) => {
     res
       .status(201)

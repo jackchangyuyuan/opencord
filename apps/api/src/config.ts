@@ -15,7 +15,12 @@ const baseSchema = z.object({
     .default("development"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   PUBLIC_ORIGIN: z.url(),
+  RATE_LIMIT_AUTH_POINTS: z.coerce.number().int().min(1).default(20),
+  RATE_LIMIT_CREATE_POINTS: z.coerce.number().int().min(1).default(10),
+  RATE_LIMIT_MESSAGE_POINTS: z.coerce.number().int().min(1).default(5),
+  RATE_LIMIT_NAMESPACE: z.string().min(1).default("rl"),
   REDIS_URL: z.url(),
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(0),
   S3_BUCKET: z
     .string()
     .regex(

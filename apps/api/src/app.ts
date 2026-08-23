@@ -3,11 +3,13 @@ import { sql } from "drizzle-orm";
 import express from "express";
 
 import { auth } from "./auth.js";
+import { config } from "./config.js";
 import { db } from "./db/index.js";
 import { notFound } from "./lib/errors.js";
 import { requireAuth, revokeSignedOutSession } from "./middleware/auth.js";
 import { errorHandler } from "./middleware/error.js";
 import { httpLogger } from "./middleware/http-logger.js";
+import { authRateLimit } from "./middleware/rate-limit.js";
 import {
   channelsRouter,
   serverChannelsRouter,
@@ -20,6 +22,8 @@ import { usersRouter } from "./modules/users/router.js";
 import { redis } from "./redis.js";
 
 export const app = express();
+
+app.set("trust proxy", config.TRUST_PROXY_HOPS);
 
 app.use(httpLogger);
 
@@ -53,7 +57,12 @@ app.get("/readyz", async (req, res) => {
   res.status(ready ? 200 : 503).json(status);
 });
 
-app.all("/api/auth/*splat", revokeSignedOutSession, toNodeHandler(auth));
+app.all(
+  "/api/auth/*splat",
+  authRateLimit,
+  revokeSignedOutSession,
+  toNodeHandler(auth),
+);
 
 const apiRouter = express.Router();
 

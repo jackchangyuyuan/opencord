@@ -4,6 +4,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { requirePermission } from "../../middleware/permissions.js";
+import { createResourceRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
 import { listServerRoles } from "./queries.js";
 import { createRole, deleteRole, updateRole } from "./service.js";
@@ -26,6 +27,7 @@ serverRolesRouter.post(
   "/",
   validate({ params: serverParamsSchema, body: createRoleSchema }),
   requirePermission(Permissions.MANAGE_ROLES),
+  createResourceRateLimit,
   async (req, res) => {
     res.status(201).json(await createRole(req.server, req.user.id, req.body));
   },
