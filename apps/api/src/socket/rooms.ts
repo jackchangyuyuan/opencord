@@ -99,3 +99,10 @@ export async function rederiveRooms(
     }
   }
 }
+
+export function revokeSession(io: SocketServer, sessionId: string): void {
+  const room = sessionRoom(sessionId);
+
+  io.to(room).emit("session:revoked");
+  io.in(room).disconnectSockets(true);
+}

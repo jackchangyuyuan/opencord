@@ -19,5 +19,6 @@ export interface ServerToClientEvents {
   "member:leave": (p: { serverId: string; userId: string }) => void;
   "role:update": (p: { serverId: string }) => void;
   "permissions:changed": (p: { serverId: string }) => void;
+  "session:revoked": () => void;
   "connection:ready": (p: { instanceId: string }) => void;
 }

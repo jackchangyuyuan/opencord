@@ -3,6 +3,7 @@ import type { RequestHandler } from "express";
 
 import { auth, isRevoked, type SessionUser } from "../auth.js";
 import { unauthorized } from "../lib/errors.js";
+import { revokeSessionEverywhere } from "../socket/emit.js";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -29,6 +30,36 @@ export const requireAuth: RequestHandler = async (req, _res, next) => {
   }
 
   req.user = session.user;
+
+  next();
+};
+
+export const revokeSignedOutSession: RequestHandler = async (
+  req,
+  res,
+  next,
+) => {
+  if (!req.path.endsWith("/sign-out")) {
+    next();
+    return;
+  }
+
+  const session = await auth.api.getSession({
+    headers: fromNodeHeaders(req.headers),
+  });
+
+  if (session === null) {
+    next();
+    return;
+  }
+
+  const { id } = session.session;
+
+  res.on("finish", () => {
+    if (res.statusCode < 400) {
+      revokeSessionEverywhere(id);
+    }
+  });
 
   next();
 };

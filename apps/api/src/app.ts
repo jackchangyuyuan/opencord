@@ -5,7 +5,7 @@ import express from "express";
 import { auth } from "./auth.js";
 import { db } from "./db/index.js";
 import { notFound } from "./lib/errors.js";
-import { requireAuth } from "./middleware/auth.js";
+import { requireAuth, revokeSignedOutSession } from "./middleware/auth.js";
 import { errorHandler } from "./middleware/error.js";
 import { httpLogger } from "./middleware/http-logger.js";
 import {
@@ -53,7 +53,7 @@ app.get("/readyz", async (req, res) => {
   res.status(ready ? 200 : 503).json(status);
 });
 
-app.all("/api/auth/*splat", toNodeHandler(auth));
+app.all("/api/auth/*splat", revokeSignedOutSession, toNodeHandler(auth));
 
 const apiRouter = express.Router();
 

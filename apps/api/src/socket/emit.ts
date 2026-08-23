@@ -5,6 +5,7 @@ import {
   joinServerRooms,
   listServerMemberIds,
   rederiveRooms,
+  revokeSession,
   serverRoom,
 } from "./rooms.js";
 import type { SocketServer } from "./types.js";
@@ -96,4 +97,12 @@ export function joinCreatedServerRooms(
 
 export function serverMemberIds(serverId: string): Promise<string[]> {
   return listServerMemberIds(serverId);
+}
+
+export function revokeSessionEverywhere(sessionId: string): void {
+  if (current === null) {
+    return;
+  }
+
+  revokeSession(current, sessionId);
 }

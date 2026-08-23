@@ -40,6 +40,26 @@ interface Account {
   cookies: string[];
 }
 
+function accountOf(res: request.Response, id: string): Account {
+  const cookies = res.get("Set-Cookie") ?? [];
+
+  return {
+    id,
+    cookie: cookies.flatMap((cookie) => cookie.split(";", 1)).join("; "),
+    cookies,
+  };
+}
+
+async function signIn(account: Account): Promise<Account> {
+  const res = await request(app)
+    .post("/api/auth/sign-in/email")
+    .send({ email: `${account.id}@example.com`, password });
+
+  expect(res.status).toBe(200);
+
+  return accountOf(res, account.id);
+}
+
 async function signUp(username: string): Promise<Account> {
   const res = await request(app)
     .post("/api/auth/sign-up/email")
@@ -336,5 +356,90 @@ describe("cross-instance permission revocation", () => {
     );
 
     expect(rooms.has(`channel:${fixture.channelId}`)).toBe(false);
+  });
+});
+
+describe("session-scoped revocation", () => {
+  let holder: Instance;
+  let mutator: Instance;
+  const clients: Client[] = [];
+
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  beforeEach(async () => {
+    holder = await startInstance();
+    mutator = await startInstance();
+  });
+
+  afterEach(async () => {
+    for (const client of clients.splice(0)) {
+      client.close();
+    }
+
+    await Promise.all([holder.io.close(), mutator.io.close()]);
+  });
+
+  async function open(instance: Instance, cookie: string): Promise<Client> {
+    const client: Client = connect(instance.origin, {
+      autoConnect: false,
+      extraHeaders: { cookie },
+      reconnection: false,
+      transports: ["websocket"],
+    });
+
+    clients.push(client);
+
+    const greeted = new Promise<void>((resolve) => {
+      client.once("connection:ready", () => {
+        resolve();
+      });
+    });
+
+    client.connect();
+
+    await greeted;
+
+    return client;
+  }
+
+  it("closes the signed-out session's socket and leaves the sibling alone", async () => {
+    const ada = await signUp("ada");
+    const laptop = await signIn({ ...ada, id: "ada" });
+
+    const phoneClient = await open(holder, ada.cookie);
+    const laptopClient = await open(mutator, laptop.cookie);
+
+    const revoked = new Promise<void>((resolve) => {
+      phoneClient.once("session:revoked", resolve);
+    });
+    const closed = new Promise<string>((resolve) => {
+      phoneClient.once("disconnect", resolve);
+    });
+
+    const out = await request(app)
+      .post("/api/auth/sign-out")
+      .set("Cookie", ada.cookies);
+
+    expect(out.status).toBe(200);
+
+    await revoked;
+    await expect(closed).resolves.toBe("io server disconnect");
+
+    await sleep(SILENCE_MS);
+
+    expect(laptopClient.connected).toBe(true);
+  });
+
+  it("does nothing when the sign-out carried no session", async () => {
+    const ada = await signUp("ada");
+    const client = await open(holder, ada.cookie);
+
+    await request(app).post("/api/auth/sign-out");
+
+    await sleep(SILENCE_MS);
+
+    expect(client.connected).toBe(true);
   });
 });
