@@ -1,3 +1,5 @@
+export type PresenceStatus = "online" | "idle" | "dnd" | "offline";
+
 export interface MessagePreview {
   id: string;
   authorId: string;

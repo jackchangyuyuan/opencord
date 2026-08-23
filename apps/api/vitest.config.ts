@@ -11,6 +11,7 @@ export default defineConfig({
       PUBLIC_ORIGIN: "http://localhost:5173",
       RATE_LIMIT_AUTH_POINTS: "1000000",
       RATE_LIMIT_CREATE_POINTS: "1000000",
+      RATE_LIMIT_HEARTBEAT_POINTS: "1000000",
       RATE_LIMIT_MESSAGE_POINTS: "1000000",
       REDIS_URL: "redis://localhost:6379",
       S3_BUCKET: "opencord-dev-uploads",

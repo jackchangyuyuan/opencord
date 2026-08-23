@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 
 import { resolveAccessibleChannels } from "../access/channels.js";
 import { db } from "../db/index.js";
@@ -28,6 +28,40 @@ export async function listServerMemberIds(serverId: string): Promise<string[]> {
     .select({ userId: serverMembers.userId })
     .from(serverMembers)
     .where(eq(serverMembers.serverId, serverId));
+
+  return rows.map((row) => row.userId);
+}
+
+export async function listServerRoomsFor(userId: string): Promise<string[]> {
+  const memberships = await db
+    .select({ serverId: serverMembers.serverId })
+    .from(serverMembers)
+    .where(eq(serverMembers.userId, userId));
+
+  return memberships.map((membership) => serverRoom(membership.serverId));
+}
+
+export async function listServerPeerIds(userId: string): Promise<string[]> {
+  const memberships = await db
+    .select({ serverId: serverMembers.serverId })
+    .from(serverMembers)
+    .where(eq(serverMembers.userId, userId));
+
+  const serverIds = memberships.map((membership) => membership.serverId);
+
+  if (serverIds.length === 0) {
+    return [];
+  }
+
+  const rows = await db
+    .selectDistinct({ userId: serverMembers.userId })
+    .from(serverMembers)
+    .where(
+      and(
+        inArray(serverMembers.serverId, serverIds),
+        ne(serverMembers.userId, userId),
+      ),
+    );
 
   return rows.map((row) => row.userId);
 }

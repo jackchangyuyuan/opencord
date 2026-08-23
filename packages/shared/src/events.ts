@@ -1,6 +1,8 @@
-import type { Message } from "./types.js";
+import type { Message, PresenceStatus } from "./types.js";
 
-export type ClientToServerEvents = Record<string, never>;
+export interface ClientToServerEvents {
+  "presence:heartbeat": (p: { status: PresenceStatus; idle: boolean }) => void;
+}
 
 export interface ServerToClientEvents {
   "message:create": (p: { message: Message }) => void;
@@ -18,6 +20,7 @@ export interface ServerToClientEvents {
   "member:join": (p: { serverId: string; userId: string }) => void;
   "member:leave": (p: { serverId: string; userId: string }) => void;
   "role:update": (p: { serverId: string }) => void;
+  "presence:update": (p: { userId: string; status: PresenceStatus }) => void;
   "permissions:changed": (p: { serverId: string }) => void;
   "session:revoked": () => void;
   "connection:ready": (p: { instanceId: string }) => void;
