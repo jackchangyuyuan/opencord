@@ -22,6 +22,10 @@ export function unregisterSocketServer(io: SocketServer): void {
   }
 }
 
+export function countLocalSockets(): number {
+  return current === null ? 0 : current.of("/").sockets.size;
+}
+
 export function emitMessageCreate(message: Message): void {
   current?.to(channelRoom(message.channelId)).emit("message:create", {
     message,

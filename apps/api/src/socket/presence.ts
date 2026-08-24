@@ -159,6 +159,21 @@ export async function dropConnection(
   await announce(io, userId, before);
 }
 
+export async function countOnlineUsers(now = Date.now()): Promise<number> {
+  const members = await redis.zrangebyscore(
+    SEEN_KEY,
+    now - SWEEP_AFTER_MS,
+    "+inf",
+  );
+  const users = new Set<string>();
+
+  for (const member of members) {
+    users.add(member.slice(0, member.lastIndexOf(":")));
+  }
+
+  return users.size;
+}
+
 export async function claimStaleConnection(
   userId: string,
   socketId: string,

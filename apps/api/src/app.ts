@@ -18,6 +18,7 @@ import { serverMembersRouter } from "./modules/members/router.js";
 import { messagesRouter } from "./modules/messages/router.js";
 import { serverRolesRouter } from "./modules/roles/router.js";
 import { serversRouter } from "./modules/servers/router.js";
+import { statsRouter } from "./modules/stats/router.js";
 import { usersRouter } from "./modules/users/router.js";
 import { redis } from "./redis.js";
 
@@ -74,6 +75,7 @@ apiRouter.use("/servers", serversRouter);
 apiRouter.use("/servers/:serverId/channels", serverChannelsRouter);
 apiRouter.use("/servers/:serverId/members", serverMembersRouter);
 apiRouter.use("/servers/:serverId/roles", serverRolesRouter);
+apiRouter.use("/stats", statsRouter);
 apiRouter.use("/users", usersRouter);
 
 app.use("/api/v1", apiRouter);
