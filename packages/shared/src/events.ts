@@ -25,5 +25,6 @@ export interface ServerToClientEvents {
   "presence:update": (p: { userId: string; status: PresenceStatus }) => void;
   "permissions:changed": (p: { serverId: string }) => void;
   "session:revoked": () => void;
+  "system:reconnect": () => void;
   "connection:ready": (p: { instanceId: string }) => void;
 }

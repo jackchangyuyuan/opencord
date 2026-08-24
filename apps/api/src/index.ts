@@ -40,8 +40,19 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   }, SHUTDOWN_TIMEOUT_MS);
 
   try {
-    httpServer.closeIdleConnections();
+    const drained = new Promise<void>((resolve) => {
+      httpServer.close(() => {
+        resolve();
+      });
+    });
+
+    io.local.emit("system:reconnect");
+
     await io.close();
+
+    httpServer.closeIdleConnections();
+
+    await drained;
     await db.$client.end();
     await redis.quit();
   } catch (error) {
