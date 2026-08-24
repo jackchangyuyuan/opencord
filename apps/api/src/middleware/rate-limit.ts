@@ -8,6 +8,7 @@ import { redis } from "../redis.js";
 export const AUTH_WINDOW_SECONDS = 60;
 export const MESSAGE_WINDOW_SECONDS = 5;
 export const CREATE_WINDOW_SECONDS = 60;
+export const TYPING_WINDOW_SECONDS = 2;
 export const HEARTBEAT_WINDOW_SECONDS = 10;
 export const SOCKET_ABUSE_FACTOR = 10;
 
@@ -113,6 +114,12 @@ export function socketRateLimit(bucket: Bucket): SocketLimiter {
     },
   };
 }
+
+export const typingLimiter = socketRateLimit({
+  name: "typing",
+  points: config.RATE_LIMIT_TYPING_POINTS,
+  duration: TYPING_WINDOW_SECONDS,
+});
 
 export const heartbeatLimiter = socketRateLimit({
   name: "heartbeat",

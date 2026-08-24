@@ -112,3 +112,91 @@ export async function resolveAccessibleChannels(
 
   return accessible;
 }
+
+export async function resolveChannelPermissions(
+  userId: string,
+  channelId: string,
+): Promise<number | null> {
+  const channel = await db.query.channels.findFirst({
+    columns: { id: true, serverId: true },
+    where: { id: channelId },
+  });
+
+  if (channel?.serverId == null) {
+    return null;
+  }
+
+  const server = await db.query.servers.findFirst({
+    columns: { id: true, ownerId: true },
+    where: { id: channel.serverId },
+  });
+
+  if (server === undefined) {
+    return null;
+  }
+
+  const membership = await db
+    .select({ userId: serverMembers.userId })
+    .from(serverMembers)
+    .where(
+      and(
+        eq(serverMembers.serverId, server.id),
+        eq(serverMembers.userId, userId),
+      ),
+    );
+
+  if (membership.length === 0) {
+    return null;
+  }
+
+  const roleRows = await db
+    .select({
+      id: roles.id,
+      permissions: roles.permissions,
+      isDefault: roles.isDefault,
+      heldBy: memberRoles.userId,
+    })
+    .from(roles)
+    .leftJoin(
+      memberRoles,
+      and(eq(memberRoles.roleId, roles.id), eq(memberRoles.userId, userId)),
+    )
+    .where(eq(roles.serverId, server.id));
+
+  const everyoneRole = roleRows.find((role) => role.isDefault);
+
+  if (everyoneRole === undefined) {
+    return null;
+  }
+
+  const roleOverwrites = await db
+    .select({
+      roleId: channelRoleOverwrites.roleId,
+      allow: channelRoleOverwrites.allow,
+      deny: channelRoleOverwrites.deny,
+    })
+    .from(channelRoleOverwrites)
+    .where(eq(channelRoleOverwrites.channelId, channel.id));
+
+  const [memberOverwrite] = await db
+    .select({
+      allow: channelMemberOverwrites.allow,
+      deny: channelMemberOverwrites.deny,
+    })
+    .from(channelMemberOverwrites)
+    .where(
+      and(
+        eq(channelMemberOverwrites.channelId, channel.id),
+        eq(channelMemberOverwrites.userId, userId),
+      ),
+    );
+
+  return resolve({
+    userId,
+    serverOwnerId: server.ownerId,
+    everyoneRole,
+    memberRoles: roleRows.filter((role) => role.heldBy !== null),
+    roleOverwrites,
+    ...(memberOverwrite === undefined ? {} : { memberOverwrite }),
+  });
+}

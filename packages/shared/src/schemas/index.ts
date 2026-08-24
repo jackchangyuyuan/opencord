@@ -4,3 +4,4 @@ export * from "./messages.js";
 export * from "./presence.js";
 export * from "./roles.js";
 export * from "./servers.js";
+export * from "./typing.js";

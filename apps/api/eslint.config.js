@@ -31,7 +31,10 @@ export default defineConfig([
   },
 
   {
-    files: ["tests/integration/rate-limit*.test.ts"],
+    files: [
+      "tests/integration/rate-limit*.test.ts",
+      "tests/integration/socket-typing.test.ts",
+    ],
     rules: {
       "turbo/no-undeclared-env-vars": [
         "error",

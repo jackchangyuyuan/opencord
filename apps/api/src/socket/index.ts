@@ -23,6 +23,7 @@ import {
 } from "./presence.js";
 import { joinRooms } from "./rooms.js";
 import type { AppSocket, SocketServer } from "./types.js";
+import { handleTypingStart } from "./typing.js";
 
 const ADAPTER_REQUEST_TIMEOUT_MS = 1000;
 
@@ -91,6 +92,12 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
         .catch((error: unknown) => {
           logger.error({ err: error }, "Presence heartbeat failed");
         });
+    });
+
+    socket.on("typing:start", (payload) => {
+      handleTypingStart(socket, payload).catch((error: unknown) => {
+        logger.error({ err: error }, "Typing indicator failed");
+      });
     });
 
     socket.on("disconnect", () => {

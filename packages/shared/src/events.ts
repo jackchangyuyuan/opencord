@@ -2,6 +2,7 @@ import type { Message, PresenceStatus } from "./types.js";
 
 export interface ClientToServerEvents {
   "presence:heartbeat": (p: { status: PresenceStatus; idle: boolean }) => void;
+  "typing:start": (p: { channelId: string }) => void;
 }
 
 export interface ServerToClientEvents {
@@ -20,6 +21,7 @@ export interface ServerToClientEvents {
   "member:join": (p: { serverId: string; userId: string }) => void;
   "member:leave": (p: { serverId: string; userId: string }) => void;
   "role:update": (p: { serverId: string }) => void;
+  "typing:start": (p: { channelId: string; userId: string }) => void;
   "presence:update": (p: { userId: string; status: PresenceStatus }) => void;
   "permissions:changed": (p: { serverId: string }) => void;
   "session:revoked": () => void;
