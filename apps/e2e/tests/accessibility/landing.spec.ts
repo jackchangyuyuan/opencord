@@ -1,14 +1,13 @@
 import { expect, test } from "../fixtures/index.js";
 
 test.describe("landing screen", { tag: "@a11y" }, () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto("/");
-    await expect(page.getByRole("heading", { name: "OpenCord" })).toBeVisible();
-  });
-
   test("has no WCAG 2.2 A or AA violations in the light theme", async ({
+    page,
     makeAxeBuilder,
   }) => {
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "OpenCord" })).toBeVisible();
+
     const { violations } = await makeAxeBuilder().analyze();
 
     expect(violations).toEqual([]);
@@ -18,8 +17,12 @@ test.describe("landing screen", { tag: "@a11y" }, () => {
     page,
     makeAxeBuilder,
   }) => {
-    await page.getByRole("button", { name: "Dark" }).click();
-    await expect(page.getByRole("button", { name: "Light" })).toBeVisible();
+    await page.addInitScript(() => {
+      document.documentElement.classList.add("dark");
+    });
+
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "OpenCord" })).toBeVisible();
 
     const { violations } = await makeAxeBuilder().analyze();
 

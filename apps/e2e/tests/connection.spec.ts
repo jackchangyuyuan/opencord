@@ -18,7 +18,7 @@ test("renders the SPA and reports the serving instance", async ({ page }) => {
 
   expect(signUp.status()).toBe(200);
 
-  await page.goto("/");
+  await page.goto("/app");
 
   await expect(page.getByRole("heading", { name: "OpenCord" })).toBeVisible();
   await expect(page.getByText(/^connected · /)).toBeVisible();
