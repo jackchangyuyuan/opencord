@@ -1,10 +1,26 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useUi } from "@/stores/ui";
 
 import { AppShell } from "./app-shell";
+
+function renderShell() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/app"]}>
+        <AppShell />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
 
 function stubViewport(mobile: boolean) {
   vi.stubGlobal(
@@ -35,7 +51,7 @@ describe("AppShell", () => {
   it("declares one of each landmark", () => {
     stubViewport(false);
 
-    render(<AppShell />);
+    renderShell();
 
     expect(screen.getAllByRole("main")).toHaveLength(1);
     expect(screen.getAllByRole("navigation")).toHaveLength(1);
@@ -45,7 +61,7 @@ describe("AppShell", () => {
   it("orders the headings h1 then h2, with no level skipped", () => {
     stubViewport(false);
 
-    render(<AppShell />);
+    renderShell();
 
     const levels = screen
       .getAllByRole("heading")
@@ -58,7 +74,7 @@ describe("AppShell", () => {
   it("names the three regions the navigation covers", () => {
     stubViewport(false);
 
-    render(<AppShell />);
+    renderShell();
 
     const navigation = screen.getByRole("navigation");
 
@@ -78,7 +94,7 @@ describe("AppShell", () => {
 
     stubViewport(true);
 
-    render(<AppShell />);
+    renderShell();
 
     expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
 
@@ -95,7 +111,7 @@ describe("AppShell", () => {
 
     stubViewport(true);
 
-    render(<AppShell />);
+    renderShell();
 
     await user.click(screen.getByRole("button", { name: "Open navigation" }));
     await screen.findByRole("dialog");
@@ -114,7 +130,7 @@ describe("AppShell", () => {
 
     stubViewport(true);
 
-    render(<AppShell />);
+    renderShell();
 
     expect(screen.getByRole("button", { name: "Dark" })).toBeInTheDocument();
 
