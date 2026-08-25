@@ -1,3 +1,4 @@
+export * from "./auth.js";
 export * from "./channels.js";
 export * from "./common.js";
 export * from "./messages.js";
