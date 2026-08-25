@@ -2,14 +2,12 @@ import type { ServerToClientEvents } from "@opencord/shared/events";
 import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ConnectionStatus } from "./connection-status";
-
 type SocketEvents = ServerToClientEvents & {
   connect: () => void;
   disconnect: () => void;
 };
 
-const { listenerCount, rawEmit, reset, socket } = vi.hoisted(() => {
+const { rawEmit, reset, socket } = vi.hoisted(() => {
   type Listener = (...args: unknown[]) => void;
 
   const listeners = new Map<string, Set<Listener>>();
@@ -32,9 +30,6 @@ const { listenerCount, rawEmit, reset, socket } = vi.hoisted(() => {
   return {
     socket,
 
-    listenerCount: () =>
-      [...listeners.values()].reduce((total, set) => total + set.size, 0),
-
     rawEmit: (event: string, ...args: unknown[]) => {
       for (const listener of [...(listeners.get(event) ?? [])]) {
         listener(...args);
@@ -42,13 +37,15 @@ const { listenerCount, rawEmit, reset, socket } = vi.hoisted(() => {
     },
 
     reset: () => {
-      listeners.clear();
       socket.connected = false;
     },
   };
 });
 
-vi.mock("../../../lib/socket", () => ({ socket }));
+vi.mock("@/lib/socket", () => ({ socket }));
+
+const { ConnectionStatus } = await import("./connection-status");
+const { useConnection } = await import("@/stores/connection");
 
 function emit<E extends keyof SocketEvents>(
   event: E,
@@ -61,6 +58,7 @@ function emit<E extends keyof SocketEvents>(
 
 beforeEach(() => {
   reset();
+  useConnection.setState({ status: "connecting", instanceId: null });
 });
 
 describe("ConnectionStatus", () => {
@@ -68,14 +66,6 @@ describe("ConnectionStatus", () => {
     render(<ConnectionStatus />);
 
     expect(screen.getByText("connecting")).toBeInTheDocument();
-  });
-
-  it("reports the connected state when the socket is already connected at mount", () => {
-    socket.connected = true;
-
-    render(<ConnectionStatus />);
-
-    expect(screen.getByText("connected")).toBeInTheDocument();
   });
 
   it("names the serving instance once the connection is ready", () => {
@@ -103,13 +93,12 @@ describe("ConnectionStatus", () => {
     expect(screen.getByText("disconnected")).toBeInTheDocument();
   });
 
-  it("unsubscribes from the socket when unmounted", () => {
-    const { unmount } = render(<ConnectionStatus />);
+  it("renders an instance the store learned before this component mounted", () => {
+    emit("connect");
+    emit("connection:ready", { instanceId: "api-1" });
 
-    expect(listenerCount()).toBe(3);
+    render(<ConnectionStatus />);
 
-    unmount();
-
-    expect(listenerCount()).toBe(0);
+    expect(screen.getByText("connected · api-1")).toBeInTheDocument();
   });
 });

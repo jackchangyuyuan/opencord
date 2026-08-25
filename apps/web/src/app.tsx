@@ -1,18 +1,13 @@
 import { Moon, Sun } from "lucide-react";
-import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ConnectionStatus } from "@/features/realtime/components/connection-status";
+import { usePrefs } from "@/stores/prefs";
 
 export function App() {
-  const [dark, setDark] = useState(false);
-
-  function toggleTheme() {
-    const next = !dark;
-
-    setDark(next);
-    document.documentElement.classList.toggle("dark", next);
-  }
+  const theme = usePrefs((state) => state.theme);
+  const toggleTheme = usePrefs((state) => state.toggleTheme);
+  const dark = theme === "dark";
 
   return (
     <main className="flex min-h-svh flex-col items-center justify-center gap-4">
