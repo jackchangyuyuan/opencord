@@ -22,6 +22,14 @@ export class ApiError extends Error {
 
 const API_BASE = "/api/v1";
 
+type SessionExpiredHandler = () => void;
+
+let onSessionExpired: SessionExpiredHandler = () => undefined;
+
+export function setSessionExpiredHandler(handler: SessionExpiredHandler): void {
+  onSessionExpired = handler;
+}
+
 function parseErrorBody(payload: unknown): ApiErrorBody {
   if (typeof payload !== "object" || payload === null) {
     return { code: "UNKNOWN", message: "The request failed" };
@@ -78,6 +86,10 @@ export async function api<T>(path: string, init: ApiRequest = {}): Promise<T> {
   const payload = text === "" ? undefined : parseJson(text);
 
   if (!response.ok) {
+    if (response.status === 401) {
+      onSessionExpired();
+    }
+
     throw new ApiError(response.status, parseErrorBody(payload), requestId);
   }
 

@@ -6,8 +6,14 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router";
 
+import { sessionQueryKey } from "./features/auth/hooks/use-session";
+import { setSessionExpiredHandler } from "./lib/api-client";
 import { queryClient } from "./lib/query-client";
 import { router } from "./routes";
+
+setSessionExpiredHandler(() => {
+  void queryClient.invalidateQueries({ queryKey: sessionQueryKey });
+});
 
 const container = document.getElementById("root");
 

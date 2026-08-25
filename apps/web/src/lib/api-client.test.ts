@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api, ApiError } from "./api-client";
+import { api, ApiError, setSessionExpiredHandler } from "./api-client";
 
 function respond(
   status: number,
@@ -124,6 +124,18 @@ describe("api", () => {
       code: "UNKNOWN",
       message: "The request failed",
     });
+  });
+
+  it("invalidates the session even when a 401 carries no JSON body", async () => {
+    const expired = vi.fn();
+
+    setSessionExpiredHandler(expired);
+    stubFetch(respondRaw(401, "<html>signed out</html>", "text/html"));
+
+    await expect(api("/users/@me")).rejects.toBeInstanceOf(ApiError);
+    expect(expired).toHaveBeenCalledTimes(1);
+
+    setSessionExpiredHandler(() => undefined);
   });
 
   it("reports a success body it cannot read rather than throwing a SyntaxError", async () => {
