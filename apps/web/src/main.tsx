@@ -1,9 +1,12 @@
 import "./index.css";
 
+import { QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router";
 
+import { queryClient } from "./lib/query-client";
 import { router } from "./routes";
 
 const container = document.getElementById("root");
@@ -14,6 +17,9 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <RouterProvider router={router} />
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+      {import.meta.env.PROD ? null : <ReactQueryDevtools />}
+    </QueryClientProvider>
   </StrictMode>,
 );

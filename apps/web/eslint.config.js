@@ -32,6 +32,13 @@ export default defineConfig([
   },
 
   {
+    files: ["src/main.tsx"],
+    rules: {
+      "turbo/no-undeclared-env-vars": ["error", { allowList: ["^PROD$"] }],
+    },
+  },
+
+  {
     files: ["*.config.ts", "eslint.config.js"],
     extends: [nodeConfig],
   },
