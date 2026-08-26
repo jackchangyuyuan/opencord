@@ -1,4 +1,6 @@
+import { Permissions } from "@opencord/shared/permissions";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { MoreHorizontal } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -9,10 +11,17 @@ import {
   serverMembersQuery,
 } from "@/features/members/api/queries";
 import {
+  has,
+  outranks,
+  useServerPermissions,
+} from "@/features/permissions/hooks/use-permissions";
+import {
   type PublicRole,
   roleColor,
   serverRolesQuery,
 } from "@/features/roles/api/queries";
+import { serverQuery } from "@/features/servers/api/queries";
+import { currentUserQuery } from "@/features/users/api/queries";
 
 interface Group {
   role: PublicRole;
@@ -75,6 +84,18 @@ export function MemberList({ serverId }: { serverId: string | undefined }) {
   });
 
   const roles = useQuery({ ...serverRolesQuery(serverId ?? ""), enabled });
+  const server = useQuery({ ...serverQuery(serverId ?? ""), enabled });
+  const { data: me } = useQuery(currentUserQuery);
+  const permissions = useServerPermissions(serverId);
+
+  const mayModerate =
+    has(permissions, Permissions.KICK_MEMBERS) ||
+    has(permissions, Permissions.MANAGE_ROLES);
+
+  const actor = {
+    id: me?.id,
+    roleIds: server.data?.roles.map((role) => role.id) ?? [],
+  };
 
   if (!enabled || members.isPending || roles.isPending) {
     return (
@@ -133,9 +154,21 @@ export function MemberList({ serverId }: { serverId: string | undefined }) {
                     {displayName(member).slice(0, 2).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
-                <span className="truncate text-sm text-[color:var(--member-color,var(--color-foreground))]">
+                <span className="flex-1 truncate text-sm text-[color:var(--member-color,var(--color-foreground))]">
                   {displayName(member)}
                 </span>
+                {mayModerate ? (
+                  <Button
+                    aria-label={`Member actions for ${displayName(member)}`}
+                    disabled={
+                      !outranks(actor, member, roles.data, server.data?.ownerId)
+                    }
+                    size="icon-xs"
+                    variant="ghost"
+                  >
+                    <MoreHorizontal />
+                  </Button>
+                ) : null}
               </li>
             ))}
           </ul>

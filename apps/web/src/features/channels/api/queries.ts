@@ -58,3 +58,28 @@ export function useActiveServerId(): string | undefined {
 
   return channel?.serverId ?? undefined;
 }
+
+export interface RoleOverwriteEntry {
+  roleId: string;
+  allow: number;
+  deny: number;
+}
+
+export interface MemberOverwriteEntry {
+  userId: string;
+  allow: number;
+  deny: number;
+}
+
+export interface ChannelOverwrites {
+  roles: RoleOverwriteEntry[];
+  members: MemberOverwriteEntry[];
+}
+
+export function channelOverwritesQuery(channelId: string) {
+  return queryOptions({
+    queryKey: ["channels", channelId, "overwrites"] as const,
+    queryFn: ({ signal }) =>
+      api<ChannelOverwrites>(`/channels/${channelId}/overwrites`, { signal }),
+  });
+}

@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Permissions } from "@opencord/shared/permissions";
 import {
   type CreateChannelInput,
   createChannelSchema,
@@ -28,11 +29,16 @@ import {
   type ChannelSummary,
   serverChannelsQueryKey,
 } from "@/features/channels/api/queries";
+import {
+  has,
+  useServerPermissions,
+} from "@/features/permissions/hooks/use-permissions";
 import { api, ApiError } from "@/lib/api-client";
 import { useUi } from "@/stores/ui";
 
 export function CreateChannelDialog({ serverId }: { serverId: string }) {
   const queryClient = useQueryClient();
+  const permissions = useServerPermissions(serverId);
   const activeModal = useUi((state) => state.activeModal);
   const openModal = useUi((state) => state.openModal);
   const closeModal = useUi((state) => state.closeModal);
@@ -61,12 +67,18 @@ export function CreateChannelDialog({ serverId }: { serverId: string }) {
     create.mutate(values);
   });
 
+  const mayCreate = has(permissions, Permissions.MANAGE_CHANNELS);
+
   const failure =
     create.error instanceof ApiError
       ? create.error.message
       : create.error === null
         ? null
         : "Could not create the channel";
+
+  if (!mayCreate) {
+    return null;
+  }
 
   return (
     <Dialog

@@ -1,3 +1,4 @@
+import { Permissions } from "@opencord/shared/permissions";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -23,7 +24,7 @@ const ROLES: PublicRole[] = [
     name: "Moderator",
     color: 0x3366ff,
     position: 5,
-    permissions: 7,
+    permissions: 7 | Permissions.KICK_MEMBERS,
     isDefault: false,
   },
   {
@@ -56,12 +57,28 @@ const MEMBERS = [
   member("u-hal", "Hal", ["r-bot"], "HAL 9000"),
 ];
 
+const SERVER_DETAIL = {
+  id: SERVER_ID,
+  name: "Analytical Engine",
+  iconKey: null,
+  ownerId: "u-owner",
+  createdAt: "2026-09-01T00:00:00.000Z",
+  everyoneRole: ROLES[0],
+  roles: [],
+};
+
+const ME = { id: "u-me", username: "me", name: "Me", avatarUrl: null };
+
 function stubApi(members: ServerMemberEntry[], roles: PublicRole[]) {
   const fetchMock = vi.fn<typeof fetch>().mockImplementation((input) => {
     const url = input instanceof Request ? input.url : input.toString();
-    const body = url.includes("/roles")
-      ? roles
-      : { data: members, nextCursor: null };
+    const body = url.endsWith("/users/@me")
+      ? ME
+      : url.endsWith("/roles")
+        ? roles
+        : url.includes("/members")
+          ? { data: members, nextCursor: null }
+          : SERVER_DETAIL;
 
     return Promise.resolve(
       new Response(JSON.stringify(body), {
@@ -154,6 +171,70 @@ describe("MemberList", () => {
       "--member-color": "#3366ff",
     });
     expect(within(everyone).getByRole("listitem")).not.toHaveAttribute("style");
+  });
+
+  it("hides the action menu from a member who can moderate nobody", async () => {
+    stubApi(MEMBERS, ROLES);
+
+    mountList();
+
+    await screen.findByRole("region", { name: /^Bot/ });
+
+    expect(
+      screen.queryAllByRole("button", { name: /^Member actions/ }),
+    ).toEqual([]);
+  });
+
+  it("greys out actions on peers and on the owner", async () => {
+    stubApi(
+      [member("u-me", "Me", ["r-mod"]), member("u-owner", "Owner", [])],
+      ROLES,
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockImplementation((input) => {
+        const url = input instanceof Request ? input.url : input.toString();
+
+        const body = url.endsWith("/users/@me")
+          ? ME
+          : url.endsWith("/roles")
+            ? ROLES
+            : url.includes("/members")
+              ? {
+                  data: [
+                    member("u-me", "Me", ["r-mod"]),
+                    member("u-owner", "Owner", []),
+                    member("u-peer", "Peer", ["r-mod"]),
+                    member("u-junior", "Junior", []),
+                  ],
+                  nextCursor: null,
+                }
+              : { ...SERVER_DETAIL, roles: [ROLES[1]] };
+
+        return Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }),
+    );
+
+    mountList();
+
+    expect(
+      await screen.findByRole("button", { name: "Member actions for Junior" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Member actions for Peer" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Member actions for Owner" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Member actions for Me" }),
+    ).toBeDisabled();
   });
 
   it("an uncoloured highest role falls back to a coloured lower one", async () => {
