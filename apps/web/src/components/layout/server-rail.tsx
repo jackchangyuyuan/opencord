@@ -1,5 +1,6 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useActiveServerId } from "@/features/channels/api/queries";
+import { CreateServerDialog } from "@/features/servers/components/create-server-dialog";
 import { ServerList } from "@/features/servers/components/server-list";
 
 export function ServerRail() {
@@ -13,6 +14,7 @@ export function ServerRail() {
           {...(activeServerId === undefined ? {} : { activeServerId })}
         />
       </ScrollArea>
+      <CreateServerDialog />
     </div>
   );
 }

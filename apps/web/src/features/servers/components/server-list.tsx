@@ -77,7 +77,7 @@ export function ServerList({ activeServerId }: { activeServerId?: string }) {
                 />
               }
             >
-              <Avatar className="size-10 rounded-2xl">
+              <Avatar aria-hidden className="size-10 rounded-2xl">
                 <AvatarImage alt="" src={server.iconKey ?? undefined} />
                 <AvatarFallback className="rounded-2xl">
                   {initials(server.name)}
