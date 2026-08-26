@@ -2,6 +2,7 @@ import type { Message } from "@opencord/shared/types";
 import { useQuery } from "@tanstack/react-query";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { MessageContent } from "@/features/messages/components/message-content";
 import { userQuery } from "@/features/users/api/queries";
 
 const TIME = new Intl.DateTimeFormat(undefined, {
@@ -51,12 +52,13 @@ export function MessageRow({
             </time>
           </p>
         )}
-        <p className="text-sm break-words whitespace-pre-wrap">
-          {message.content}
-          {message.editedAt === null ? null : (
-            <span className="ml-1 text-xs text-muted-foreground">(edited)</span>
-          )}
-        </p>
+        <MessageContent
+          channelId={message.channelId}
+          content={message.content}
+        />
+        {message.editedAt === null ? null : (
+          <span className="text-xs text-muted-foreground">(edited)</span>
+        )}
       </div>
     </article>
   );
