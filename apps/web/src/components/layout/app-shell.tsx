@@ -1,4 +1,5 @@
 import { Moon, Sun } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { ChannelSidebar } from "@/components/layout/channel-sidebar";
 import { MemberPanel } from "@/components/layout/member-panel";
@@ -9,8 +10,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConnectionStatus } from "@/features/realtime/components/connection-status";
 import { useIsMobile } from "@/lib/use-media-query";
 import { usePrefs } from "@/stores/prefs";
-
-const PLACEHOLDERS = ["first", "second", "third", "fourth", "fifth"];
 
 function ThemeToggle() {
   const theme = usePrefs((state) => state.theme);
@@ -25,7 +24,7 @@ function ThemeToggle() {
   );
 }
 
-export function AppShell() {
+export function AppShell({ children }: { children?: ReactNode }) {
   const isMobile = useIsMobile();
 
   const navigation = (
@@ -55,20 +54,7 @@ export function AppShell() {
 
           <main className="flex min-h-0 flex-1 flex-col">
             <h2 className="sr-only">Conversation</h2>
-            <div className="flex flex-1 flex-col justify-end gap-3 overflow-hidden p-4">
-              {PLACEHOLDERS.map((key) => (
-                <div className="flex items-start gap-3" key={key}>
-                  <div className="size-8 shrink-0 animate-pulse rounded-full bg-muted" />
-                  <div className="flex-1 space-y-2">
-                    <div className="h-3 w-32 animate-pulse rounded bg-muted" />
-                    <div className="h-3 w-full animate-pulse rounded bg-muted" />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="border-t p-3">
-              <div className="h-9 animate-pulse rounded-lg bg-muted" />
-            </div>
+            {children}
           </main>
 
           <MemberPanel />

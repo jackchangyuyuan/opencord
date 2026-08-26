@@ -1,0 +1,355 @@
+import type { Message } from "@opencord/shared/types";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { channelMessagesQueryKey } from "@/features/messages/api/queries";
+import {
+  buildRows,
+  flattenPages,
+  localDay,
+  prependedCount,
+} from "@/features/messages/lib/rows";
+
+import { MessageList } from "./message-list";
+
+vi.mock("react-virtuoso", () => ({
+  Virtuoso: ({
+    data,
+    itemContent,
+    firstItemIndex,
+  }: {
+    data: { key: string }[];
+    itemContent: (index: number, row: unknown) => React.ReactNode;
+    firstItemIndex: number;
+  }) => (
+    <div data-first-item-index={firstItemIndex} data-testid="virtuoso">
+      {data.map((row, index) => (
+        <div key={row.key}>{itemContent(firstItemIndex + index, row)}</div>
+      ))}
+    </div>
+  ),
+}));
+
+const CHANNEL_ID = "44444444-4444-4444-8444-444444444444";
+
+function message(
+  id: string,
+  authorId: string,
+  createdAt: string,
+  content: string,
+): Message {
+  return {
+    id,
+    channelId: CHANNEL_ID,
+    authorId,
+    content,
+    nonce: null,
+    replyToId: null,
+    replyTo: null,
+    editedAt: null,
+    deletedAt: null,
+    createdAt,
+  };
+}
+
+const NEWEST_FIRST = [
+  message("m-3", "u-ada", "2026-09-02T09:02:00.000Z", "third"),
+  message("m-2", "u-ada", "2026-09-01T10:01:00.000Z", "second"),
+  message("m-1", "u-ada", "2026-09-01T10:00:00.000Z", "first"),
+];
+
+function stubApi(page: { data: Message[]; nextCursor: string | null }) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = input instanceof Request ? input.url : input.toString();
+
+      const body = url.includes("/messages")
+        ? page
+        : { id: "u-ada", username: "ada", name: "Ada", avatarUrl: null };
+
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }),
+  );
+}
+
+function mountList() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  render(
+    <QueryClientProvider client={client}>
+      <MessageList channelId={CHANNEL_ID} />
+    </QueryClientProvider>,
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("flattenPages", () => {
+  it("turns newest-first pages into an oldest-first list", () => {
+    const older = [
+      message("m-0", "u-ada", "2026-08-31T10:00:00.000Z", "zeroth"),
+    ];
+
+    expect(
+      flattenPages([{ data: NEWEST_FIRST }, { data: older }]).map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(["m-0", "m-1", "m-2", "m-3"]);
+  });
+});
+
+describe("buildRows", () => {
+  const oldestFirst = flattenPages([{ data: NEWEST_FIRST }]);
+
+  it("puts a date divider before the first message of each day", () => {
+    const rows = buildRows(oldestFirst);
+
+    expect(rows.map((row) => row.kind)).toEqual([
+      "date",
+      "message",
+      "message",
+      "date",
+      "message",
+    ]);
+  });
+
+  it("groups a follow-up from the same author inside the window", () => {
+    const rows = buildRows(oldestFirst).filter((row) => row.kind === "message");
+
+    expect(rows.map((row) => row.grouped)).toEqual([false, true, false]);
+  });
+
+  it("breaks the group when the author changes", () => {
+    const rows = buildRows([
+      message("m-1", "u-ada", "2026-09-01T10:00:00.000Z", "a"),
+      message("m-2", "u-grace", "2026-09-01T10:00:30.000Z", "b"),
+    ]).filter((row) => row.kind === "message");
+
+    expect(rows.map((row) => row.grouped)).toEqual([false, false]);
+  });
+
+  it("breaks the group when the gap exceeds the window", () => {
+    const rows = buildRows([
+      message("m-1", "u-ada", "2026-09-01T10:00:00.000Z", "a"),
+      message("m-2", "u-ada", "2026-09-01T10:06:00.000Z", "b"),
+    ]).filter((row) => row.kind === "message");
+
+    expect(rows.map((row) => row.grouped)).toEqual([false, false]);
+  });
+});
+
+describe("localDay", () => {
+  it("names the viewer's calendar day, not the UTC one", () => {
+    expect(localDay("2026-09-11T23:30:00.000Z")).toBe("2026-09-12");
+    expect(localDay("2026-09-11T14:30:00.000Z")).toBe("2026-09-11");
+  });
+});
+
+describe("date dividers follow the viewer's calendar", () => {
+  it("keeps one divider across midnight UTC inside a single local day", () => {
+    const rows = buildRows([
+      message("m-1", "u-ada", "2026-09-11T23:30:00.000Z", "before"),
+      message("m-2", "u-ada", "2026-09-12T00:30:00.000Z", "after"),
+    ]);
+
+    expect(rows.filter((row) => row.kind === "date")).toHaveLength(1);
+    expect(rows.map((row) => row.kind)).toEqual(["date", "message", "message"]);
+  });
+
+  it("starts a new divider at local midnight inside a single UTC day", () => {
+    const rows = buildRows([
+      message("m-1", "u-ada", "2026-09-11T14:30:00.000Z", "before"),
+      message("m-2", "u-ada", "2026-09-11T15:30:00.000Z", "after"),
+    ]);
+
+    expect(rows.map((row) => row.kind)).toEqual([
+      "date",
+      "message",
+      "date",
+      "message",
+    ]);
+    expect(
+      rows.filter((row) => row.kind === "date").map((row) => row.day),
+    ).toEqual(["2026-09-11", "2026-09-12"]);
+  });
+
+  it("breaks same-author grouping at the local day boundary", () => {
+    const rows = buildRows([
+      message("m-1", "u-ada", "2026-09-11T14:59:00.000Z", "before"),
+      message("m-2", "u-ada", "2026-09-11T15:01:00.000Z", "after"),
+    ]);
+
+    expect(
+      rows.filter((row) => row.kind === "message").map((row) => row.grouped),
+    ).toEqual([false, false]);
+  });
+});
+
+describe("prependedCount", () => {
+  const rows = buildRows([
+    message("m-1", "u-ada", "2026-09-11T15:30:00.000Z", "a"),
+    message("m-2", "u-ada", "2026-09-11T15:31:00.000Z", "b"),
+  ]);
+
+  it("is nothing before the first page is known", () => {
+    expect(prependedCount(null, rows)).toBe(0);
+  });
+
+  it("is nothing while the head is unchanged", () => {
+    expect(prependedCount(rows[0]?.key ?? "", rows)).toBe(0);
+  });
+
+  it("counts the rows inserted ahead of the previous head", () => {
+    expect(prependedCount(rows[1]?.key ?? "", rows)).toBe(1);
+  });
+
+  it("is nothing when the previous head is gone", () => {
+    expect(prependedCount("date-1999-01-01", rows)).toBe(0);
+  });
+});
+
+describe("MessageList", () => {
+  it("renders the channel oldest-first with its dividers", async () => {
+    stubApi({ data: NEWEST_FIRST, nextCursor: null });
+
+    mountList();
+
+    expect(await screen.findByText("first")).toBeInTheDocument();
+
+    expect(screen.getByTestId("virtuoso")).toHaveTextContent(
+      /first.*second.*third/s,
+    );
+  });
+
+  it("holds firstItemIndex still while messages arrive at the end", async () => {
+    stubApi({ data: NEWEST_FIRST, nextCursor: null });
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={client}>
+        <MessageList channelId={CHANNEL_ID} />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("first");
+
+    expect(screen.getByTestId("virtuoso")).toHaveAttribute(
+      "data-first-item-index",
+      String(1_000_000),
+    );
+
+    act(() => {
+      client.setQueryData(channelMessagesQueryKey(CHANNEL_ID), {
+        pages: [
+          {
+            data: [
+              message("m-4", "u-ada", "2026-09-02T09:05:00.000Z", "arrived"),
+              ...NEWEST_FIRST,
+            ],
+            nextCursor: null,
+          },
+        ],
+        pageParams: [null],
+      });
+    });
+
+    await screen.findByText("arrived");
+
+    expect(screen.getByTestId("virtuoso")).toHaveAttribute(
+      "data-first-item-index",
+      String(1_000_000),
+    );
+  });
+
+  it("winds firstItemIndex back by the rows an older page prepends", async () => {
+    stubApi({ data: NEWEST_FIRST, nextCursor: "cursor-1" });
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={client}>
+        <MessageList channelId={CHANNEL_ID} />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("first");
+
+    act(() => {
+      client.setQueryData(channelMessagesQueryKey(CHANNEL_ID), {
+        pages: [
+          { data: NEWEST_FIRST, nextCursor: "cursor-1" },
+          {
+            data: [
+              message("m-0", "u-ada", "2026-08-31T10:00:00.000Z", "zeroth"),
+            ],
+            nextCursor: null,
+          },
+        ],
+        pageParams: [null, "cursor-1"],
+      });
+    });
+
+    await screen.findByText("zeroth");
+
+    expect(screen.getByTestId("virtuoso")).toHaveAttribute(
+      "data-first-item-index",
+      String(1_000_000 - 2),
+    );
+  });
+
+  it("declares an empty polite live region for arriving messages", async () => {
+    stubApi({ data: NEWEST_FIRST, nextCursor: null });
+
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <MessageList channelId={CHANNEL_ID} />
+      </QueryClientProvider>,
+    );
+
+    const region = screen.getByRole("status");
+
+    expect(region).toHaveAttribute("aria-live", "polite");
+
+    await waitFor(() => {
+      expect(region).toBeEmptyDOMElement();
+    });
+  });
+
+  it("invites the reader to pick a channel when none is routed", () => {
+    stubApi({ data: [], nextCursor: null });
+
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <MessageList channelId={undefined} />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      screen.getByText("Choose a channel to start reading."),
+    ).toBeInTheDocument();
+  });
+});

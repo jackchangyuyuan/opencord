@@ -25,6 +25,10 @@ export default defineConfig({
             name: "api",
             command: "pnpm --filter @opencord/api dev",
             cwd: "../..",
+            env: {
+              RATE_LIMIT_AUTH_POINTS: "1000",
+              RATE_LIMIT_MESSAGE_POINTS: "1000",
+            },
             url: "http://127.0.0.1:3000/readyz",
             reuseExistingServer: !process.env["CI"],
             stdout: "ignore",
