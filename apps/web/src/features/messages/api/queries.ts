@@ -26,3 +26,16 @@ export function channelMessagesQuery(channelId: string) {
     getNextPageParam: (page) => page.nextCursor,
   });
 }
+
+export function encodeCursor(id: string): string {
+  return btoa(id).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+}
+
+export function fetchNewerMessages(
+  channelId: string,
+  afterMessageId: string,
+): Promise<MessagePage> {
+  return api<MessagePage>(
+    `/channels/${channelId}/messages?after=${encodeCursor(afterMessageId)}`,
+  );
+}
