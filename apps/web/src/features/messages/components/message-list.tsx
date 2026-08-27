@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 
 import { channelMessagesQuery } from "@/features/messages/api/queries";
@@ -34,6 +34,9 @@ export function MessageList({
   const { data: me } = useQuery(currentUserQuery);
   const { retry, discard } = useSendMessage(channelId ?? "");
 
+  const [announcement, setAnnouncement] = useState("");
+  const announcedRef = useRef<string | null>(null);
+
   const rows =
     enabled && messages.data !== undefined
       ? buildRows(flattenPages(messages.data.pages))
@@ -45,6 +48,29 @@ export function MessageList({
   firstItemIndexRef.current -= prependedCount(firstKeyRef.current, rows);
   firstKeyRef.current = rows[0]?.key ?? firstKeyRef.current;
 
+  const newest = rows.at(-1);
+  const newestId = newest?.kind === "message" ? newest.message.id : null;
+  const newestContent =
+    newest?.kind === "message" ? newest.message.content : "";
+
+  const loaded = messages.isSuccess;
+
+  useEffect(() => {
+    if (!loaded) {
+      return;
+    }
+
+    if (announcedRef.current === null) {
+      announcedRef.current = newestId ?? "";
+      return;
+    }
+
+    if (newestId !== null && announcedRef.current !== newestId) {
+      announcedRef.current = newestId;
+      setAnnouncement(newestContent);
+    }
+  }, [loaded, newestContent, newestId]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div
@@ -52,7 +78,9 @@ export function MessageList({
         className="sr-only"
         data-slot="message-announcer"
         role="status"
-      />
+      >
+        {announcement}
+      </div>
 
       {!enabled ? (
         <p className="p-4 text-sm text-muted-foreground">

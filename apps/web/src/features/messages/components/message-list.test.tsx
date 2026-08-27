@@ -335,6 +335,45 @@ describe("MessageList", () => {
     });
   });
 
+  it("announces an arriving message in the live region, but not the history", async () => {
+    stubApi({ data: NEWEST_FIRST, nextCursor: null });
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={client}>
+        <MessageList channelId={CHANNEL_ID} />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("third");
+
+    const region = screen.getByRole("status");
+
+    expect(region).toBeEmptyDOMElement();
+
+    act(() => {
+      client.setQueryData(channelMessagesQueryKey(CHANNEL_ID), {
+        pages: [
+          {
+            data: [
+              message("m-4", "u-ada", "2026-09-02T09:05:00.000Z", "arrived"),
+              ...NEWEST_FIRST,
+            ],
+            nextCursor: null,
+          },
+        ],
+        pageParams: [null],
+      });
+    });
+
+    await waitFor(() => {
+      expect(region).toHaveTextContent("arrived");
+    });
+  });
+
   it("invites the reader to pick a channel when none is routed", () => {
     stubApi({ data: [], nextCursor: null });
 
