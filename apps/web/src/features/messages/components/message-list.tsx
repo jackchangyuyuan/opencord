@@ -1,15 +1,18 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useRef } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 
 import { channelMessagesQuery } from "@/features/messages/api/queries";
+import { Composer } from "@/features/messages/components/composer";
 import { DateDivider } from "@/features/messages/components/date-divider";
 import { MessageRow } from "@/features/messages/components/message-row";
+import { useSendMessage } from "@/features/messages/hooks/use-send-message";
 import {
   buildRows,
   flattenPages,
   prependedCount,
 } from "@/features/messages/lib/rows";
+import { currentUserQuery } from "@/features/users/api/queries";
 
 const FIRST_ITEM_BASE = 1_000_000;
 
@@ -27,6 +30,9 @@ export function MessageList({
     ...channelMessagesQuery(channelId ?? ""),
     enabled,
   });
+
+  const { data: me } = useQuery(currentUserQuery);
+  const { retry, discard } = useSendMessage(channelId ?? "");
 
   const rows =
     enabled && messages.data !== undefined
@@ -66,7 +72,16 @@ export function MessageList({
             row.kind === "date" ? (
               <DateDivider day={row.day} />
             ) : (
-              <MessageRow grouped={row.grouped} message={row.message} />
+              <MessageRow
+                grouped={row.grouped}
+                message={row.message}
+                onDiscard={discard}
+                onRetry={(entry) => {
+                  if (me !== undefined) {
+                    retry(entry, me.id);
+                  }
+                }}
+              />
             )
           }
           ref={listRef}
@@ -80,6 +95,8 @@ export function MessageList({
             : { initialTopMostItemIndex })}
         />
       )}
+
+      {enabled ? <Composer channelId={channelId} /> : null}
     </div>
   );
 }

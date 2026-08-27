@@ -1,9 +1,11 @@
-import type { Message } from "@opencord/shared/types";
 import { useQuery } from "@tanstack/react-query";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import { MessageContent } from "@/features/messages/components/message-content";
+import type { ChatMessage } from "@/features/messages/hooks/use-send-message";
 import { userQuery } from "@/features/users/api/queries";
+import { cn } from "@/lib/cn";
 
 const TIME = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit",
@@ -13,9 +15,13 @@ const TIME = new Intl.DateTimeFormat(undefined, {
 export function MessageRow({
   message,
   grouped,
+  onRetry,
+  onDiscard,
 }: {
-  message: Message;
+  message: ChatMessage;
   grouped: boolean;
+  onRetry?: (message: ChatMessage) => void;
+  onDiscard?: (message: ChatMessage) => void;
 }) {
   const { data: author } = useQuery(userQuery(message.authorId));
 
@@ -30,8 +36,17 @@ export function MessageRow({
     );
   }
 
+  const local = message.local;
+
   return (
-    <article className="flex gap-3 px-4 py-0.5 hover:bg-muted/40">
+    <article
+      className={cn(
+        "flex gap-3 px-4 py-0.5 hover:bg-muted/40",
+        local !== undefined && "opacity-60",
+        local?.status === "failed" && "opacity-100",
+      )}
+      data-local-status={local?.status}
+    >
       <div className="w-9 shrink-0">
         {grouped ? null : (
           <Avatar aria-hidden className="size-9">
@@ -59,6 +74,27 @@ export function MessageRow({
         {message.editedAt === null ? null : (
           <span className="text-xs text-muted-foreground">(edited)</span>
         )}
+        {local?.status === "failed" ? (
+          <p className="flex items-center gap-2 text-xs text-destructive">
+            <span role="alert">{local.reason ?? "Could not send"}</span>
+            {local.retry === "none" ? null : (
+              <Button
+                onClick={() => onRetry?.(message)}
+                size="xs"
+                variant="ghost"
+              >
+                Retry
+              </Button>
+            )}
+            <Button
+              onClick={() => onDiscard?.(message)}
+              size="xs"
+              variant="ghost"
+            >
+              Delete
+            </Button>
+          </p>
+        ) : null}
       </div>
     </article>
   );
