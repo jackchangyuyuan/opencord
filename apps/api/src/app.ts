@@ -9,7 +9,7 @@ import { notFound } from "./lib/errors.js";
 import { requireAuth, revokeSignedOutSession } from "./middleware/auth.js";
 import { errorHandler } from "./middleware/error.js";
 import { httpLogger } from "./middleware/http-logger.js";
-import { authRateLimit } from "./middleware/rate-limit.js";
+import { authRateLimit, searchRateLimit } from "./middleware/rate-limit.js";
 import {
   channelsRouter,
   serverChannelsRouter,
@@ -17,6 +17,7 @@ import {
 import { serverMembersRouter } from "./modules/members/router.js";
 import { messagesRouter } from "./modules/messages/router.js";
 import { serverRolesRouter } from "./modules/roles/router.js";
+import { searchRouter } from "./modules/search/router.js";
 import { serversRouter } from "./modules/servers/router.js";
 import { statsRouter } from "./modules/stats/router.js";
 import { usersRouter } from "./modules/users/router.js";
@@ -71,6 +72,7 @@ apiRouter.use(requireAuth);
 apiRouter.use(express.json());
 apiRouter.use("/channels", channelsRouter);
 apiRouter.use("/channels/:channelId/messages", messagesRouter);
+apiRouter.use("/search", searchRateLimit, searchRouter);
 apiRouter.use("/servers", serversRouter);
 apiRouter.use("/servers/:serverId/channels", serverChannelsRouter);
 apiRouter.use("/servers/:serverId/members", serverMembersRouter);

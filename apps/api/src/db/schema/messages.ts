@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  customType,
   foreignKey,
   index,
   pgTable,
@@ -13,6 +14,10 @@ import {
 
 import { users } from "./auth.js";
 import { channels } from "./channels.js";
+
+const tsvector = customType<{ data: string; driverData: string }>({
+  dataType: () => "tsvector",
+});
 
 export const messages = pgTable(
   "messages",
@@ -35,6 +40,9 @@ export const messages = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    searchVector: tsvector("search_vector").generatedAlwaysAs(
+      sql`to_tsvector('english', content)`,
+    ),
   },
   (table) => [
     unique("messages_id_channel_id_uq").on(table.id, table.channelId),
@@ -51,5 +59,6 @@ export const messages = pgTable(
       .where(sql`${table.nonce} is not null`),
     index("messages_author_id_idx").on(table.authorId),
     index("messages_reply_to_id_idx").on(table.replyToId),
+    index("messages_search_vector_idx").using("gin", table.searchVector),
   ],
 );

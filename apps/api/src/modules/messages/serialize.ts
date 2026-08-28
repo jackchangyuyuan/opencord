@@ -3,7 +3,11 @@ import { inArray } from "drizzle-orm";
 
 import { db } from "../../db/index.js";
 import { messages } from "../../db/schema/index.js";
-import { type MessageRow, serializeMessage } from "./queries.js";
+import {
+  messageColumns,
+  type MessageRow,
+  serializeMessage,
+} from "./queries.js";
 
 function preview(row: MessageRow): MessagePreview {
   return {
@@ -28,7 +32,10 @@ export async function serializeMessages(
   const quoted =
     quotedIds.length === 0
       ? []
-      : await db.select().from(messages).where(inArray(messages.id, quotedIds));
+      : await db
+          .select(messageColumns)
+          .from(messages)
+          .where(inArray(messages.id, quotedIds));
 
   return rows.map((row) => {
     const target = quoted.find((candidate) => candidate.id === row.replyToId);

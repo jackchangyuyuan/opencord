@@ -22,6 +22,7 @@ import { applyMentions, findMentionCandidates } from "./mentions.js";
 import {
   findLiveMessage,
   findMessageByNonce,
+  messageColumns,
   type MessageRow,
   resolveMentions,
 } from "./queries.js";
@@ -164,11 +165,11 @@ export async function sendMessage(
         target: [messages.authorId, messages.nonce],
         where: sql`${messages.nonce} is not null`,
       })
-      .returning();
+      .returning(messageColumns);
 
     if (inserted === undefined) {
       const [existing] = await tx
-        .select()
+        .select(messageColumns)
         .from(messages)
         .where(
           and(eq(messages.authorId, authorId), eq(messages.nonce, input.nonce)),
@@ -255,7 +256,7 @@ export async function editMessage(
         editedAt: new Date(),
       })
       .where(eq(messages.id, message.id))
-      .returning();
+      .returning(messageColumns);
 
     if (row === undefined) {
       throw new Error("Message edit returned no row");

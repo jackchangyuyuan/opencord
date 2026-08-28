@@ -13,6 +13,7 @@ export default defineConfig({
       RATE_LIMIT_CREATE_POINTS: "1000000",
       RATE_LIMIT_HEARTBEAT_POINTS: "1000000",
       RATE_LIMIT_MESSAGE_POINTS: "1000000",
+      RATE_LIMIT_SEARCH_POINTS: "1000000",
       RATE_LIMIT_TYPING_POINTS: "1000000",
       REDIS_URL: "redis://localhost:6379",
       S3_BUCKET: "opencord-dev-uploads",

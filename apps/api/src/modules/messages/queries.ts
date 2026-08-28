@@ -26,7 +26,20 @@ import { decodeCursor, encodeCursor } from "../../lib/cursor.js";
 import { AppError } from "../../lib/errors.js";
 import type { MentionCandidates, MentionResolution } from "./mentions.js";
 
-export type MessageRow = typeof messages.$inferSelect;
+export const messageColumns = {
+  id: messages.id,
+  channelId: messages.channelId,
+  authorId: messages.authorId,
+  content: messages.content,
+  nonce: messages.nonce,
+  replyToId: messages.replyToId,
+  mentionsEveryone: messages.mentionsEveryone,
+  editedAt: messages.editedAt,
+  deletedAt: messages.deletedAt,
+  createdAt: messages.createdAt,
+};
+
+export type MessageRow = Omit<typeof messages.$inferSelect, "searchVector">;
 
 export type MessageBase = Omit<Message, "replyTo">;
 
@@ -49,7 +62,7 @@ export async function findMessageByNonce(
   nonce: string,
 ): Promise<MessageRow | undefined> {
   const [message] = await db
-    .select()
+    .select(messageColumns)
     .from(messages)
     .where(and(eq(messages.authorId, authorId), eq(messages.nonce, nonce)));
 
@@ -61,7 +74,7 @@ export async function findLiveMessage(
   messageId: string,
 ): Promise<MessageRow | undefined> {
   const [message] = await db
-    .select()
+    .select(messageColumns)
     .from(messages)
     .where(
       and(
@@ -96,7 +109,7 @@ function livePage(
   limit: number,
 ): Promise<MessageRow[]> {
   return db
-    .select()
+    .select(messageColumns)
     .from(messages)
     .where(
       and(eq(messages.channelId, channelId), isNull(messages.deletedAt), bound),
