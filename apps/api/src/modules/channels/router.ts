@@ -15,6 +15,7 @@ import { createResourceRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
 import { overwritesRouter } from "./overwrites/router.js";
 import { listServerChannels, serializeChannel } from "./queries.js";
+import { readRouter } from "./read-state/router.js";
 import { createChannel, deleteChannel, updateChannel } from "./service.js";
 
 const serverParamsSchema = z.object({ serverId: z.uuid() });
@@ -51,6 +52,7 @@ serverChannelsRouter.post(
 export const channelsRouter = Router();
 
 channelsRouter.use("/:channelId/overwrites", overwritesRouter);
+channelsRouter.use("/:channelId/read", readRouter);
 
 channelsRouter.get(
   "/:channelId",

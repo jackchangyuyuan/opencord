@@ -7,6 +7,7 @@ import {
   rederiveRooms,
   revokeSession,
   serverRoom,
+  userRoom,
 } from "./rooms.js";
 import type { SocketServer } from "./types.js";
 
@@ -44,6 +45,13 @@ export function emitMessageDelete(payload: {
   deletedAt: string;
 }): void {
   current?.to(channelRoom(payload.channelId)).emit("message:delete", payload);
+}
+
+export function emitReadUpdate(
+  userId: string,
+  payload: { channelId: string; lastReadMessageId: string },
+): void {
+  current?.to(userRoom(userId)).emit("read:update", payload);
 }
 
 export function emitPermissionsChanged(serverId: string): void {
