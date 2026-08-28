@@ -10,6 +10,7 @@ import {
   type ServerMemberEntry,
   serverMembersQuery,
 } from "@/features/members/api/queries";
+import { PresenceDot } from "@/features/members/components/presence-dot";
 import {
   has,
   outranks,
@@ -22,6 +23,7 @@ import {
 } from "@/features/roles/api/queries";
 import { serverQuery } from "@/features/servers/api/queries";
 import { currentUserQuery } from "@/features/users/api/queries";
+import { statusOf, usePresence } from "@/stores/presence";
 
 interface Group {
   role: PublicRole;
@@ -87,6 +89,7 @@ export function MemberList({ serverId }: { serverId: string | undefined }) {
   const server = useQuery({ ...serverQuery(serverId ?? ""), enabled });
   const { data: me } = useQuery(currentUserQuery);
   const permissions = useServerPermissions(serverId);
+  const presence = usePresence((state) => state.byUser);
 
   const mayModerate =
     has(permissions, Permissions.KICK_MEMBERS) ||
@@ -145,15 +148,20 @@ export function MemberList({ serverId }: { serverId: string | undefined }) {
                   } as CSSProperties
                 }
               >
-                <Avatar aria-hidden className="size-7">
-                  <AvatarImage
-                    alt=""
-                    src={member.user.avatarUrl ?? undefined}
-                  />
-                  <AvatarFallback>
-                    {displayName(member).slice(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <span className="relative shrink-0">
+                  <Avatar aria-hidden className="size-7">
+                    <AvatarImage
+                      alt=""
+                      src={member.user.avatarUrl ?? undefined}
+                    />
+                    <AvatarFallback>
+                      {displayName(member).slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="absolute -right-0.5 -bottom-0.5">
+                    <PresenceDot status={statusOf(presence, member.user.id)} />
+                  </span>
+                </span>
                 <span className="flex-1 truncate text-sm text-[color:var(--member-color,var(--color-foreground))]">
                   {displayName(member)}
                 </span>

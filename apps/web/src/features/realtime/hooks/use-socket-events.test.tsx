@@ -15,6 +15,8 @@ import {
   serverQueryKey,
   serversQueryKey,
 } from "@/features/servers/api/queries";
+import { usePresence } from "@/stores/presence";
+import { useTyping } from "@/stores/typing";
 
 const { listenerCount, rawEmit, reset, socket } = vi.hoisted(() => {
   type Listener = (...args: unknown[]) => void;
@@ -100,6 +102,8 @@ function entries() {
 beforeEach(() => {
   reset();
   vi.clearAllMocks();
+  usePresence.setState({ byUser: {}, self: "online" });
+  useTyping.getState().reset();
   client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -271,6 +275,27 @@ describe("useSocketEvents", () => {
     });
   });
 
+  it("forgets remote presence and typing when the socket drops", () => {
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("presence:update", { userId: "u-ada", status: "online" });
+    emit("typing:start", { channelId: CHANNEL_ID, userId: "u-ada" });
+
+    expect(usePresence.getState().byUser["u-ada"]).toBe("online");
+
+    act(() => {
+      rawEmit("disconnect");
+    });
+
+    expect(usePresence.getState().byUser).toEqual({});
+    expect(useTyping.getState().byChannel[CHANNEL_ID] ?? []).toEqual([]);
+  });
+
   it("invalidates the server list on server:update and the member list on member:join", () => {
     const invalidate = vi.spyOn(client, "invalidateQueries");
 
@@ -290,6 +315,32 @@ describe("useSocketEvents", () => {
     expect(invalidate).toHaveBeenNthCalledWith(2, {
       queryKey: serverMembersQueryKey(SERVER_ID),
     });
+  });
+
+  it("records a presence aggregate the server broadcast", () => {
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("presence:update", { userId: "u-ada", status: "idle" });
+
+    expect(usePresence.getState().byUser["u-ada"]).toBe("idle");
+  });
+
+  it("adds a typist to the channel the event names", () => {
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("typing:start", { channelId: CHANNEL_ID, userId: "u-ada" });
+
+    expect(useTyping.getState().byChannel[CHANNEL_ID]).toEqual(["u-ada"]);
   });
 
   it("re-reads the session when the server revokes it", () => {

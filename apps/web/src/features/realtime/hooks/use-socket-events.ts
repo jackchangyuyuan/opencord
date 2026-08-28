@@ -17,6 +17,8 @@ import {
   serversQueryKey,
 } from "@/features/servers/api/queries";
 import { socket } from "@/lib/socket";
+import { usePresence } from "@/stores/presence";
+import { useTyping } from "@/stores/typing";
 
 type Handlers = {
   [Event in keyof ServerToClientEvents]?: ServerToClientEvents[Event];
@@ -87,6 +89,12 @@ export function useSocketEvents(): void {
         invalidate(serverQueryKey(serverId));
         invalidateChannelOverwrites();
       },
+      "presence:update": ({ userId, status }) => {
+        usePresence.getState().setStatus(userId, status);
+      },
+      "typing:start": ({ channelId, userId }) => {
+        useTyping.getState().start(channelId, userId);
+      },
 
       "session:revoked": () => {
         invalidate(sessionQueryKey);
@@ -98,14 +106,23 @@ export function useSocketEvents(): void {
       },
     };
 
+    const forgetEphemeralState = () => {
+      usePresence.getState().reset();
+      useTyping.getState().reset();
+    };
+
     for (const [event, handler] of Object.entries(handlers)) {
       socket.on(event as keyof ServerToClientEvents, handler);
     }
+
+    socket.on("disconnect", forgetEphemeralState);
 
     return () => {
       for (const [event, handler] of Object.entries(handlers)) {
         socket.off(event as keyof ServerToClientEvents, handler);
       }
+
+      socket.off("disconnect", forgetEphemeralState);
     };
   }, [queryClient]);
 }

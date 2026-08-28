@@ -6,6 +6,7 @@ import { channelMessagesQuery } from "@/features/messages/api/queries";
 import { Composer } from "@/features/messages/components/composer";
 import { DateDivider } from "@/features/messages/components/date-divider";
 import { MessageRow } from "@/features/messages/components/message-row";
+import { TypingRow } from "@/features/messages/components/typing-row";
 import { useSendMessage } from "@/features/messages/hooks/use-send-message";
 import {
   buildRows,
@@ -124,7 +125,12 @@ export function MessageList({
         />
       )}
 
-      {enabled ? <Composer channelId={channelId} /> : null}
+      {enabled ? (
+        <>
+          <TypingRow channelId={channelId} />
+          <Composer channelId={channelId} />
+        </>
+      ) : null}
     </div>
   );
 }
