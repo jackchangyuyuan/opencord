@@ -21,5 +21,6 @@ test("renders the SPA and reports the serving instance", async ({ page }) => {
   await page.goto("/app");
 
   await expect(page.getByRole("heading", { name: "OpenCord" })).toBeVisible();
-  await expect(page.getByText(/^connected · /)).toBeVisible();
+  await expect(page.getByTestId("socket-status")).toHaveText("Connected");
+  await expect(page.getByTestId("serving-instance")).toHaveText(/^api-/);
 });

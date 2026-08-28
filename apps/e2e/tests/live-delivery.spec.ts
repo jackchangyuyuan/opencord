@@ -76,7 +76,7 @@ async function openWindow(browser: Browser, fixture: Fixture) {
 
   await page.goto(`/app/channels/${fixture.channelId}`);
   await expect(page.getByRole("textbox", { name: "Message" })).toBeVisible();
-  await expect(page.getByText(/^connected/)).toBeVisible();
+  await expect(page.getByTestId("socket-status")).toHaveText("Connected");
 
   return { context, page };
 }

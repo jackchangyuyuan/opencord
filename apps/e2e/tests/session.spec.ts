@@ -31,7 +31,8 @@ test("brings the socket up after signing up in place, with no reload (flow 1)", 
   await page.getByRole("button", { name: "Create account" }).click();
 
   await expect(page.getByRole("heading", { name: "OpenCord" })).toBeVisible();
-  await expect(page.getByText(/^connected · /)).toBeVisible();
+  await expect(page.getByTestId("socket-status")).toHaveText("Connected");
+  await expect(page.getByTestId("serving-instance")).toHaveText(/^api-/);
   expect(reloads).toBe(0);
 });
 

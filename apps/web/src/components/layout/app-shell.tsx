@@ -7,8 +7,8 @@ import { MobileDrawer } from "@/components/layout/mobile-drawer";
 import { ServerRail } from "@/components/layout/server-rail";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ConnectionStatus } from "@/features/realtime/components/connection-status";
 import { StatusPicker } from "@/features/realtime/components/status-picker";
+import { StatusWidget } from "@/features/realtime/components/status-widget";
 import { useIsMobile } from "@/lib/use-media-query";
 import { usePrefs } from "@/stores/prefs";
 
@@ -46,7 +46,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
           <h1 className="text-sm font-semibold">OpenCord</h1>
           <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
             <StatusPicker />
-            <ConnectionStatus />
+            <StatusWidget />
             <ThemeToggle />
           </div>
         </header>
