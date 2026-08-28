@@ -3,7 +3,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
 import { sessionQueryKey } from "@/features/auth/hooks/use-session";
-import { serverChannelsQueryKey } from "@/features/channels/api/queries";
+import {
+  type ChannelListEntry,
+  serverChannelsQueryKey,
+} from "@/features/channels/api/queries";
 import { serverMembersQueryKey } from "@/features/members/api/queries";
 import { channelMessagesQueryKey } from "@/features/messages/api/queries";
 import type { MessageCache } from "@/features/messages/hooks/use-send-message";
@@ -35,6 +38,29 @@ export function useSocketEvents(): void {
       );
     };
 
+    const markUnread = (channelId: string, messageId: string) => {
+      queryClient.setQueriesData<ChannelListEntry[]>(
+        {
+          predicate: (query) =>
+            query.queryKey.length === 3 &&
+            query.queryKey[0] === "servers" &&
+            query.queryKey[2] === "channels",
+        },
+        (channels) =>
+          channels?.map((channel) =>
+            channel.id === channelId
+              ? {
+                  ...channel,
+                  lastMessageId: messageId,
+                  hasUnread:
+                    channel.lastReadMessageId === null ||
+                    messageId > channel.lastReadMessageId,
+                }
+              : channel,
+          ),
+      );
+    };
+
     const invalidate = (queryKey: readonly unknown[]) => {
       void queryClient.invalidateQueries({ queryKey });
     };
@@ -51,6 +77,7 @@ export function useSocketEvents(): void {
     const handlers: Handlers = {
       "message:create": ({ message }) => {
         apply(message.channelId, { type: "create", message });
+        markUnread(message.channelId, message.id);
       },
       "message:update": ({ message }) => {
         apply(message.channelId, { type: "update", message });

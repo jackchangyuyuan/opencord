@@ -6,7 +6,9 @@ import { channelMessagesQuery } from "@/features/messages/api/queries";
 import { Composer } from "@/features/messages/components/composer";
 import { DateDivider } from "@/features/messages/components/date-divider";
 import { MessageRow } from "@/features/messages/components/message-row";
+import { NewMessagesDivider } from "@/features/messages/components/new-messages-divider";
 import { TypingRow } from "@/features/messages/components/typing-row";
+import { useMarkRead } from "@/features/messages/hooks/use-mark-read";
 import { useSendMessage } from "@/features/messages/hooks/use-send-message";
 import {
   buildRows,
@@ -34,6 +36,7 @@ export function MessageList({
 
   const { data: me } = useQuery(currentUserQuery);
   const { retry, discard } = useSendMessage(channelId ?? "");
+  const { dividerAfterMessageId, markRead } = useMarkRead(channelId);
 
   const [announcement, setAnnouncement] = useState("");
   const announcedRef = useRef<string | null>(null);
@@ -51,6 +54,14 @@ export function MessageList({
 
   const newest = rows.at(-1);
   const newestId = newest?.kind === "message" ? newest.message.id : null;
+
+  const dividerBeforeKey =
+    dividerAfterMessageId === null
+      ? null
+      : (rows.find(
+          (row) =>
+            row.kind === "message" && row.message.id > dividerAfterMessageId,
+        )?.key ?? null);
   const newestContent =
     newest?.kind === "message" ? newest.message.content : "";
 
@@ -93,6 +104,11 @@ export function MessageList({
         </p>
       ) : (
         <Virtuoso
+          atBottomStateChange={(atBottom) => {
+            if (atBottom && newestId !== null) {
+              markRead(newestId);
+            }
+          }}
           className="flex-1"
           data={rows}
           firstItemIndex={firstItemIndexRef.current}
@@ -101,16 +117,19 @@ export function MessageList({
             row.kind === "date" ? (
               <DateDivider day={row.day} />
             ) : (
-              <MessageRow
-                grouped={row.grouped}
-                message={row.message}
-                onDiscard={discard}
-                onRetry={(entry) => {
-                  if (me !== undefined) {
-                    retry(entry, me.id);
-                  }
-                }}
-              />
+              <>
+                {row.key === dividerBeforeKey ? <NewMessagesDivider /> : null}
+                <MessageRow
+                  grouped={row.grouped}
+                  message={row.message}
+                  onDiscard={discard}
+                  onRetry={(entry) => {
+                    if (me !== undefined) {
+                      retry(entry, me.id);
+                    }
+                  }}
+                />
+              </>
             )
           }
           ref={listRef}

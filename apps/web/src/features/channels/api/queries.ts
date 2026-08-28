@@ -18,6 +18,13 @@ export interface ChannelSummary {
   createdAt: string;
 }
 
+export interface ChannelListEntry extends ChannelSummary {
+  lastReadMessageId: string | null;
+  hasUnread: boolean;
+  hasEveryone: boolean;
+  mentionCount: number;
+}
+
 export function serverChannelsQueryKey(serverId: string) {
   return ["servers", serverId, "channels"] as const;
 }
@@ -26,7 +33,7 @@ export function serverChannelsQuery(serverId: string) {
   return queryOptions({
     queryKey: serverChannelsQueryKey(serverId),
     queryFn: ({ signal }) =>
-      api<ChannelSummary[]>(`/servers/${serverId}/channels`, { signal }),
+      api<ChannelListEntry[]>(`/servers/${serverId}/channels`, { signal }),
   });
 }
 

@@ -6,6 +6,7 @@ import {
   serverChannelsQuery,
   useActiveChannelId,
 } from "@/features/channels/api/queries";
+import { UnreadBadge } from "@/features/channels/components/unread-badge";
 import { cn } from "@/lib/cn";
 
 export function ChannelList({ serverId }: { serverId: string | undefined }) {
@@ -60,7 +61,15 @@ export function ChannelList({ serverId }: { serverId: string | undefined }) {
               : {})}
           >
             <Hash className="size-3.5 shrink-0" />
-            <span className="truncate">{channel.name ?? "channel"}</span>
+            <span
+              className={cn(
+                "truncate",
+                channel.hasUnread && "font-semibold text-foreground",
+              )}
+            >
+              {channel.name ?? "channel"}
+            </span>
+            <UnreadBadge label={channel.name ?? "channel"} state={channel} />
           </NavLink>
         </li>
       ))}

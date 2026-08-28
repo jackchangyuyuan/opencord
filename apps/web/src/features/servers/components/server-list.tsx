@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -8,6 +8,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { serverChannelsQuery } from "@/features/channels/api/queries";
+import { UnreadBadge } from "@/features/channels/components/unread-badge";
+import {
+  NOTHING_UNREAD,
+  rollUp,
+  type UnreadState,
+} from "@/features/channels/lib/unread";
 import { serversQuery } from "@/features/servers/api/queries";
 import { cn } from "@/lib/cn";
 
@@ -20,6 +26,17 @@ export function ServerList({ activeServerId }: { activeServerId?: string }) {
   const queryClient = useQueryClient();
 
   const { data, isPending, isError } = useQuery(serversQuery);
+
+  const channelLists = useQueries({
+    queries: (data ?? []).map((server) => serverChannelsQuery(server.id)),
+    combine: (results) =>
+      new Map<string, UnreadState>(
+        (data ?? []).map((server, index) => [
+          server.id,
+          rollUp(results[index]?.data ?? []),
+        ]),
+      ),
+  });
 
   async function open(serverId: string): Promise<void> {
     const channels = await queryClient.query({
@@ -66,7 +83,7 @@ export function ServerList({ activeServerId }: { activeServerId?: string }) {
               render={
                 <button
                   className={cn(
-                    "rounded-2xl ring-offset-2 transition-[border-radius]",
+                    "relative rounded-2xl ring-offset-2 transition-[border-radius]",
                     "focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none",
                     server.id === activeServerId && "ring-2 ring-ring",
                   )}
@@ -84,6 +101,11 @@ export function ServerList({ activeServerId }: { activeServerId?: string }) {
                 </AvatarFallback>
               </Avatar>
               <span className="sr-only">{server.name}</span>
+              <UnreadBadge
+                className="absolute -right-1 -bottom-1 ml-0"
+                label={server.name}
+                state={channelLists.get(server.id) ?? NOTHING_UNREAD}
+              />
             </TooltipTrigger>
             <TooltipContent side="right">{server.name}</TooltipContent>
           </Tooltip>
