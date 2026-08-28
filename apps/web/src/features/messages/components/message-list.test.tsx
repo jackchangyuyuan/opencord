@@ -1,6 +1,7 @@
 import type { Message } from "@opencord/shared/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { channelMessagesQueryKey } from "@/features/messages/api/queries";
@@ -86,7 +87,9 @@ function mountList() {
 
   render(
     <QueryClientProvider client={client}>
-      <MessageList channelId={CHANNEL_ID} />
+      <MemoryRouter initialEntries={["/app"]}>
+        <MessageList channelId={CHANNEL_ID} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -241,7 +244,9 @@ describe("MessageList", () => {
 
     render(
       <QueryClientProvider client={client}>
-        <MessageList channelId={CHANNEL_ID} />
+        <MemoryRouter initialEntries={["/app"]}>
+          <MessageList channelId={CHANNEL_ID} />
+        </MemoryRouter>
       </QueryClientProvider>,
     );
 
@@ -284,7 +289,9 @@ describe("MessageList", () => {
 
     render(
       <QueryClientProvider client={client}>
-        <MessageList channelId={CHANNEL_ID} />
+        <MemoryRouter initialEntries={["/app"]}>
+          <MessageList channelId={CHANNEL_ID} />
+        </MemoryRouter>
       </QueryClientProvider>,
     );
 
@@ -322,7 +329,9 @@ describe("MessageList", () => {
           new QueryClient({ defaultOptions: { queries: { retry: false } } })
         }
       >
-        <MessageList channelId={CHANNEL_ID} />
+        <MemoryRouter initialEntries={["/app"]}>
+          <MessageList channelId={CHANNEL_ID} />
+        </MemoryRouter>
       </QueryClientProvider>,
     );
 
@@ -344,7 +353,9 @@ describe("MessageList", () => {
 
     render(
       <QueryClientProvider client={client}>
-        <MessageList channelId={CHANNEL_ID} />
+        <MemoryRouter initialEntries={["/app"]}>
+          <MessageList channelId={CHANNEL_ID} />
+        </MemoryRouter>
       </QueryClientProvider>,
     );
 
@@ -383,7 +394,9 @@ describe("MessageList", () => {
           new QueryClient({ defaultOptions: { queries: { retry: false } } })
         }
       >
-        <MessageList channelId={undefined} />
+        <MemoryRouter initialEntries={["/app"]}>
+          <MessageList channelId={undefined} />
+        </MemoryRouter>
       </QueryClientProvider>,
     );
 

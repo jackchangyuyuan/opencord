@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 
 import { channelMessagesQuery } from "@/features/messages/api/queries";
@@ -29,8 +30,11 @@ export function MessageList({
   const listRef = useRef<VirtuosoHandle>(null);
   const enabled = channelId !== undefined;
 
+  const [searchParams] = useSearchParams();
+  const jumpTo = searchParams.get("around");
+
   const messages = useInfiniteQuery({
-    ...channelMessagesQuery(channelId ?? ""),
+    ...channelMessagesQuery(channelId ?? "", jumpTo),
     enabled,
   });
 
@@ -54,6 +58,18 @@ export function MessageList({
 
   const newest = rows.at(-1);
   const newestId = newest?.kind === "message" ? newest.message.id : null;
+
+  const jumpIndex = rows.findIndex(
+    (row) => row.kind === "message" && row.message.id === jumpTo,
+  );
+
+  const mountAt =
+    jumpIndex === -1
+      ? (initialTopMostItemIndex ?? {
+          align: "end" as const,
+          index: "LAST" as const,
+        })
+      : jumpIndex;
 
   const dividerBeforeKey =
     dividerAfterMessageId === null
@@ -119,16 +135,25 @@ export function MessageList({
             ) : (
               <>
                 {row.key === dividerBeforeKey ? <NewMessagesDivider /> : null}
-                <MessageRow
-                  grouped={row.grouped}
-                  message={row.message}
-                  onDiscard={discard}
-                  onRetry={(entry) => {
-                    if (me !== undefined) {
-                      retry(entry, me.id);
-                    }
-                  }}
-                />
+                <div
+                  className={
+                    row.message.id === jumpTo
+                      ? "bg-primary/10 ring-1 ring-primary/40"
+                      : undefined
+                  }
+                  data-highlighted={row.message.id === jumpTo ? "" : undefined}
+                >
+                  <MessageRow
+                    grouped={row.grouped}
+                    message={row.message}
+                    onDiscard={discard}
+                    onRetry={(entry) => {
+                      if (me !== undefined) {
+                        retry(entry, me.id);
+                      }
+                    }}
+                  />
+                </div>
               </>
             )
           }
@@ -138,9 +163,7 @@ export function MessageList({
               void messages.fetchNextPage();
             }
           }}
-          {...(initialTopMostItemIndex === undefined
-            ? {}
-            : { initialTopMostItemIndex })}
+          initialTopMostItemIndex={mountAt}
         />
       )}
 

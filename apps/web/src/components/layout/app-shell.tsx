@@ -1,4 +1,4 @@
-import { Moon, Sun } from "lucide-react";
+import { Moon, Search, Sun, Users } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { ChannelSidebar } from "@/components/layout/channel-sidebar";
@@ -11,6 +11,7 @@ import { StatusPicker } from "@/features/realtime/components/status-picker";
 import { StatusWidget } from "@/features/realtime/components/status-widget";
 import { useIsMobile } from "@/lib/use-media-query";
 import { usePrefs } from "@/stores/prefs";
+import { useUi } from "@/stores/ui";
 
 function ThemeToggle() {
   const theme = usePrefs((state) => state.theme);
@@ -21,6 +22,25 @@ function ThemeToggle() {
     <Button onClick={toggleTheme} size="sm" variant="outline">
       {dark ? <Sun /> : <Moon />}
       {dark ? "Light" : "Dark"}
+    </Button>
+  );
+}
+
+function RightPanelToggle() {
+  const rightPanel = useUi((state) => state.rightPanel);
+  const setRightPanel = useUi((state) => state.setRightPanel);
+  const search = rightPanel === "search";
+
+  return (
+    <Button
+      onClick={() => {
+        setRightPanel(search ? "members" : "search");
+      }}
+      size="sm"
+      variant="outline"
+    >
+      {search ? <Users /> : <Search />}
+      {search ? "Members" : "Search"}
     </Button>
   );
 }
@@ -47,6 +67,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
           <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
             <StatusPicker />
             <StatusWidget />
+            <RightPanelToggle />
             <ThemeToggle />
           </div>
         </header>

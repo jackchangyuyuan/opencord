@@ -8,7 +8,10 @@ import {
   serverChannelsQueryKey,
 } from "@/features/channels/api/queries";
 import { serverMembersQueryKey } from "@/features/members/api/queries";
-import { channelMessagesQueryKey } from "@/features/messages/api/queries";
+import {
+  channelMessageCaches,
+  channelMessagesQueryKey,
+} from "@/features/messages/api/queries";
 import type { MessageCache } from "@/features/messages/hooks/use-send-message";
 import {
   applyMessageEvent,
@@ -32,8 +35,16 @@ export function useSocketEvents(): void {
 
   useEffect(() => {
     const apply = (channelId: string, event: MessageEvent) => {
-      queryClient.setQueryData<MessageCache>(
-        channelMessagesQueryKey(channelId),
+      if (event.type === "create") {
+        queryClient.setQueryData<MessageCache>(
+          channelMessagesQueryKey(channelId),
+          (cache) => applyMessageEvent(cache, event),
+        );
+        return;
+      }
+
+      queryClient.setQueriesData<MessageCache>(
+        channelMessageCaches(channelId),
         (cache) => applyMessageEvent(cache, event),
       );
     };

@@ -8,7 +8,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionQueryKey } from "@/features/auth/hooks/use-session";
 import { serverChannelsQueryKey } from "@/features/channels/api/queries";
 import { serverMembersQueryKey } from "@/features/members/api/queries";
-import { channelMessagesQueryKey } from "@/features/messages/api/queries";
+import {
+  channelMessagesAroundQueryKey,
+  channelMessagesQueryKey,
+} from "@/features/messages/api/queries";
 import type { MessageCache } from "@/features/messages/hooks/use-send-message";
 import { serverRolesQueryKey } from "@/features/roles/api/queries";
 import {
@@ -370,6 +373,58 @@ describe("useSocketEvents", () => {
 
     expect(socket.disconnect).toHaveBeenCalledTimes(1);
     expect(socket.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies an update to an open jump window as well as the live list", () => {
+    const aroundKey = channelMessagesAroundQueryKey(CHANNEL_ID, "m-1");
+
+    const seeded: MessageCache = {
+      pages: [{ data: [message()], nextCursor: null }],
+      pageParams: [null],
+    };
+
+    client.setQueryData(channelMessagesQueryKey(CHANNEL_ID), seeded);
+    client.setQueryData(aroundKey, seeded);
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("message:update", {
+      message: message({
+        content: "edited",
+        editedAt: "2026-09-11T10:05:00.000Z",
+      }),
+    });
+
+    expect(
+      client.getQueryData<MessageCache>(aroundKey)?.pages[0]?.data[0]?.content,
+    ).toBe("edited");
+  });
+
+  it("leaves a jump window alone when a new message arrives", () => {
+    const aroundKey = channelMessagesAroundQueryKey(CHANNEL_ID, "m-1");
+
+    client.setQueryData<MessageCache>(aroundKey, {
+      pages: [{ data: [message()], nextCursor: null }],
+      pageParams: [null],
+    });
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("message:create", { message: message({ id: "m-2" }) });
+
+    expect(
+      client.getQueryData<MessageCache>(aroundKey)?.pages[0]?.data,
+    ).toHaveLength(1);
   });
 
   it("unsubscribes every handler on unmount", () => {

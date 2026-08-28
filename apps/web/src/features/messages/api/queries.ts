@@ -12,23 +12,57 @@ export function channelMessagesQueryKey(channelId: string) {
   return ["channels", channelId, "messages"] as const;
 }
 
-export function channelMessagesQuery(channelId: string) {
-  return infiniteQueryOptions({
-    queryKey: channelMessagesQueryKey(channelId),
-    initialPageParam: null as string | null,
-    queryFn: ({ pageParam, signal }) =>
-      api<MessagePage>(
-        `/channels/${channelId}/messages${
-          pageParam === null ? "" : `?before=${encodeURIComponent(pageParam)}`
-        }`,
-        { signal },
-      ),
-    getNextPageParam: (page) => page.nextCursor,
-  });
-}
-
 export function encodeCursor(id: string): string {
   return btoa(id).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+}
+
+export function channelMessagesAroundQueryKey(
+  channelId: string,
+  anchorId: string,
+) {
+  return ["channels", channelId, "messages", "around", anchorId] as const;
+}
+
+export function channelMessageCaches(channelId: string) {
+  return { queryKey: channelMessagesQueryKey(channelId) };
+}
+
+function pagePath(
+  channelId: string,
+  anchorId: string | null,
+  pageParam: string | null,
+): string {
+  if (anchorId !== null) {
+    return `/channels/${channelId}/messages?around=${encodeCursor(anchorId)}`;
+  }
+
+  return `/channels/${channelId}/messages${
+    pageParam === null ? "" : `?before=${encodeURIComponent(pageParam)}`
+  }`;
+}
+
+export function channelMessagesQuery(
+  channelId: string,
+  anchorId: string | null = null,
+) {
+  return infiniteQueryOptions({
+    queryKey:
+      anchorId === null
+        ? channelMessagesQueryKey(channelId)
+        : channelMessagesAroundQueryKey(channelId, anchorId),
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam, signal }) => {
+      const page = await api<MessagePage>(
+        pagePath(channelId, anchorId, pageParam),
+        { signal },
+      );
+
+      return anchorId === null
+        ? page
+        : { ...page, data: [...page.data].reverse() };
+    },
+    getNextPageParam: (page) => page.nextCursor,
+  });
 }
 
 export function fetchNewerMessages(
