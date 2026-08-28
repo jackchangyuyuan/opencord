@@ -1,10 +1,12 @@
 import { notFound } from "../../../lib/errors.js";
 import { emitReadUpdate } from "../../../socket/emit.js";
+import { countUnreadMentions } from "./unread.js";
 import { advanceWatermark } from "./watermark.js";
 
 export interface ReadState {
   channelId: string;
   lastReadMessageId: string;
+  mentionCount: number;
 }
 
 export async function markRead(
@@ -22,7 +24,11 @@ export async function markRead(
     throw notFound("MESSAGE_NOT_FOUND", "Message not found");
   }
 
-  const state = { channelId, lastReadMessageId };
+  const state = {
+    channelId,
+    lastReadMessageId,
+    mentionCount: await countUnreadMentions(userId, channelId),
+  };
 
   emitReadUpdate(userId, state);
 

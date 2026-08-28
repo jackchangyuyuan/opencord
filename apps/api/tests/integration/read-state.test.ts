@@ -20,6 +20,7 @@ const messageBody = z.object({ id: z.string() });
 const readBody = z.object({
   channelId: z.string(),
   lastReadMessageId: z.string(),
+  mentionCount: z.int(),
 });
 const errorBody = z.object({ error: z.object({ code: z.string() }) });
 
@@ -144,6 +145,27 @@ async function futureUuid(): Promise<string> {
   return id;
 }
 
+const unreadList = z.array(
+  z.object({ id: z.string(), hasUnread: z.boolean() }),
+);
+
+async function listChannels(
+  account: Account,
+  serverId: string,
+): Promise<Map<string, boolean>> {
+  const res = await request(app)
+    .get(`/api/v1/servers/${serverId}/channels`)
+    .set("Cookie", account.cookies);
+
+  expect(res.status).toBe(200);
+
+  return new Map(
+    unreadList
+      .parse(res.body)
+      .map((channel) => [channel.id, channel.hasUnread]),
+  );
+}
+
 describe("PUT /api/v1/channels/:channelId/read", () => {
   beforeAll(() => {
     requireTestDatabase();
@@ -159,6 +181,7 @@ describe("PUT /api/v1/channels/:channelId/read", () => {
     expect(readBody.parse(res.body)).toEqual({
       channelId: fixture.channelId,
       lastReadMessageId: messageId,
+      mentionCount: 0,
     });
 
     await expect(
@@ -317,6 +340,36 @@ describe("PUT /api/v1/channels/:channelId/read", () => {
     const res = await markRead(fixture.grace, fixture.channelId, messageId);
 
     expect(res.status).toBe(404);
+  });
+
+  it("clears the unread dot the channel list reports", async () => {
+    const fixture = await seed();
+    const messageId = await send(fixture.ada, fixture.channelId, "hello");
+
+    const before = await listChannels(fixture.grace, fixture.serverId);
+
+    expect(before.get(fixture.channelId)).toBe(true);
+
+    expect(
+      (await markRead(fixture.grace, fixture.channelId, messageId)).status,
+    ).toBe(200);
+
+    const after = await listChannels(fixture.grace, fixture.serverId);
+
+    expect(after.get(fixture.channelId)).toBe(false);
+  });
+
+  it("reports the mentions still unread after the watermark moves", async () => {
+    const fixture = await seed();
+
+    const first = await send(fixture.ada, fixture.channelId, "@grace one");
+
+    await send(fixture.ada, fixture.channelId, "@grace two");
+
+    const res = await markRead(fixture.grace, fixture.channelId, first);
+
+    expect(res.status).toBe(200);
+    expect(readBody.parse(res.body).mentionCount).toBe(1);
   });
 
   it("rejects a body that is not a UUID", async () => {

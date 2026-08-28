@@ -49,7 +49,11 @@ export function emitMessageDelete(payload: {
 
 export function emitReadUpdate(
   userId: string,
-  payload: { channelId: string; lastReadMessageId: string },
+  payload: {
+    channelId: string;
+    lastReadMessageId: string;
+    mentionCount: number;
+  },
 ): void {
   current?.to(userRoom(userId)).emit("read:update", payload);
 }

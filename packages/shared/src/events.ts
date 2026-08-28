@@ -24,7 +24,11 @@ export interface ServerToClientEvents {
   "typing:start": (p: { channelId: string; userId: string }) => void;
   "presence:update": (p: { userId: string; status: PresenceStatus }) => void;
   "permissions:changed": (p: { serverId: string }) => void;
-  "read:update": (p: { channelId: string; lastReadMessageId: string }) => void;
+  "read:update": (p: {
+    channelId: string;
+    lastReadMessageId: string;
+    mentionCount: number;
+  }) => void;
   "session:revoked": () => void;
   "system:reconnect": () => void;
   "connection:ready": (p: { instanceId: string }) => void;

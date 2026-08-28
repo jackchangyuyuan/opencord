@@ -31,6 +31,7 @@ serverChannelsRouter.get(
     res.json(
       await listServerChannels(
         req.server.server.id,
+        req.user.id,
         await resolveAccessibleChannels(req.user.id),
       ),
     );

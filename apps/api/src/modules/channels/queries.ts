@@ -1,8 +1,16 @@
 import { asc, eq } from "drizzle-orm";
 
-import type { ChannelRow } from "../../access/context.js";
 import { db } from "../../db/index.js";
-import { channels, type ChannelType } from "../../db/schema/index.js";
+import {
+  type ChannelRow,
+  channels,
+  type ChannelType,
+} from "../../db/schema/index.js";
+import {
+  loadUnreadStates,
+  NOTHING_UNREAD,
+  type UnreadState,
+} from "./read-state/unread.js";
 
 export interface ChannelSummary {
   id: string;
@@ -15,6 +23,8 @@ export interface ChannelSummary {
   lastEveryoneMentionId: string | null;
   createdAt: string;
 }
+
+export type ChannelListEntry = ChannelSummary & UnreadState;
 
 export function serializeChannel(channel: ChannelRow): ChannelSummary {
   return {
@@ -32,15 +42,24 @@ export function serializeChannel(channel: ChannelRow): ChannelSummary {
 
 export async function listServerChannels(
   serverId: string,
+  userId: string,
   accessible: ReadonlySet<string>,
-): Promise<ChannelSummary[]> {
+): Promise<ChannelListEntry[]> {
   const rows = await db
     .select()
     .from(channels)
     .where(eq(channels.serverId, serverId))
     .orderBy(asc(channels.position), asc(channels.id));
 
-  return rows
-    .filter((channel) => accessible.has(channel.id))
-    .map(serializeChannel);
+  const visible = rows.filter((channel) => accessible.has(channel.id));
+
+  const unread = await loadUnreadStates(
+    userId,
+    visible.map((channel) => channel.id),
+  );
+
+  return visible.map((channel) => ({
+    ...serializeChannel(channel),
+    ...(unread.get(channel.id) ?? NOTHING_UNREAD),
+  }));
 }
