@@ -22,6 +22,7 @@ import {
   serverQueryKey,
   serversQueryKey,
 } from "@/features/servers/api/queries";
+import { currentUserQuery } from "@/features/users/api/queries";
 import { socket } from "@/lib/socket";
 import { usePresence } from "@/stores/presence";
 import { useTyping } from "@/stores/typing";
@@ -72,6 +73,10 @@ export function useSocketEvents(): void {
       );
     };
 
+    const viewerId = () =>
+      queryClient.getQueryData<{ id: string }>(currentUserQuery.queryKey)?.id ??
+      null;
+
     const invalidate = (queryKey: readonly unknown[]) => {
       void queryClient.invalidateQueries({ queryKey });
     };
@@ -95,6 +100,22 @@ export function useSocketEvents(): void {
       },
       "message:delete": (payload) => {
         apply(payload.channelId, { type: "delete", payload });
+      },
+      "reaction:add": (payload) => {
+        apply(payload.channelId, {
+          type: "reaction",
+          add: true,
+          payload,
+          viewerId: viewerId(),
+        });
+      },
+      "reaction:remove": (payload) => {
+        apply(payload.channelId, {
+          type: "reaction",
+          add: false,
+          payload,
+          viewerId: viewerId(),
+        });
       },
       "channel:create": ({ serverId }) => {
         invalidate(serverChannelsQueryKey(serverId));

@@ -1,3 +1,4 @@
+import { Permissions } from "@opencord/shared/permissions";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -11,11 +12,16 @@ import { NewMessagesDivider } from "@/features/messages/components/new-messages-
 import { TypingRow } from "@/features/messages/components/typing-row";
 import { useMarkRead } from "@/features/messages/hooks/use-mark-read";
 import { useSendMessage } from "@/features/messages/hooks/use-send-message";
+import { useToggleReaction } from "@/features/messages/hooks/use-toggle-reaction";
 import {
   buildRows,
   flattenPages,
   prependedCount,
 } from "@/features/messages/lib/rows";
+import {
+  has,
+  useChannelPermissions,
+} from "@/features/permissions/hooks/use-permissions";
 import { currentUserQuery } from "@/features/users/api/queries";
 
 const FIRST_ITEM_BASE = 1_000_000;
@@ -41,6 +47,14 @@ export function MessageList({
   const { data: me } = useQuery(currentUserQuery);
   const { retry, discard } = useSendMessage(channelId ?? "");
   const { dividerAfterMessageId, markRead } = useMarkRead(channelId);
+  const { toggle: toggleReaction, error: reactionError } = useToggleReaction(
+    channelId ?? "",
+  );
+
+  const mayReact = has(
+    useChannelPermissions(channelId),
+    Permissions.ADD_REACTIONS,
+  );
 
   const [announcement, setAnnouncement] = useState("");
   const announcedRef = useRef<string | null>(null);
@@ -152,6 +166,17 @@ export function MessageList({
                         retry(entry, me.id);
                       }
                     }}
+                    {...(mayReact
+                      ? {
+                          onToggleReaction: (
+                            messageId: string,
+                            emoji: string,
+                            add: boolean,
+                          ) => {
+                            toggleReaction({ messageId, emoji, add });
+                          },
+                        }
+                      : {})}
                   />
                 </div>
               </>
@@ -165,6 +190,12 @@ export function MessageList({
           }}
           initialTopMostItemIndex={mountAt}
         />
+      )}
+
+      {reactionError === null ? null : (
+        <p className="px-4 py-1 text-xs text-destructive" role="alert">
+          {reactionError}
+        </p>
       )}
 
       {enabled ? (

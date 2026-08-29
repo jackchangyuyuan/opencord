@@ -1,0 +1,181 @@
+import type { Message } from "@opencord/shared/types";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  channelMessagesAroundQueryKey,
+  channelMessagesQueryKey,
+} from "@/features/messages/api/queries";
+import { applyMessageEvent } from "@/features/realtime/lib/apply-message-event";
+
+import type { MessageCache } from "./use-send-message";
+import { useToggleReaction } from "./use-toggle-reaction";
+
+const CHANNEL_ID = "99999999-9999-4999-8999-999999999999";
+const MESSAGE_ID = "m-1";
+const VIEWER_ID = "u-ada";
+
+function message(overrides: Partial<Message> = {}): Message {
+  return {
+    id: MESSAGE_ID,
+    channelId: CHANNEL_ID,
+    authorId: VIEWER_ID,
+    content: "hello",
+    nonce: null,
+    replyToId: null,
+    replyTo: null,
+    editedAt: null,
+    deletedAt: null,
+    createdAt: "2026-09-11T10:00:00.000Z",
+    reactions: [],
+    ...overrides,
+  };
+}
+
+function cacheWith(reactions: Message["reactions"]): MessageCache {
+  return {
+    pages: [{ data: [message({ reactions })], nextCursor: null }],
+    pageParams: [null],
+  };
+}
+
+function respond(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+let client: QueryClient;
+
+function wrapper({ children }: { children: ReactNode }) {
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+
+function reactionsIn(key: readonly unknown[]): Message["reactions"] {
+  return (
+    client.getQueryData<MessageCache>(key)?.pages[0]?.data[0]?.reactions ?? []
+  );
+}
+
+beforeEach(() => {
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("toggling a reaction", () => {
+  it("rolls back to the exact prior count when the server refuses", async () => {
+    client.setQueryData<MessageCache>(
+      channelMessagesQueryKey(CHANNEL_ID),
+      cacheWith([{ emoji: "👍", count: 2, me: false }]),
+    );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          respond(403, { error: { code: "FORBIDDEN", message: "Forbidden" } }),
+        ),
+      ),
+    );
+
+    const { result } = renderHook(() => useToggleReaction(CHANNEL_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.toggle({ messageId: MESSAGE_ID, emoji: "👍", add: true });
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toBe("You cannot react in this channel");
+    });
+
+    expect(reactionsIn(channelMessagesQueryKey(CHANNEL_ID))).toEqual([
+      { emoji: "👍", count: 2, me: false },
+    ]);
+  });
+
+  it("reacts inside an open jump window, and rolls that back too", async () => {
+    const aroundKey = channelMessagesAroundQueryKey(CHANNEL_ID, MESSAGE_ID);
+
+    client.setQueryData<MessageCache>(aroundKey, cacheWith([]));
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          respond(403, { error: { code: "FORBIDDEN", message: "Forbidden" } }),
+        ),
+      ),
+    );
+
+    const { result } = renderHook(() => useToggleReaction(CHANNEL_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.toggle({ messageId: MESSAGE_ID, emoji: "🔥", add: true });
+    });
+
+    expect(reactionsIn(aroundKey)).toEqual([
+      { emoji: "🔥", count: 1, me: true },
+    ]);
+
+    await waitFor(() => {
+      expect(result.current.error).not.toBeNull();
+    });
+
+    expect(reactionsIn(aroundKey)).toEqual([]);
+  });
+});
+
+describe("the caller's own reaction echo", () => {
+  it("does not increment a second time", () => {
+    const optimistic = cacheWith([{ emoji: "👍", count: 1, me: true }]);
+
+    const next = applyMessageEvent(optimistic, {
+      type: "reaction",
+      add: true,
+      payload: {
+        channelId: CHANNEL_ID,
+        messageId: MESSAGE_ID,
+        userId: VIEWER_ID,
+        emoji: "👍",
+      },
+      viewerId: VIEWER_ID,
+    });
+
+    expect(next?.pages[0]?.data[0]?.reactions).toEqual([
+      { emoji: "👍", count: 1, me: true },
+    ]);
+  });
+
+  it("still counts someone else's arrival", () => {
+    const next = applyMessageEvent(
+      cacheWith([{ emoji: "👍", count: 1, me: true }]),
+      {
+        type: "reaction",
+        add: true,
+        payload: {
+          channelId: CHANNEL_ID,
+          messageId: MESSAGE_ID,
+          userId: "u-grace",
+          emoji: "👍",
+        },
+        viewerId: VIEWER_ID,
+      },
+    );
+
+    expect(next?.pages[0]?.data[0]?.reactions).toEqual([
+      { emoji: "👍", count: 2, me: true },
+    ]);
+  });
+});

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { MessageContent } from "@/features/messages/components/message-content";
+import { ReactionBar } from "@/features/messages/components/reaction-bar";
 import type { ChatMessage } from "@/features/messages/hooks/use-send-message";
 import { userQuery } from "@/features/users/api/queries";
 import { cn } from "@/lib/cn";
@@ -17,11 +18,13 @@ export function MessageRow({
   grouped,
   onRetry,
   onDiscard,
+  onToggleReaction,
 }: {
   message: ChatMessage;
   grouped: boolean;
   onRetry?: (message: ChatMessage) => void;
   onDiscard?: (message: ChatMessage) => void;
+  onToggleReaction?: (messageId: string, emoji: string, add: boolean) => void;
 }) {
   const { data: author } = useQuery(userQuery(message.authorId));
 
@@ -41,7 +44,7 @@ export function MessageRow({
   return (
     <article
       className={cn(
-        "flex gap-3 px-4 py-0.5 hover:bg-muted/40",
+        "group relative flex gap-3 px-4 py-0.5 hover:bg-muted/40",
         local !== undefined && "opacity-60",
         local?.status === "failed" && "opacity-100",
       )}
@@ -74,6 +77,13 @@ export function MessageRow({
         {message.editedAt === null ? null : (
           <span className="text-xs text-muted-foreground">(edited)</span>
         )}
+        <ReactionBar
+          disabled={onToggleReaction === undefined || local !== undefined}
+          onToggle={(emoji, add) => {
+            onToggleReaction?.(message.id, emoji, add);
+          }}
+          reactions={message.reactions}
+        />
         {local?.status === "failed" ? (
           <p className="flex items-center gap-2 text-xs text-destructive">
             <span role="alert">{local.reason ?? "Could not send"}</span>
