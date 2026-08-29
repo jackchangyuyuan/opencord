@@ -4,6 +4,7 @@ import { SendHorizontal } from "lucide-react";
 import { type KeyboardEvent, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ReplyPreview } from "@/features/messages/components/reply-preview";
 import {
   newNonce,
   useSendMessage,
@@ -15,6 +16,7 @@ import {
 import { currentUserQuery } from "@/features/users/api/queries";
 import { socket } from "@/lib/socket";
 import { useDraft, useDrafts } from "@/stores/drafts";
+import { useUi } from "@/stores/ui";
 
 const TYPING_THROTTLE_MS = 2000;
 
@@ -24,6 +26,8 @@ export function Composer({ channelId }: { channelId: string }) {
   const setDraft = useDrafts((state) => state.setDraft);
   const { data: me } = useQuery(currentUserQuery);
   const { send } = useSendMessage(channelId);
+  const replyTarget = useUi((state) => state.replyTarget);
+  const setReplyTarget = useUi((state) => state.setReplyTarget);
 
   const maySend = has(
     useChannelPermissions(channelId),
@@ -38,8 +42,18 @@ export function Composer({ channelId }: { channelId: string }) {
       return;
     }
 
-    send({ content, nonce: newNonce(), authorId: me.id });
+    const replyToId =
+      replyTarget?.channelId === channelId ? replyTarget.messageId : undefined;
+
+    send({
+      content,
+      nonce: newNonce(),
+      authorId: me.id,
+      ...(replyToId === undefined ? {} : { replyToId }),
+    });
+
     setDraft(channelId, "");
+    setReplyTarget(null);
   }
 
   function announceTyping() {
@@ -61,35 +75,38 @@ export function Composer({ channelId }: { channelId: string }) {
   }
 
   return (
-    <div className="flex items-end gap-2 border-t p-3">
-      <textarea
-        aria-label="Message"
-        className="max-h-40 min-h-9 flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-        onChange={(event) => {
-          setDraft(channelId, event.target.value);
+    <>
+      <ReplyPreview channelId={channelId} />
+      <div className="flex items-end gap-2 border-t p-3">
+        <textarea
+          aria-label="Message"
+          className="max-h-40 min-h-9 flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          onChange={(event) => {
+            setDraft(channelId, event.target.value);
 
-          if (event.target.value.length > 0) {
-            announceTyping();
+            if (event.target.value.length > 0) {
+              announceTyping();
+            }
+          }}
+          disabled={!maySend}
+          onKeyDown={onKeyDown}
+          placeholder={
+            maySend
+              ? "Write a message"
+              : "You cannot send messages in this channel"
           }
-        }}
-        disabled={!maySend}
-        onKeyDown={onKeyDown}
-        placeholder={
-          maySend
-            ? "Write a message"
-            : "You cannot send messages in this channel"
-        }
-        rows={1}
-        value={draft}
-      />
-      <Button
-        aria-label="Send message"
-        disabled={!ready}
-        onClick={submit}
-        size="icon"
-      >
-        <SendHorizontal />
-      </Button>
-    </div>
+          rows={1}
+          value={draft}
+        />
+        <Button
+          aria-label="Send message"
+          disabled={!ready}
+          onClick={submit}
+          size="icon"
+        >
+          <SendHorizontal />
+        </Button>
+      </div>
+    </>
   );
 }

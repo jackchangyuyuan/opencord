@@ -23,6 +23,7 @@ import {
   useChannelPermissions,
 } from "@/features/permissions/hooks/use-permissions";
 import { currentUserQuery } from "@/features/users/api/queries";
+import { useUi } from "@/stores/ui";
 
 const FIRST_ITEM_BASE = 1_000_000;
 
@@ -50,6 +51,7 @@ export function MessageList({
   const { toggle: toggleReaction, error: reactionError } = useToggleReaction(
     channelId ?? "",
   );
+  const setReplyTarget = useUi((state) => state.setReplyTarget);
 
   const mayReact = has(
     useChannelPermissions(channelId),
@@ -165,6 +167,14 @@ export function MessageList({
                       if (me !== undefined) {
                         retry(entry, me.id);
                       }
+                    }}
+                    onReply={(entry) => {
+                      setReplyTarget({
+                        channelId: entry.channelId,
+                        messageId: entry.id,
+                        authorId: entry.authorId,
+                        content: entry.content,
+                      });
                     }}
                     {...(mayReact
                       ? {

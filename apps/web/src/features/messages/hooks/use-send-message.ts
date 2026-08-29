@@ -146,6 +146,7 @@ export interface SendInput {
   content: string;
   nonce: string;
   authorId: string;
+  replyToId?: string;
 }
 
 export function useSendMessage(channelId: string) {
@@ -160,13 +161,17 @@ export function useSendMessage(channelId: string) {
   );
 
   const { mutate, isPending } = useMutation({
-    mutationFn: ({ content, nonce }: SendInput) =>
+    mutationFn: ({ content, nonce, replyToId }: SendInput) =>
       api<Message>(`/channels/${channelId}/messages`, {
         method: "POST",
-        body: { content, nonce },
+        body: {
+          content,
+          nonce,
+          ...(replyToId === undefined ? {} : { replyToId }),
+        },
       }),
 
-    onMutate: ({ content, nonce, authorId }: SendInput) => {
+    onMutate: ({ content, nonce, authorId, replyToId }: SendInput) => {
       const existing = findByNonce(
         queryClient.getQueryData<MessageCache>(key),
         nonce,
@@ -186,7 +191,7 @@ export function useSendMessage(channelId: string) {
             authorId,
             content,
             nonce,
-            replyToId: null,
+            replyToId: replyToId ?? null,
             replyTo: null,
             editedAt: null,
             deletedAt: null,
@@ -224,13 +229,21 @@ export function useSendMessage(channelId: string) {
         return;
       }
 
+      const replyTo =
+        entry.replyToId === null ? {} : { replyToId: entry.replyToId };
+
       if (entry.local?.retry === "new-nonce") {
         update((cache) => removeByNonce(cache, nonce));
-        mutate({ content: entry.content, nonce: newNonce(), authorId });
+        mutate({
+          content: entry.content,
+          nonce: newNonce(),
+          authorId,
+          ...replyTo,
+        });
         return;
       }
 
-      mutate({ content: entry.content, nonce, authorId });
+      mutate({ content: entry.content, nonce, authorId, ...replyTo });
     },
     [mutate, update],
   );

@@ -2,8 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { MessageContent } from "@/features/messages/components/message-content";
 import { ReactionBar } from "@/features/messages/components/reaction-bar";
+import { ReplyContext } from "@/features/messages/components/reply-context";
 import type { ChatMessage } from "@/features/messages/hooks/use-send-message";
 import { userQuery } from "@/features/users/api/queries";
 import { cn } from "@/lib/cn";
@@ -19,12 +26,14 @@ export function MessageRow({
   onRetry,
   onDiscard,
   onToggleReaction,
+  onReply,
 }: {
   message: ChatMessage;
   grouped: boolean;
   onRetry?: (message: ChatMessage) => void;
   onDiscard?: (message: ChatMessage) => void;
   onToggleReaction?: (messageId: string, emoji: string, add: boolean) => void;
+  onReply?: (message: ChatMessage) => void;
 }) {
   const { data: author } = useQuery(userQuery(message.authorId));
 
@@ -41,7 +50,7 @@ export function MessageRow({
 
   const local = message.local;
 
-  return (
+  const row = (
     <article
       className={cn(
         "group relative flex gap-3 px-4 py-0.5 hover:bg-muted/40",
@@ -59,6 +68,7 @@ export function MessageRow({
         )}
       </div>
       <div className="min-w-0 flex-1">
+        <ReplyContext channelId={message.channelId} replyTo={message.replyTo} />
         {grouped ? null : (
           <p className="flex items-baseline gap-2">
             <span className="text-sm font-semibold">{name}</span>
@@ -107,5 +117,24 @@ export function MessageRow({
         ) : null}
       </div>
     </article>
+  );
+
+  if (onReply === undefined || local !== undefined) {
+    return row;
+  }
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger render={row} />
+      <ContextMenuContent>
+        <ContextMenuItem
+          onClick={() => {
+            onReply(message);
+          }}
+        >
+          Reply
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

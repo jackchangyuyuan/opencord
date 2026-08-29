@@ -273,7 +273,7 @@ describe("MessageList", () => {
       });
     });
 
-    await screen.findByText("arrived");
+    await screen.findAllByText("arrived");
 
     expect(screen.getByTestId("virtuoso")).toHaveAttribute(
       "data-first-item-index",

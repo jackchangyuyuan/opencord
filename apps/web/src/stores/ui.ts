@@ -16,10 +16,18 @@ export interface ContextMenuTarget {
 
 export type RightPanel = "members" | "search" | null;
 
+export interface ReplyTarget {
+  channelId: string;
+  messageId: string;
+  authorId: string;
+  content: string;
+}
+
 interface UiState {
   activeModal: ModalName | null;
   contextMenu: ContextMenuTarget | null;
   rightPanel: RightPanel;
+  replyTarget: ReplyTarget | null;
   mobileDrawerOpen: boolean;
   demoPanelDismissed: boolean;
   openModal: (modal: ModalName) => void;
@@ -27,6 +35,7 @@ interface UiState {
   openContextMenu: (target: ContextMenuTarget) => void;
   closeContextMenu: () => void;
   setRightPanel: (panel: RightPanel) => void;
+  setReplyTarget: (target: ReplyTarget | null) => void;
   setMobileDrawerOpen: (open: boolean) => void;
   dismissDemoPanel: () => void;
 }
@@ -35,6 +44,7 @@ export const useUi = create<UiState>()((set) => ({
   activeModal: null,
   contextMenu: null,
   rightPanel: "members",
+  replyTarget: null,
   mobileDrawerOpen: false,
   demoPanelDismissed: false,
   openModal: (activeModal) => {
@@ -51,6 +61,9 @@ export const useUi = create<UiState>()((set) => ({
   },
   setRightPanel: (rightPanel) => {
     set({ rightPanel });
+  },
+  setReplyTarget: (replyTarget) => {
+    set({ replyTarget });
   },
   setMobileDrawerOpen: (mobileDrawerOpen) => {
     set({ mobileDrawerOpen });
