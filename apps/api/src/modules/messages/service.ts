@@ -141,7 +141,10 @@ export async function sendMessage(
     const existing = await findMessageByNonce(authorId, input.nonce);
 
     if (isReplay(existing, channel.id, prepared.content, replyToId)) {
-      return { created: false, message: await serializeOneMessage(existing) };
+      return {
+        created: false,
+        message: await serializeOneMessage(existing, authorId),
+      };
     }
 
     throw notFound(
@@ -198,7 +201,7 @@ export async function sendMessage(
     return { created: true, row: inserted };
   });
 
-  const serialized = await serializeOneMessage(result.row);
+  const serialized = await serializeOneMessage(result.row, authorId);
 
   if (result.created) {
     emitMessageCreate(serialized);
@@ -274,7 +277,7 @@ export async function editMessage(
     return row;
   });
 
-  const serialized = await serializeOneMessage(edited);
+  const serialized = await serializeOneMessage(edited, actorId);
 
   emitMessageUpdate(serialized);
 

@@ -191,6 +191,7 @@ export function useSendMessage(channelId: string) {
             editedAt: null,
             deletedAt: null,
             createdAt: new Date().toISOString(),
+            reactions: [],
             local: sending,
           }),
         );

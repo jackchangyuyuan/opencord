@@ -8,6 +8,7 @@ import {
   type MessageRow,
   serializeMessage,
 } from "./queries.js";
+import { loadReactions } from "./reactions/queries.js";
 
 function preview(row: MessageRow): MessagePreview {
   return {
@@ -20,6 +21,7 @@ function preview(row: MessageRow): MessagePreview {
 
 export async function serializeMessages(
   rows: MessageRow[],
+  viewerId: string,
 ): Promise<Message[]> {
   const quotedIds = [
     ...new Set(
@@ -37,18 +39,27 @@ export async function serializeMessages(
           .from(messages)
           .where(inArray(messages.id, quotedIds));
 
+  const reactions = await loadReactions(
+    rows.map((row) => row.id),
+    viewerId,
+  );
+
   return rows.map((row) => {
     const target = quoted.find((candidate) => candidate.id === row.replyToId);
 
     return {
       ...serializeMessage(row),
       replyTo: target === undefined ? null : preview(target),
+      reactions: reactions.get(row.id) ?? [],
     };
   });
 }
 
-export async function serializeOneMessage(row: MessageRow): Promise<Message> {
-  const [message] = await serializeMessages([row]);
+export async function serializeOneMessage(
+  row: MessageRow,
+  viewerId: string,
+): Promise<Message> {
+  const [message] = await serializeMessages([row], viewerId);
 
   if (message === undefined) {
     throw new Error("the serializer returned no message");

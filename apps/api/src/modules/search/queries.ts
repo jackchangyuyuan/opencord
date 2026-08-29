@@ -163,6 +163,7 @@ export async function searchMessages(
         createdAt: new Date(row.createdAt),
       }),
       replyTo: null,
+      reactions: [],
     })),
     degraded,
     limit,

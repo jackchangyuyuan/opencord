@@ -33,6 +33,7 @@ function serverMessage(overrides: Partial<Message> = {}): Message {
     editedAt: null,
     deletedAt: null,
     createdAt: "2026-09-11T10:00:00.000Z",
+    reactions: [],
     ...overrides,
   };
 }

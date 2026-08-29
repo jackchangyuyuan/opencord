@@ -7,6 +7,12 @@ export interface MessagePreview {
   deletedAt: string | null;
 }
 
+export interface MessageReaction {
+  emoji: string;
+  count: number;
+  me: boolean;
+}
+
 export interface Message {
   id: string;
   channelId: string;
@@ -18,4 +24,5 @@ export interface Message {
   editedAt: string | null;
   deletedAt: string | null;
   createdAt: string;
+  reactions: MessageReaction[];
 }

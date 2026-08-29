@@ -13,6 +13,18 @@ export interface ServerToClientEvents {
     messageId: string;
     deletedAt: string;
   }) => void;
+  "reaction:add": (p: {
+    channelId: string;
+    messageId: string;
+    userId: string;
+    emoji: string;
+  }) => void;
+  "reaction:remove": (p: {
+    channelId: string;
+    messageId: string;
+    userId: string;
+    emoji: string;
+  }) => void;
   "channel:create": (p: { serverId: string; channelId: string }) => void;
   "channel:update": (p: { serverId: string; channelId: string }) => void;
   "channel:delete": (p: { serverId: string; channelId: string }) => void;

@@ -41,7 +41,7 @@ export const messageColumns = {
 
 export type MessageRow = Omit<typeof messages.$inferSelect, "searchVector">;
 
-export type MessageBase = Omit<Message, "replyTo">;
+export type MessageBase = Omit<Message, "replyTo" | "reactions">;
 
 export function serializeMessage(message: MessageRow): MessageBase {
   return {

@@ -47,6 +47,18 @@ export function emitMessageDelete(payload: {
   current?.to(channelRoom(payload.channelId)).emit("message:delete", payload);
 }
 
+export function emitReaction(
+  event: "reaction:add" | "reaction:remove",
+  payload: {
+    channelId: string;
+    messageId: string;
+    userId: string;
+    emoji: string;
+  },
+): void {
+  current?.to(channelRoom(payload.channelId)).emit(event, payload);
+}
+
 export function emitReadUpdate(
   userId: string,
   payload: {

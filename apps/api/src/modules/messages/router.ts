@@ -11,6 +11,7 @@ import { requireChannelPermission } from "../../middleware/permissions.js";
 import { sendMessageRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
 import { listChannelMessages } from "./queries.js";
+import { reactionsRouter } from "./reactions/router.js";
 import { serializeMessages } from "./serialize.js";
 import { deleteMessage, editMessage, sendMessage } from "./service.js";
 
@@ -21,6 +22,8 @@ const messageParamsSchema = z.object({
 });
 
 export const messagesRouter = Router({ mergeParams: true });
+
+messagesRouter.use("/:messageId/reactions", reactionsRouter);
 
 messagesRouter.post(
   "/",
@@ -47,7 +50,7 @@ messagesRouter.get(
     const page = await listChannelMessages(req.channel.id, req.query);
 
     res.json({
-      data: await serializeMessages(page.rows),
+      data: await serializeMessages(page.rows, req.user.id),
       nextCursor: page.nextCursor,
     });
   },

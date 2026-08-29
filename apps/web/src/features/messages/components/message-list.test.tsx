@@ -51,6 +51,7 @@ function message(
     editedAt: null,
     deletedAt: null,
     createdAt,
+    reactions: [],
   };
 }
 
