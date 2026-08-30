@@ -1,4 +1,5 @@
 import type { ServerToClientEvents } from "@opencord/shared/events";
+import type { Message } from "@opencord/shared/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
@@ -11,11 +12,13 @@ import { serverMembersQueryKey } from "@/features/members/api/queries";
 import {
   channelMessageCaches,
   channelMessagesQueryKey,
+  channelPinsQueryKey,
 } from "@/features/messages/api/queries";
 import type { MessageCache } from "@/features/messages/hooks/use-send-message";
 import {
   applyMessageEvent,
   type MessageEvent,
+  pinStateChanged,
 } from "@/features/realtime/lib/apply-message-event";
 import { serverRolesQueryKey } from "@/features/roles/api/queries";
 import {
@@ -90,12 +93,23 @@ export function useSocketEvents(): void {
       });
     };
 
+    const syncPins = (message: Message) => {
+      const cache = queryClient.getQueryData<MessageCache>(
+        channelMessagesQueryKey(message.channelId),
+      );
+
+      if (pinStateChanged(cache, message)) {
+        invalidate(channelPinsQueryKey(message.channelId));
+      }
+    };
+
     const handlers: Handlers = {
       "message:create": ({ message }) => {
         apply(message.channelId, { type: "create", message });
         markUnread(message.channelId, message.id);
       },
       "message:update": ({ message }) => {
+        syncPins(message);
         apply(message.channelId, { type: "update", message });
       },
       "message:delete": (payload) => {

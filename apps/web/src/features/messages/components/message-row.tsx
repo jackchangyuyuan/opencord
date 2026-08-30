@@ -9,6 +9,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { MessageContent } from "@/features/messages/components/message-content";
+import { PinnedIndicator } from "@/features/messages/components/pinned-indicator";
 import { ReactionBar } from "@/features/messages/components/reaction-bar";
 import { ReplyContext } from "@/features/messages/components/reply-context";
 import type { ChatMessage } from "@/features/messages/hooks/use-send-message";
@@ -27,6 +28,7 @@ export function MessageRow({
   onDiscard,
   onToggleReaction,
   onReply,
+  onTogglePin,
 }: {
   message: ChatMessage;
   grouped: boolean;
@@ -34,6 +36,7 @@ export function MessageRow({
   onDiscard?: (message: ChatMessage) => void;
   onToggleReaction?: (messageId: string, emoji: string, add: boolean) => void;
   onReply?: (message: ChatMessage) => void;
+  onTogglePin?: (message: ChatMessage) => void;
 }) {
   const { data: author } = useQuery(userQuery(message.authorId));
 
@@ -78,6 +81,7 @@ export function MessageRow({
             >
               {TIME.format(at)}
             </time>
+            <PinnedIndicator pinnedAt={message.pinnedAt} />
           </p>
         )}
         <MessageContent
@@ -119,7 +123,10 @@ export function MessageRow({
     </article>
   );
 
-  if (onReply === undefined || local !== undefined) {
+  if (
+    (onReply === undefined && onTogglePin === undefined) ||
+    local !== undefined
+  ) {
     return row;
   }
 
@@ -127,13 +134,24 @@ export function MessageRow({
     <ContextMenu>
       <ContextMenuTrigger render={row} />
       <ContextMenuContent>
-        <ContextMenuItem
-          onClick={() => {
-            onReply(message);
-          }}
-        >
-          Reply
-        </ContextMenuItem>
+        {onReply === undefined ? null : (
+          <ContextMenuItem
+            onClick={() => {
+              onReply(message);
+            }}
+          >
+            Reply
+          </ContextMenuItem>
+        )}
+        {onTogglePin === undefined ? null : (
+          <ContextMenuItem
+            onClick={() => {
+              onTogglePin(message);
+            }}
+          >
+            {message.pinnedAt === null ? "Pin" : "Unpin"}
+          </ContextMenuItem>
+        )}
       </ContextMenuContent>
     </ContextMenu>
   );

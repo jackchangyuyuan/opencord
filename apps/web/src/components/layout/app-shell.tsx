@@ -7,6 +7,8 @@ import { MobileDrawer } from "@/components/layout/mobile-drawer";
 import { ServerRail } from "@/components/layout/server-rail";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useActiveChannelId } from "@/features/channels/api/queries";
+import { PinList } from "@/features/messages/components/pin-list";
 import { StatusPicker } from "@/features/realtime/components/status-picker";
 import { StatusWidget } from "@/features/realtime/components/status-widget";
 import { useIsMobile } from "@/lib/use-media-query";
@@ -47,6 +49,7 @@ function RightPanelToggle() {
 
 export function AppShell({ children }: { children?: ReactNode }) {
   const isMobile = useIsMobile();
+  const activeChannelId = useActiveChannelId();
 
   const navigation = (
     <nav
@@ -65,6 +68,7 @@ export function AppShell({ children }: { children?: ReactNode }) {
           {isMobile ? <MobileDrawer>{navigation}</MobileDrawer> : null}
           <h1 className="text-sm font-semibold">OpenCord</h1>
           <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
+            <PinList channelId={activeChannelId} />
             <StatusPicker />
             <StatusWidget />
             <RightPanelToggle />

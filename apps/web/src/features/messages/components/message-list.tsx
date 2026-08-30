@@ -11,7 +11,11 @@ import { MessageRow } from "@/features/messages/components/message-row";
 import { NewMessagesDivider } from "@/features/messages/components/new-messages-divider";
 import { TypingRow } from "@/features/messages/components/typing-row";
 import { useMarkRead } from "@/features/messages/hooks/use-mark-read";
-import { useSendMessage } from "@/features/messages/hooks/use-send-message";
+import {
+  type ChatMessage,
+  useSendMessage,
+} from "@/features/messages/hooks/use-send-message";
+import { useTogglePin } from "@/features/messages/hooks/use-toggle-pin";
 import { useToggleReaction } from "@/features/messages/hooks/use-toggle-reaction";
 import {
   buildRows,
@@ -52,6 +56,11 @@ export function MessageList({
     channelId ?? "",
   );
   const setReplyTarget = useUi((state) => state.setReplyTarget);
+  const { togglePin, error: pinError } = useTogglePin(channelId ?? "");
+  const mayManageMessages = has(
+    useChannelPermissions(channelId),
+    Permissions.MANAGE_MESSAGES,
+  );
 
   const mayReact = has(
     useChannelPermissions(channelId),
@@ -187,6 +196,16 @@ export function MessageList({
                           },
                         }
                       : {})}
+                    {...(mayManageMessages
+                      ? {
+                          onTogglePin: (entry: ChatMessage) => {
+                            togglePin({
+                              messageId: entry.id,
+                              pin: entry.pinnedAt === null,
+                            });
+                          },
+                        }
+                      : {})}
                   />
                 </div>
               </>
@@ -205,6 +224,12 @@ export function MessageList({
       {reactionError === null ? null : (
         <p className="px-4 py-1 text-xs text-destructive" role="alert">
           {reactionError}
+        </p>
+      )}
+
+      {pinError === null ? null : (
+        <p className="px-4 py-1 text-xs text-destructive" role="alert">
+          {pinError}
         </p>
       )}
 

@@ -71,6 +71,15 @@ function find(cache: MessageCache, messageId: string): ChatMessage | undefined {
     .find((entry) => entry.id === messageId);
 }
 
+export function pinStateChanged(
+  cache: MessageCache | undefined,
+  message: Message,
+): boolean {
+  const cached = cache === undefined ? undefined : find(cache, message.id);
+
+  return cached?.pinnedAt !== message.pinnedAt;
+}
+
 function replace(
   cache: MessageCache,
   messageId: string,

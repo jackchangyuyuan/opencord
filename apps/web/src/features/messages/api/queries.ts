@@ -1,5 +1,5 @@
 import type { Message } from "@opencord/shared/types";
-import { infiniteQueryOptions } from "@tanstack/react-query";
+import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 
 import { api } from "@/lib/api-client";
 
@@ -10,6 +10,18 @@ export interface MessagePage {
 
 export function channelMessagesQueryKey(channelId: string) {
   return ["channels", channelId, "messages"] as const;
+}
+
+export function channelPinsQueryKey(channelId: string) {
+  return ["channels", channelId, "pins"] as const;
+}
+
+export function channelPinsQuery(channelId: string) {
+  return queryOptions({
+    queryKey: channelPinsQueryKey(channelId),
+    queryFn: ({ signal }) =>
+      api<Message[]>(`/channels/${channelId}/pins`, { signal }),
+  });
 }
 
 export function encodeCursor(id: string): string {
