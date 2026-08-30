@@ -26,6 +26,8 @@ function message(overrides: Partial<Message> = {}): Message {
     nonce: null,
     replyToId: null,
     replyTo: null,
+    pinnedAt: null,
+    pinnedBy: null,
     editedAt: null,
     deletedAt: null,
     createdAt: "2026-09-11T10:00:00.000Z",

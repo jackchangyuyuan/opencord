@@ -21,6 +21,8 @@ export interface Message {
   nonce: string | null;
   replyToId: string | null;
   replyTo: MessagePreview | null;
+  pinnedAt: string | null;
+  pinnedBy: string | null;
   editedAt: string | null;
   deletedAt: string | null;
   createdAt: string;

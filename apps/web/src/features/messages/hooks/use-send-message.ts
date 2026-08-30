@@ -193,6 +193,8 @@ export function useSendMessage(channelId: string) {
             nonce,
             replyToId: replyToId ?? null,
             replyTo: null,
+            pinnedAt: null,
+            pinnedBy: null,
             editedAt: null,
             deletedAt: null,
             createdAt: new Date().toISOString(),

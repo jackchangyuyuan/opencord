@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   customType,
   foreignKey,
   index,
@@ -37,6 +38,8 @@ export const messages = pgTable(
     mentionsEveryone: boolean("mentions_everyone").default(false).notNull(),
     editedAt: timestamp("edited_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    pinnedAt: timestamp("pinned_at", { withTimezone: true }),
+    pinnedBy: text("pinned_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -60,5 +63,12 @@ export const messages = pgTable(
     index("messages_author_id_idx").on(table.authorId),
     index("messages_reply_to_id_idx").on(table.replyToId),
     index("messages_search_vector_idx").using("gin", table.searchVector),
+    index("messages_channel_id_pinned_at_idx")
+      .on(table.channelId, table.pinnedAt.desc())
+      .where(sql`${table.pinnedAt} is not null and ${table.deletedAt} is null`),
+    check(
+      "messages_pin_pair_check",
+      sql`(${table.pinnedAt} is null) = (${table.pinnedBy} is null)`,
+    ),
   ],
 );

@@ -48,6 +48,8 @@ function message(
     nonce: null,
     replyToId: null,
     replyTo: null,
+    pinnedAt: null,
+    pinnedBy: null,
     editedAt: null,
     deletedAt: null,
     createdAt,

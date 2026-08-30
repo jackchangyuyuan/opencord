@@ -56,6 +56,13 @@ export function ownerMustTransfer(): AppError {
   );
 }
 
+export function pinLimitReached(): AppError {
+  return conflict(
+    "PIN_LIMIT_REACHED",
+    "This channel already has the maximum number of pins",
+  );
+}
+
 export function nonceReused(): AppError {
   return conflict(
     "NONCE_REUSED",

@@ -10,6 +10,7 @@ import { z } from "zod";
 import { requireChannelPermission } from "../../middleware/permissions.js";
 import { sendMessageRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
+import { messagePinRouter } from "./pins/router.js";
 import { listChannelMessages } from "./queries.js";
 import { reactionsRouter } from "./reactions/router.js";
 import { serializeMessages } from "./serialize.js";
@@ -23,6 +24,7 @@ const messageParamsSchema = z.object({
 
 export const messagesRouter = Router({ mergeParams: true });
 
+messagesRouter.use("/:messageId/pin", messagePinRouter);
 messagesRouter.use("/:messageId/reactions", reactionsRouter);
 
 messagesRouter.post(

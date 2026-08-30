@@ -47,6 +47,15 @@ export function emitMessageDelete(payload: {
   current?.to(channelRoom(payload.channelId)).emit("message:delete", payload);
 }
 
+export function emitMessagePin(payload: {
+  channelId: string;
+  messageId: string;
+  pinnedAt: string | null;
+  pinnedBy: string | null;
+}): void {
+  current?.to(channelRoom(payload.channelId)).emit("message:pin", payload);
+}
+
 export function emitReaction(
   event: "reaction:add" | "reaction:remove",
   payload: {

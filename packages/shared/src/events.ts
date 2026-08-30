@@ -13,6 +13,12 @@ export interface ServerToClientEvents {
     messageId: string;
     deletedAt: string;
   }) => void;
+  "message:pin": (p: {
+    channelId: string;
+    messageId: string;
+    pinnedAt: string | null;
+    pinnedBy: string | null;
+  }) => void;
   "reaction:add": (p: {
     channelId: string;
     messageId: string;

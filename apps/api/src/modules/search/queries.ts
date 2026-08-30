@@ -25,6 +25,8 @@ interface SearchRow extends Record<string, unknown> {
   nonce: string | null;
   replyToId: string | null;
   mentionsEveryone: boolean;
+  pinnedAt: string | null;
+  pinnedBy: string | null;
   editedAt: string | null;
   deletedAt: string | null;
   createdAt: string;
@@ -143,6 +145,8 @@ export async function searchMessages(
            m.nonce,
            m.reply_to_id as "replyToId",
            m.mentions_everyone as "mentionsEveryone",
+           m.pinned_at as "pinnedAt",
+           m.pinned_by as "pinnedBy",
            m.edited_at as "editedAt",
            m.deleted_at as "deletedAt",
            m.created_at as "createdAt"
@@ -158,6 +162,7 @@ export async function searchMessages(
     data: rows.map((row) => ({
       ...serializeMessage({
         ...row,
+        pinnedAt: row.pinnedAt === null ? null : new Date(row.pinnedAt),
         editedAt: row.editedAt === null ? null : new Date(row.editedAt),
         deletedAt: row.deletedAt === null ? null : new Date(row.deletedAt),
         createdAt: new Date(row.createdAt),

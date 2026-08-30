@@ -13,6 +13,7 @@ import {
 } from "../../middleware/permissions.js";
 import { createResourceRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
+import { channelPinsRouter } from "../messages/pins/router.js";
 import { overwritesRouter } from "./overwrites/router.js";
 import { listServerChannels, serializeChannel } from "./queries.js";
 import { readRouter } from "./read-state/router.js";
@@ -53,6 +54,7 @@ serverChannelsRouter.post(
 export const channelsRouter = Router();
 
 channelsRouter.use("/:channelId/overwrites", overwritesRouter);
+channelsRouter.use("/:channelId/pins", channelPinsRouter);
 channelsRouter.use("/:channelId/read", readRouter);
 
 channelsRouter.get(

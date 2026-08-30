@@ -313,7 +313,7 @@ export async function deleteMessage(
   await db.transaction(async (tx) => {
     await tx
       .update(messages)
-      .set({ deletedAt })
+      .set({ deletedAt, pinnedAt: null, pinnedBy: null })
       .where(eq(messages.id, message.id));
 
     await tx.delete(mentions).where(eq(mentions.messageId, message.id));
