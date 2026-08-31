@@ -18,6 +18,7 @@ const baseSchema = z.object({
   RATE_LIMIT_AUTH_POINTS: z.coerce.number().int().min(1).default(20),
   RATE_LIMIT_CREATE_POINTS: z.coerce.number().int().min(1).default(10),
   RATE_LIMIT_HEARTBEAT_POINTS: z.coerce.number().int().min(1).default(1),
+  RATE_LIMIT_INVITE_POINTS: z.coerce.number().int().min(1).default(10),
   RATE_LIMIT_MESSAGE_POINTS: z.coerce.number().int().min(1).default(5),
   RATE_LIMIT_NAMESPACE: z.string().min(1).default("rl"),
   RATE_LIMIT_SEARCH_POINTS: z.coerce.number().int().min(1).default(10),

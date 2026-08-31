@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import type { ServerContext } from "../../access/context.js";
 import { db } from "../../db/index.js";
 import { bans, serverMembers } from "../../db/schema/index.js";
+import { lockMembershipPair } from "../../lib/advisory-locks.js";
 import { writeAudit } from "../../lib/audit.js";
 import { forbidden, notFound } from "../../lib/errors.js";
 import {
@@ -77,6 +78,8 @@ export async function banMember(
   await requireRemovable(context, actorId, targetId);
 
   await db.transaction(async (tx) => {
+    await lockMembershipPair(tx, context.server.id, targetId);
+
     await tx
       .insert(bans)
       .values({

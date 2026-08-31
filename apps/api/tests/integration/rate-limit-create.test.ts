@@ -7,6 +7,7 @@ const namespace = vi.hoisted(() => {
 
   process.env["RATE_LIMIT_NAMESPACE"] = value;
   process.env["RATE_LIMIT_CREATE_POINTS"] = "3";
+  process.env["RATE_LIMIT_INVITE_POINTS"] = "2";
 
   return value;
 });
@@ -134,5 +135,40 @@ describe("the creation bucket", () => {
 
     expect(res.status).toBe(403);
     expect(await counterFor(stranger.id)).toBeNull();
+  });
+});
+
+describe("the invite-redemption bucket", () => {
+  it("rejects the third redemption attempt from one address", async () => {
+    const ada = await signUp("rlc-invite");
+
+    for (let index = 0; index < 2; index += 1) {
+      const res = await request(app)
+        .post("/api/v1/invites/nosuch01")
+        .set("Cookie", ada.cookies);
+
+      expect(res.status).toBe(404);
+    }
+
+    const rejected = await request(app)
+      .post("/api/v1/invites/nosuch01")
+      .set("Cookie", ada.cookies);
+
+    expect(rejected.status).toBe(429);
+    expect(rejected.body).toMatchObject({
+      error: { code: "RATE_LIMITED", details: { bucket: "invite" } },
+    });
+  });
+
+  it("leaves the public preview unmetered", async () => {
+    const ada = await signUp("rlc-preview");
+
+    for (let index = 0; index < 4; index += 1) {
+      const res = await request(app)
+        .get("/api/v1/invites/nosuch02")
+        .set("Cookie", ada.cookies);
+
+      expect(res.status).toBe(404);
+    }
   });
 });

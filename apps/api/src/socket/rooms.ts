@@ -2,7 +2,7 @@ import { and, eq, inArray, ne } from "drizzle-orm";
 
 import { resolveAccessibleChannels } from "../access/channels.js";
 import { db } from "../db/index.js";
-import { serverMembers } from "../db/schema/index.js";
+import { channels, serverMembers } from "../db/schema/index.js";
 import type { AppSocket, SocketServer } from "./types.js";
 
 export function channelRoom(channelId: string): string {
@@ -132,6 +132,22 @@ export async function rederiveRooms(
       }
     }
   }
+}
+
+export async function listViewableChannelRooms(
+  userId: string,
+  serverId: string,
+): Promise<string[]> {
+  const accessible = await resolveAccessibleChannels(userId);
+
+  const rows = await db
+    .select({ id: channels.id })
+    .from(channels)
+    .where(eq(channels.serverId, serverId));
+
+  return rows
+    .filter((row) => accessible.has(row.id))
+    .map((row) => channelRoom(row.id));
 }
 
 export function disconnectUser(io: SocketServer, userId: string): void {

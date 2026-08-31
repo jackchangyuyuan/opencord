@@ -56,6 +56,10 @@ export function ownerMustTransfer(): AppError {
   );
 }
 
+export function userBanned(): AppError {
+  return forbidden("USER_BANNED", "You are banned from that server");
+}
+
 export function pinLimitReached(): AppError {
   return conflict(
     "PIN_LIMIT_REACHED",

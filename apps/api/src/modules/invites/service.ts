@@ -2,20 +2,29 @@ import {
   type CreateInviteInput,
   INVITE_CODE_LENGTH,
 } from "@opencord/shared/schemas";
+import { sql } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
 import postgres from "postgres";
 
 import type { ServerContext } from "../../access/context.js";
 import { db } from "../../db/index.js";
-import { invites } from "../../db/schema/index.js";
+import { invites, serverMembers } from "../../db/schema/index.js";
+import { lockMembershipPair } from "../../lib/advisory-locks.js";
 import { writeAudit } from "../../lib/audit.js";
-import { AppError, notFound } from "../../lib/errors.js";
+import { AppError, conflict, notFound, userBanned } from "../../lib/errors.js";
+import { emitMemberEvent, joinRedeemedServerRooms } from "../../socket/emit.js";
 import {
+  findInvite,
   type InvitePreview,
   type InviteSummary,
   loadInvitePreview,
   serializeInvite,
 } from "./queries.js";
+
+export interface RedeemedInvite {
+  serverId: string;
+  alreadyMember: boolean;
+}
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -85,6 +94,79 @@ export async function createInvite(
     "INVITE_CODE_EXHAUSTED",
     "Could not mint a unique invite code",
   );
+}
+
+// One transaction in a fixed order: advisory lock, ban re-check, the atomic
+// uses update, membership insert, audit row.
+export async function redeemInvite(
+  code: string,
+  userId: string,
+): Promise<RedeemedInvite> {
+  const existing = await findInvite(code);
+
+  if (existing === undefined) {
+    throw notFound("INVITE_NOT_FOUND", "That invite does not exist");
+  }
+
+  const result = await db.transaction(async (tx) => {
+    await lockMembershipPair(tx, existing.serverId, userId);
+
+    const banned = await tx.execute<{ exists: boolean }>(
+      sql`select exists(
+            select 1 from bans
+             where server_id = ${existing.serverId}::uuid and user_id = ${userId}
+          ) as exists`,
+    );
+
+    if (banned[0]?.exists === true) {
+      throw userBanned();
+    }
+
+    const member = await tx.execute<{ exists: boolean }>(
+      sql`select exists(
+            select 1 from server_members
+             where server_id = ${existing.serverId}::uuid and user_id = ${userId}
+          ) as exists`,
+    );
+
+    if (member[0]?.exists === true) {
+      return { serverId: existing.serverId, alreadyMember: true };
+    }
+
+    const claimed = await tx.execute<{ code: string }>(
+      sql`update invites set uses = uses + 1
+           where code = ${code}
+             and (max_uses is null or uses < max_uses)
+             and (expires_at is null or expires_at > now())
+        returning code`,
+    );
+
+    if (claimed.length === 0) {
+      throw conflict("INVITE_EXHAUSTED", "That invite is no longer usable");
+    }
+
+    await tx
+      .insert(serverMembers)
+      .values({ serverId: existing.serverId, userId });
+
+    await writeAudit(tx, {
+      serverId: existing.serverId,
+      actorId: userId,
+      action: "invite_redeem",
+      targetType: "invite",
+      targetId: code,
+    });
+
+    return { serverId: existing.serverId, alreadyMember: false };
+  });
+
+  if (!result.alreadyMember) {
+    await joinRedeemedServerRooms(userId, result.serverId);
+
+    emitMemberEvent("member:join", result.serverId, userId);
+  }
+
+  return result;
 }
 
 export async function previewInvite(code: string): Promise<InvitePreview> {

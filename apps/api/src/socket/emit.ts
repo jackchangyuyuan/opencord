@@ -5,6 +5,7 @@ import {
   disconnectUser,
   joinServerRooms,
   listServerMemberIds,
+  listViewableChannelRooms,
   rederiveRooms,
   revokeSession,
   serverRoom,
@@ -119,6 +120,19 @@ export async function rederiveRoomsFor(
   }
 
   await rederiveRooms(current, userIds);
+}
+
+export async function joinRedeemedServerRooms(
+  userId: string,
+  serverId: string,
+): Promise<void> {
+  if (current === null) {
+    return;
+  }
+
+  const rooms = await listViewableChannelRooms(userId, serverId);
+
+  current.in(userRoom(userId)).socketsJoin([serverRoom(serverId), ...rooms]);
 }
 
 export function joinCreatedServerRooms(

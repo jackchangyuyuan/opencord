@@ -4,9 +4,10 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { requirePermission } from "../../middleware/permissions.js";
+import { redeemInviteRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
 import { listServerInvites } from "./queries.js";
-import { createInvite, previewInvite } from "./service.js";
+import { createInvite, previewInvite, redeemInvite } from "./service.js";
 
 const serverParamsSchema = z.object({ serverId: z.uuid() });
 const codeParamsSchema = z.object({ code: inviteCodeSchema });
@@ -32,6 +33,15 @@ serverInvitesRouter.post(
 );
 
 export const invitesRouter = Router();
+
+invitesRouter.post(
+  "/:code",
+  validate({ params: codeParamsSchema }),
+  redeemInviteRateLimit,
+  async (req, res) => {
+    res.json(await redeemInvite(req.params.code, req.user.id));
+  },
+);
 
 invitesRouter.get(
   "/:code",

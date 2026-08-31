@@ -1,6 +1,6 @@
 import { Permissions } from "@opencord/shared/permissions";
 import { INVITE_CODE_LENGTH } from "@opencord/shared/schemas";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import request from "supertest";
 import { beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -9,6 +9,7 @@ import { app } from "../../src/app.js";
 import { db } from "../../src/db/index.js";
 import {
   auditLog,
+  bans,
   invites,
   roles,
   serverMembers,
@@ -110,6 +111,46 @@ function list(account: Account, serverId: string) {
   return request(app)
     .get(`/api/v1/servers/${serverId}/invites`)
     .set("Cookie", account.cookies);
+}
+
+function redeem(account: Account, code: string) {
+  return request(app)
+    .post(`/api/v1/invites/${code}`)
+    .set("Cookie", account.cookies);
+}
+
+function ban(account: Account, serverId: string, userId: string) {
+  return request(app)
+    .put(`/api/v1/servers/${serverId}/bans/${userId}`)
+    .set("Cookie", account.cookies)
+    .send({});
+}
+
+function memberships(serverId: string, userId: string) {
+  return db
+    .select({ userId: serverMembers.userId })
+    .from(serverMembers)
+    .where(
+      and(
+        eq(serverMembers.serverId, serverId),
+        eq(serverMembers.userId, userId),
+      ),
+    );
+}
+
+function banRows(serverId: string, userId: string) {
+  return db
+    .select({ userId: bans.userId })
+    .from(bans)
+    .where(and(eq(bans.serverId, serverId), eq(bans.userId, userId)));
+}
+
+function usesOf(code: string) {
+  return db
+    .select({ uses: invites.uses })
+    .from(invites)
+    .where(eq(invites.code, code))
+    .then((rows) => rows[0]?.uses ?? null);
 }
 
 function preview(account: Account, code: string) {
@@ -304,5 +345,185 @@ describe("invites", () => {
       .where(eq(invites.serverId, fixture.serverId));
 
     expect(rows).toEqual([]);
+  });
+});
+
+describe("invite redemption", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  async function seedWithInvite(
+    body: Record<string, unknown> = {},
+  ): Promise<Fixture & { code: string; hopper: Account }> {
+    const fixture = await seed();
+    const hopper = await signUp("hopper");
+
+    const created = await create(fixture.ada, fixture.serverId, body);
+
+    expect(created.status).toBe(201);
+
+    return { ...fixture, hopper, code: inviteBody.parse(created.body).code };
+  }
+
+  it("joins the redeemer to the server", async () => {
+    const fixture = await seedWithInvite();
+
+    const res = await redeem(fixture.hopper, fixture.code);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      serverId: fixture.serverId,
+      alreadyMember: false,
+    });
+
+    await expect(
+      memberships(fixture.serverId, fixture.hopper.id),
+    ).resolves.toHaveLength(1);
+    await expect(usesOf(fixture.code)).resolves.toBe(1);
+  });
+
+  it("audits the redemption", async () => {
+    const fixture = await seedWithInvite();
+
+    await redeem(fixture.hopper, fixture.code);
+
+    const rows = await db
+      .select({ action: auditLog.action, actorId: auditLog.actorId })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.serverId, fixture.serverId),
+          eq(auditLog.action, "invite_redeem"),
+        ),
+      );
+
+    expect(rows).toEqual([
+      { action: "invite_redeem", actorId: fixture.hopper.id },
+    ]);
+  });
+
+  it("is a no-op for an existing member and does not burn a use", async () => {
+    const fixture = await seedWithInvite();
+
+    const res = await redeem(fixture.grace, fixture.code);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      serverId: fixture.serverId,
+      alreadyMember: true,
+    });
+    await expect(usesOf(fixture.code)).resolves.toBe(0);
+  });
+
+  it("refuses an exhausted invite", async () => {
+    const fixture = await seedWithInvite({ maxUses: 1 });
+    const second = await signUp("lovelace");
+
+    expect((await redeem(fixture.hopper, fixture.code)).status).toBe(200);
+
+    const res = await redeem(second, fixture.code);
+
+    expect(res.status).toBe(409);
+    expect(errorBody.parse(res.body).error.code).toBe("INVITE_EXHAUSTED");
+    await expect(memberships(fixture.serverId, second.id)).resolves.toEqual([]);
+  });
+
+  it("refuses an expired invite", async () => {
+    const fixture = await seedWithInvite({ expiresInHours: 1 });
+
+    await db
+      .update(invites)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(invites.code, fixture.code));
+
+    const res = await redeem(fixture.hopper, fixture.code);
+
+    expect(res.status).toBe(409);
+    expect(errorBody.parse(res.body).error.code).toBe("INVITE_EXHAUSTED");
+  });
+
+  it("refuses a banned user and does not burn a use", async () => {
+    const fixture = await seedWithInvite({ maxUses: 1 });
+
+    expect(
+      (await ban(fixture.ada, fixture.serverId, fixture.hopper.id)).status,
+    ).toBe(204);
+
+    const res = await redeem(fixture.hopper, fixture.code);
+
+    expect(res.status).toBe(403);
+    expect(errorBody.parse(res.body).error.code).toBe("USER_BANNED");
+    await expect(usesOf(fixture.code)).resolves.toBe(0);
+  });
+
+  it("reports an unknown code", async () => {
+    const fixture = await seed();
+
+    const res = await redeem(fixture.grace, "AAAAAAAA");
+
+    expect(res.status).toBe(404);
+    expect(errorBody.parse(res.body).error.code).toBe("INVITE_NOT_FOUND");
+  });
+
+  it("executes the advisory lock statement itself", async () => {
+    const fixture = await seedWithInvite();
+
+    const probe = await db.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${fixture.serverId} || ':' || ${fixture.hopper.id}, 0))`,
+    );
+
+    expect(probe).toBeDefined();
+    expect((await redeem(fixture.hopper, fixture.code)).status).toBe(200);
+  });
+
+  it("never leaves a ban and a membership standing together", async () => {
+    const fixture = await seed();
+
+    const rounds = 5;
+    const joiners: Account[] = [];
+    const codes: string[] = [];
+
+    for (let round = 0; round < rounds; round += 1) {
+      joiners.push(await signUp(`joiner${String(round)}`));
+
+      const created = await create(fixture.ada, fixture.serverId, {
+        maxUses: 1,
+      });
+
+      expect(created.status).toBe(201);
+      codes.push(inviteBody.parse(created.body).code);
+    }
+
+    for (let round = 0; round < rounds; round += 1) {
+      const joiner = joiners[round];
+      const code = codes[round];
+
+      if (joiner === undefined || code === undefined) {
+        throw new Error("the fixture is incomplete");
+      }
+
+      const [redeemed, banned] = await Promise.all([
+        redeem(joiner, code),
+        ban(fixture.ada, fixture.serverId, joiner.id),
+      ]);
+
+      expect(banned.status).toBe(204);
+
+      await expect(memberships(fixture.serverId, joiner.id)).resolves.toEqual(
+        [],
+      );
+      await expect(banRows(fixture.serverId, joiner.id)).resolves.toHaveLength(
+        1,
+      );
+
+      const rejected = redeemed.status !== 200;
+
+      expect([200, 403]).toContain(redeemed.status);
+      expect(rejected ? errorBody.parse(redeemed.body).error.code : null).toBe(
+        rejected ? "USER_BANNED" : null,
+      );
+      await expect(usesOf(code)).resolves.toBe(rejected ? 0 : 1);
+    }
   });
 });

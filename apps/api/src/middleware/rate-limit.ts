@@ -8,6 +8,7 @@ import { redis } from "../redis.js";
 export const AUTH_WINDOW_SECONDS = 60;
 export const MESSAGE_WINDOW_SECONDS = 5;
 export const CREATE_WINDOW_SECONDS = 60;
+export const INVITE_WINDOW_SECONDS = 60;
 export const SEARCH_WINDOW_SECONDS = 10;
 export const TYPING_WINDOW_SECONDS = 2;
 export const HEARTBEAT_WINDOW_SECONDS = 10;
@@ -79,6 +80,15 @@ export const sendMessageRateLimit = rateLimit(
     duration: MESSAGE_WINDOW_SECONDS,
   },
   (req) => req.user.id,
+);
+
+export const redeemInviteRateLimit = rateLimit(
+  {
+    name: "invite",
+    points: config.RATE_LIMIT_INVITE_POINTS,
+    duration: INVITE_WINDOW_SECONDS,
+  },
+  (req) => req.ip ?? "unknown",
 );
 
 export const searchRateLimit = rateLimit(
