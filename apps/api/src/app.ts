@@ -14,6 +14,10 @@ import {
   channelsRouter,
   serverChannelsRouter,
 } from "./modules/channels/router.js";
+import {
+  invitesRouter,
+  serverInvitesRouter,
+} from "./modules/invites/router.js";
 import { serverMembersRouter } from "./modules/members/router.js";
 import { messagesRouter } from "./modules/messages/router.js";
 import { serverBansRouter } from "./modules/moderation/router.js";
@@ -73,9 +77,11 @@ apiRouter.use(requireAuth);
 apiRouter.use(express.json());
 apiRouter.use("/channels", channelsRouter);
 apiRouter.use("/channels/:channelId/messages", messagesRouter);
+apiRouter.use("/invites", invitesRouter);
 apiRouter.use("/search", searchRateLimit, searchRouter);
 apiRouter.use("/servers", serversRouter);
 apiRouter.use("/servers/:serverId/channels", serverChannelsRouter);
+apiRouter.use("/servers/:serverId/invites", serverInvitesRouter);
 apiRouter.use("/servers/:serverId/bans", serverBansRouter);
 apiRouter.use("/servers/:serverId/members", serverMembersRouter);
 apiRouter.use("/servers/:serverId/roles", serverRolesRouter);

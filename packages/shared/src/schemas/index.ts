@@ -1,6 +1,7 @@
 export * from "./auth.js";
 export * from "./channels.js";
 export * from "./common.js";
+export * from "./invites.js";
 export * from "./messages.js";
 export * from "./presence.js";
 export * from "./roles.js";
