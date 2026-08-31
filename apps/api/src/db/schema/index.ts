@@ -1,5 +1,6 @@
 export * from "./audit-log.js";
 export * from "./auth.js";
+export * from "./bans.js";
 export * from "./channels.js";
 export * from "./mentions.js";
 export * from "./messages.js";

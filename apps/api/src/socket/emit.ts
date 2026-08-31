@@ -2,6 +2,7 @@ import type { Message } from "@opencord/shared/types";
 
 import {
   channelRoom,
+  disconnectUser,
   joinServerRooms,
   listServerMemberIds,
   rederiveRooms,
@@ -134,6 +135,16 @@ export function joinCreatedServerRooms(
 
 export function serverMemberIds(serverId: string): Promise<string[]> {
   return listServerMemberIds(serverId);
+}
+
+export async function disconnectMemberSockets(userId: string): Promise<void> {
+  if (current === null) {
+    return;
+  }
+
+  disconnectUser(current, userId);
+
+  await Promise.resolve();
 }
 
 export function revokeSessionEverywhere(sessionId: string): void {

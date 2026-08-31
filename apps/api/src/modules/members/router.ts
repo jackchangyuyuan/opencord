@@ -5,11 +5,16 @@ import { z } from "zod";
 
 import { requirePermission } from "../../middleware/permissions.js";
 import { validate } from "../../middleware/validate.js";
+import { kickMember } from "../moderation/service.js";
 import { listServerMembers } from "../servers/queries.js";
 import { leaveServer } from "../servers/service.js";
 import { assignRole, unassignRole } from "./service.js";
 
 const serverParamsSchema = z.object({ serverId: z.uuid() });
+const memberParamsSchema = z.object({
+  serverId: z.uuid(),
+  userId: z.string().min(1),
+});
 const memberRoleParamsSchema = z.object({
   serverId: z.uuid(),
   userId: z.string().min(1),
@@ -33,6 +38,16 @@ serverMembersRouter.delete(
   requirePermission(),
   async (req, res) => {
     await leaveServer(req.server, req.user.id);
+    res.status(204).end();
+  },
+);
+
+serverMembersRouter.delete(
+  "/:userId",
+  validate({ params: memberParamsSchema }),
+  requirePermission(Permissions.KICK_MEMBERS),
+  async (req, res) => {
+    await kickMember(req.server, req.user.id, req.params.userId);
     res.status(204).end();
   },
 );

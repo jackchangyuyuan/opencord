@@ -16,6 +16,7 @@ import {
 } from "./modules/channels/router.js";
 import { serverMembersRouter } from "./modules/members/router.js";
 import { messagesRouter } from "./modules/messages/router.js";
+import { serverBansRouter } from "./modules/moderation/router.js";
 import { serverRolesRouter } from "./modules/roles/router.js";
 import { searchRouter } from "./modules/search/router.js";
 import { serversRouter } from "./modules/servers/router.js";
@@ -75,6 +76,7 @@ apiRouter.use("/channels/:channelId/messages", messagesRouter);
 apiRouter.use("/search", searchRateLimit, searchRouter);
 apiRouter.use("/servers", serversRouter);
 apiRouter.use("/servers/:serverId/channels", serverChannelsRouter);
+apiRouter.use("/servers/:serverId/bans", serverBansRouter);
 apiRouter.use("/servers/:serverId/members", serverMembersRouter);
 apiRouter.use("/servers/:serverId/roles", serverRolesRouter);
 apiRouter.use("/stats", statsRouter);
