@@ -23,6 +23,17 @@ export function serverRolesQuery(serverId: string) {
   });
 }
 
+export const ROLE_PALETTE = [
+  { name: "Slate", value: 0x64748b },
+  { name: "Red", value: 0xef4444 },
+  { name: "Amber", value: 0xf59e0b },
+  { name: "Green", value: 0x22c55e },
+  { name: "Teal", value: 0x14b8a6 },
+  { name: "Blue", value: 0x3b82f6 },
+  { name: "Violet", value: 0x8b5cf6 },
+  { name: "Pink", value: 0xec4899 },
+] as const;
+
 export function roleColor(role: PublicRole | undefined): string | undefined {
   if (role?.color == null || role.color === 0) {
     return undefined;
