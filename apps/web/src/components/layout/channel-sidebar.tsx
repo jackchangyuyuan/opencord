@@ -9,12 +9,14 @@ import {
   useActiveServerId,
 } from "@/features/channels/api/queries";
 import { ChannelList } from "@/features/channels/components/channel-list";
+import { ChannelSettingsDialog } from "@/features/channels/components/channel-settings-dialog";
 import { CreateChannelDialog } from "@/features/channels/components/create-channel-dialog";
 import {
   has,
   useChannelPermissions,
 } from "@/features/permissions/hooks/use-permissions";
 import { serversQuery } from "@/features/servers/api/queries";
+import { ServerSettingsDialog } from "@/features/servers/components/server-settings-dialog";
 import { useUi } from "@/stores/ui";
 
 export function ChannelSidebar() {
@@ -49,12 +51,18 @@ export function ChannelSidebar() {
           </Button>
         ) : null}
         {activeServerId === undefined ? null : (
-          <CreateChannelDialog serverId={activeServerId} />
+          <>
+            <ServerSettingsDialog serverId={activeServerId} />
+            <CreateChannelDialog serverId={activeServerId} />
+          </>
         )}
       </div>
       <ScrollArea className="flex-1">
         <ChannelList serverId={activeServerId} />
       </ScrollArea>
+      {activeChannelId === undefined ? null : (
+        <ChannelSettingsDialog channelId={activeChannelId} />
+      )}
     </div>
   );
 }
