@@ -18,6 +18,6 @@ export const router = createBrowserRouter([
   { path: "/app/channels/:channelId", element: gated(<AppRoute />) },
   { path: "/sign-in", element: <SignIn /> },
   { path: "/sign-up", element: <SignUp /> },
-  { path: "/invite/:code", element: <Invite /> },
+  { path: "/invite/:code", element: gated(<Invite />) },
   { path: "*", element: <NotFound /> },
 ]);

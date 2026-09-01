@@ -11,6 +11,7 @@ import {
 import { ChannelList } from "@/features/channels/components/channel-list";
 import { ChannelSettingsDialog } from "@/features/channels/components/channel-settings-dialog";
 import { CreateChannelDialog } from "@/features/channels/components/create-channel-dialog";
+import { InviteDialog } from "@/features/invites/components/invite-dialog";
 import {
   has,
   useChannelPermissions,
@@ -52,6 +53,7 @@ export function ChannelSidebar() {
         ) : null}
         {activeServerId === undefined ? null : (
           <>
+            <InviteDialog serverId={activeServerId} />
             <ServerSettingsDialog serverId={activeServerId} />
             <CreateChannelDialog serverId={activeServerId} />
           </>
