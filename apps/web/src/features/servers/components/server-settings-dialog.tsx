@@ -12,6 +12,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { OverwriteEditor } from "@/features/channels/components/overwrite-editor";
 import {
   has,
   useServerPermissions,
@@ -64,12 +65,16 @@ export function ServerSettingsDialog({ serverId }: { serverId: string }) {
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="roles">Roles</TabsTrigger>
+            <TabsTrigger value="overwrites">Channel access</TabsTrigger>
           </TabsList>
           <TabsContent value="overview">
             <ServerOverviewTab onDone={closeModal} server={server} />
           </TabsContent>
           <TabsContent value="roles">
             <RoleList serverId={serverId} />
+          </TabsContent>
+          <TabsContent value="overwrites">
+            <OverwriteEditor serverId={serverId} />
           </TabsContent>
         </Tabs>
       </DialogContent>
