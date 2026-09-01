@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OverwriteEditor } from "@/features/channels/components/overwrite-editor";
+import { BanList } from "@/features/members/components/ban-list";
 import {
   has,
   useServerPermissions,
@@ -66,6 +67,7 @@ export function ServerSettingsDialog({ serverId }: { serverId: string }) {
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="roles">Roles</TabsTrigger>
             <TabsTrigger value="overwrites">Channel access</TabsTrigger>
+            <TabsTrigger value="bans">Bans</TabsTrigger>
           </TabsList>
           <TabsContent value="overview">
             <ServerOverviewTab onDone={closeModal} server={server} />
@@ -75,6 +77,9 @@ export function ServerSettingsDialog({ serverId }: { serverId: string }) {
           </TabsContent>
           <TabsContent value="overwrites">
             <OverwriteEditor serverId={serverId} />
+          </TabsContent>
+          <TabsContent value="bans">
+            <BanList serverId={serverId} />
           </TabsContent>
         </Tabs>
       </DialogContent>

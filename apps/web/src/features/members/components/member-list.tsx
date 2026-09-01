@@ -1,6 +1,5 @@
 import { Permissions } from "@opencord/shared/permissions";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { MoreHorizontal } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -10,6 +9,7 @@ import {
   type ServerMemberEntry,
   serverMembersQuery,
 } from "@/features/members/api/queries";
+import { MemberActions } from "@/features/members/components/member-actions";
 import { PresenceDot } from "@/features/members/components/presence-dot";
 import {
   has,
@@ -166,16 +166,18 @@ export function MemberList({ serverId }: { serverId: string | undefined }) {
                   {displayName(member)}
                 </span>
                 {mayModerate ? (
-                  <Button
-                    aria-label={`Member actions for ${displayName(member)}`}
-                    disabled={
-                      !outranks(actor, member, roles.data, server.data?.ownerId)
-                    }
-                    size="icon-xs"
-                    variant="ghost"
-                  >
-                    <MoreHorizontal />
-                  </Button>
+                  <MemberActions
+                    canAct={outranks(
+                      actor,
+                      member,
+                      roles.data,
+                      server.data?.ownerId,
+                    )}
+                    member={member}
+                    permissions={permissions}
+                    roles={roles.data}
+                    serverId={serverId}
+                  />
                 ) : null}
               </li>
             ))}

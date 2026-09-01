@@ -1,4 +1,4 @@
-import { infiniteQueryOptions } from "@tanstack/react-query";
+import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 
 import { api } from "@/lib/api-client";
 
@@ -42,4 +42,23 @@ export function serverMembersQuery(serverId: string) {
 
 export function displayName(member: ServerMemberEntry): string {
   return member.nickname ?? member.user.name;
+}
+
+export interface BanEntry {
+  user: PublicUser;
+  reason: string | null;
+  bannedBy: string;
+  createdAt: string;
+}
+
+export function serverBansQueryKey(serverId: string) {
+  return ["servers", serverId, "bans"] as const;
+}
+
+export function serverBansQuery(serverId: string) {
+  return queryOptions({
+    queryKey: serverBansQueryKey(serverId),
+    queryFn: ({ signal }) =>
+      api<BanEntry[]>(`/servers/${serverId}/bans`, { signal }),
+  });
 }
