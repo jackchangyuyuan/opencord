@@ -1,4 +1,4 @@
-import { resolve } from "@opencord/shared/permissions";
+import { DM_PERMISSIONS, resolve } from "@opencord/shared/permissions";
 import { useQuery } from "@tanstack/react-query";
 
 import {
@@ -50,12 +50,16 @@ export function useChannelPermissions(channelId: string | undefined): number {
   });
   const { data: overwrites } = useQuery({
     ...channelOverwritesQuery(channelId ?? ""),
-    enabled,
+    enabled: enabled && channel?.serverId != null,
   });
   const { data: server } = useQuery({
     ...serverQuery(channel?.serverId ?? ""),
     enabled: channel?.serverId != null,
   });
+
+  if (channel?.serverId === null) {
+    return DM_PERMISSIONS;
+  }
 
   if (me === undefined || server === undefined || overwrites === undefined) {
     return 0;

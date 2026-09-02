@@ -1,7 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 
-import type { ChannelListEntry } from "@/features/channels/api/queries";
+import {
+  type ChannelListEntry,
+  isChannelList,
+} from "@/features/channels/api/queries";
 import { api } from "@/lib/api-client";
 import { socket } from "@/lib/socket";
 
@@ -20,14 +23,6 @@ interface PendingRead {
 interface CapturedDivider {
   channelId: string;
   afterMessageId: string | null;
-}
-
-function isChannelList(queryKey: readonly unknown[]): boolean {
-  return (
-    queryKey.length === 3 &&
-    queryKey[0] === "servers" &&
-    queryKey[2] === "channels"
-  );
 }
 
 export function useMarkRead(channelId: string | undefined): MarkReadState {

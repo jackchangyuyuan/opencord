@@ -1,18 +1,32 @@
+import { useQuery } from "@tanstack/react-query";
+
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useActiveServerId } from "@/features/channels/api/queries";
+import {
+  channelQuery,
+  useActiveChannelId,
+  useActiveServerId,
+} from "@/features/channels/api/queries";
+import { DmMemberList } from "@/features/dms/components/dm-member-list";
 import { MemberList } from "@/features/members/components/member-list";
 import { SearchPanel } from "@/features/search/components/search-panel";
 import { useUi } from "@/stores/ui";
 
 export function MemberPanel() {
+  const channelId = useActiveChannelId();
   const activeServerId = useActiveServerId();
   const rightPanel = useUi((state) => state.rightPanel);
+
+  const { data: channel } = useQuery({
+    ...channelQuery(channelId ?? ""),
+    enabled: channelId !== undefined,
+  });
 
   if (rightPanel === null) {
     return null;
   }
 
   const search = rightPanel === "search";
+  const dm = channelId !== undefined && channel?.serverId === null;
 
   return (
     <aside
@@ -28,7 +42,11 @@ export function MemberPanel() {
         <SearchPanel />
       ) : (
         <ScrollArea className="flex-1">
-          <MemberList serverId={activeServerId} />
+          {dm ? (
+            <DmMemberList channelId={channelId} />
+          ) : (
+            <MemberList serverId={activeServerId} />
+          )}
         </ScrollArea>
       )}
     </aside>

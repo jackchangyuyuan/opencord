@@ -1,6 +1,7 @@
 import { Permissions } from "@opencord/shared/permissions";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ServerMemberEntry } from "@/features/members/api/queries";
@@ -100,7 +101,9 @@ function mountList() {
 
   render(
     <QueryClientProvider client={client}>
-      <MemberList serverId={SERVER_ID} />
+      <MemoryRouter>
+        <MemberList serverId={SERVER_ID} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }

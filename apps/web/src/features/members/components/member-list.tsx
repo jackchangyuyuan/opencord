@@ -1,9 +1,11 @@
 import { Permissions } from "@opencord/shared/permissions";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { MessageSquare } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { useOpenDm } from "@/features/dms/api/queries";
 import {
   displayName,
   type ServerMemberEntry,
@@ -90,6 +92,7 @@ export function MemberList({ serverId }: { serverId: string | undefined }) {
   const { data: me } = useQuery(currentUserQuery);
   const permissions = useServerPermissions(serverId);
   const presence = usePresence((state) => state.byUser);
+  const { openDm } = useOpenDm();
 
   const mayModerate =
     has(permissions, Permissions.KICK_MEMBERS) ||
@@ -165,6 +168,18 @@ export function MemberList({ serverId }: { serverId: string | undefined }) {
                 <span className="flex-1 truncate text-sm text-[color:var(--member-color,var(--color-foreground))]">
                   {displayName(member)}
                 </span>
+                {member.user.id === actor.id ? null : (
+                  <Button
+                    aria-label={`Message ${displayName(member)}`}
+                    onClick={() => {
+                      openDm(member.user.id);
+                    }}
+                    size="icon-xs"
+                    variant="ghost"
+                  >
+                    <MessageSquare />
+                  </Button>
+                )}
                 {mayModerate ? (
                   <MemberActions
                     canAct={outranks(

@@ -25,6 +25,18 @@ export interface ChannelListEntry extends ChannelSummary {
   mentionCount: number;
 }
 
+export function isChannelList(queryKey: readonly unknown[]): boolean {
+  if (queryKey.length === 1) {
+    return queryKey[0] === "dms";
+  }
+
+  return (
+    queryKey.length === 3 &&
+    queryKey[0] === "servers" &&
+    queryKey[2] === "channels"
+  );
+}
+
 export function serverChannelsQueryKey(serverId: string) {
   return ["servers", serverId, "channels"] as const;
 }

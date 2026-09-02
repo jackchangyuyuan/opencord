@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { sessionQueryKey } from "@/features/auth/hooks/use-session";
 import {
   type ChannelListEntry,
+  isChannelList,
   serverChannelsQueryKey,
 } from "@/features/channels/api/queries";
 import { serverMembersQueryKey } from "@/features/members/api/queries";
@@ -55,12 +56,7 @@ export function useSocketEvents(): void {
 
     const markUnread = (channelId: string, messageId: string) => {
       queryClient.setQueriesData<ChannelListEntry[]>(
-        {
-          predicate: (query) =>
-            query.queryKey.length === 3 &&
-            query.queryKey[0] === "servers" &&
-            query.queryKey[2] === "channels",
-        },
+        { predicate: (query) => isChannelList(query.queryKey) },
         (channels) =>
           channels?.map((channel) =>
             channel.id === channelId

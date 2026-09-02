@@ -7,6 +7,7 @@ import {
   type ChannelListEntry,
   serverChannelsQueryKey,
 } from "@/features/channels/api/queries";
+import { dmsQueryKey } from "@/features/dms/api/queries";
 
 const { rawEmit, reset, socket } = vi.hoisted(() => {
   type Listener = (...args: unknown[]) => void;
@@ -270,5 +271,45 @@ describe("useMarkRead", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(result.current.dividerAfterMessageId).toBeNull();
+  });
+});
+
+describe("a direct message", () => {
+  const DM_ID = "22222222-2222-4222-8222-222222222222";
+
+  function seedDm(overrides: Partial<ChannelListEntry>) {
+    client.setQueryData<ChannelListEntry[]>(dmsQueryKey, [
+      entry({ id: DM_ID, serverId: null, name: null, ...overrides }),
+    ]);
+  }
+
+  it("refreshes the DM list once its read marker lands", async () => {
+    seedDm({ hasUnread: true, lastReadMessageId: "m-1" });
+
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    const { result } = renderHook(() => useMarkRead(DM_ID), { wrapper });
+
+    act(() => {
+      result.current.markRead("m-9");
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MARK_READ_DELAY_MS);
+    });
+
+    expect(
+      invalidate.mock.calls.some(([filters]) =>
+        filters?.predicate?.({ queryKey: dmsQueryKey } as never),
+      ),
+    ).toBe(true);
+  });
+
+  it("captures the divider from the DM list", () => {
+    seedDm({ hasUnread: true, lastReadMessageId: "m-4" });
+
+    const { result } = renderHook(() => useMarkRead(DM_ID), { wrapper });
+
+    expect(result.current.dividerAfterMessageId).toBe("m-4");
   });
 });
