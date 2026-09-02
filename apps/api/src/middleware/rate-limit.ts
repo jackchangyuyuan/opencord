@@ -10,6 +10,7 @@ export const MESSAGE_WINDOW_SECONDS = 5;
 export const CREATE_WINDOW_SECONDS = 60;
 export const INVITE_WINDOW_SECONDS = 60;
 export const SEARCH_WINDOW_SECONDS = 10;
+export const UPLOAD_WINDOW_SECONDS = 60;
 export const TYPING_WINDOW_SECONDS = 2;
 export const HEARTBEAT_WINDOW_SECONDS = 10;
 export const SOCKET_ABUSE_FACTOR = 10;
@@ -96,6 +97,15 @@ export const searchRateLimit = rateLimit(
     name: "search",
     points: config.RATE_LIMIT_SEARCH_POINTS,
     duration: SEARCH_WINDOW_SECONDS,
+  },
+  (req) => req.user.id,
+);
+
+export const uploadRateLimit = rateLimit(
+  {
+    name: "upload",
+    points: config.RATE_LIMIT_UPLOAD_POINTS,
+    duration: UPLOAD_WINDOW_SECONDS,
   },
   (req) => req.user.id,
 );

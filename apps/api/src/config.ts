@@ -23,6 +23,7 @@ const baseSchema = z.object({
   RATE_LIMIT_NAMESPACE: z.string().min(1).default("rl"),
   RATE_LIMIT_SEARCH_POINTS: z.coerce.number().int().min(1).default(10),
   RATE_LIMIT_TYPING_POINTS: z.coerce.number().int().min(1).default(1),
+  RATE_LIMIT_UPLOAD_POINTS: z.coerce.number().int().min(1).default(20),
   REDIS_URL: z.url(),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(0),
   S3_BUCKET: z

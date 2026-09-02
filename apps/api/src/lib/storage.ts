@@ -1,5 +1,10 @@
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  createPresignedPost,
+  type PresignedPost,
+} from "@aws-sdk/s3-presigned-post";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { UPLOAD_GRANT_TTL_SECONDS } from "@opencord/shared/constants";
 
 import { config } from "../config.js";
 
@@ -41,4 +46,25 @@ export async function assertStorageOrigin(): Promise<void> {
       `Presigned URLs resolve to ${origin}, but STORAGE_PUBLIC_ORIGIN is ${config.STORAGE_PUBLIC_ORIGIN}`,
     );
   }
+}
+
+export interface UploadGrantInput {
+  objectKey: string;
+  contentType: string;
+  maxBytes: number;
+}
+
+export function createUploadGrant(
+  input: UploadGrantInput,
+): Promise<PresignedPost> {
+  return createPresignedPost(signer, {
+    Bucket: config.S3_BUCKET,
+    Key: input.objectKey,
+    Fields: { "Content-Type": input.contentType },
+    Conditions: [
+      ["eq", "$key", input.objectKey],
+      ["content-length-range", 1, input.maxBytes],
+    ],
+    Expires: UPLOAD_GRANT_TTL_SECONDS,
+  });
 }

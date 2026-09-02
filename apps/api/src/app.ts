@@ -26,6 +26,7 @@ import { serverRolesRouter } from "./modules/roles/router.js";
 import { searchRouter } from "./modules/search/router.js";
 import { serversRouter } from "./modules/servers/router.js";
 import { statsRouter } from "./modules/stats/router.js";
+import { uploadsRouter } from "./modules/uploads/router.js";
 import { usersRouter } from "./modules/users/router.js";
 import { redis } from "./redis.js";
 
@@ -88,6 +89,7 @@ apiRouter.use("/servers/:serverId/bans", serverBansRouter);
 apiRouter.use("/servers/:serverId/members", serverMembersRouter);
 apiRouter.use("/servers/:serverId/roles", serverRolesRouter);
 apiRouter.use("/stats", statsRouter);
+apiRouter.use("/uploads", uploadsRouter);
 apiRouter.use("/users", usersRouter);
 
 app.use("/api/v1", apiRouter);
