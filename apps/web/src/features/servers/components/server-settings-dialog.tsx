@@ -12,6 +12,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AuditLogTab } from "@/features/audit-log/components/audit-log-tab";
 import { OverwriteEditor } from "@/features/channels/components/overwrite-editor";
 import { BanList } from "@/features/members/components/ban-list";
 import {
@@ -32,6 +33,8 @@ export function ServerSettingsDialog({ serverId }: { serverId: string }) {
   const { data: servers } = useQuery(serversQuery);
 
   const server = servers?.find((entry) => entry.id === serverId);
+
+  const mayManageServer = has(permissions, Permissions.MANAGE_SERVER);
 
   if (server === undefined || !has(permissions, Permissions.VIEW_CHANNEL)) {
     return null;
@@ -68,6 +71,9 @@ export function ServerSettingsDialog({ serverId }: { serverId: string }) {
             <TabsTrigger value="roles">Roles</TabsTrigger>
             <TabsTrigger value="overwrites">Channel access</TabsTrigger>
             <TabsTrigger value="bans">Bans</TabsTrigger>
+            {mayManageServer ? (
+              <TabsTrigger value="audit-log">Moderation record</TabsTrigger>
+            ) : null}
           </TabsList>
           <TabsContent value="overview">
             <ServerOverviewTab onDone={closeModal} server={server} />
@@ -81,6 +87,11 @@ export function ServerSettingsDialog({ serverId }: { serverId: string }) {
           <TabsContent value="bans">
             <BanList serverId={serverId} />
           </TabsContent>
+          {mayManageServer ? (
+            <TabsContent value="audit-log">
+              <AuditLogTab serverId={serverId} />
+            </TabsContent>
+          ) : null}
         </Tabs>
       </DialogContent>
     </Dialog>
