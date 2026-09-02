@@ -19,7 +19,7 @@ channelPinsRouter.get(
   validate({ params: channelParamsSchema }),
   requireChannelPermission(),
   async (req, res) => {
-    res.json(await listPins(req.channel, req.user.id));
+    res.json(await listPins(req.channel.channel, req.user.id));
   },
 );
 
@@ -32,8 +32,8 @@ messagePinRouter.put(
   async (req, res) => {
     res.json(
       await pinMessage(
-        req.server,
         req.channel,
+        req.channel.channel,
         req.user.id,
         req.params.messageId,
       ),
@@ -48,8 +48,8 @@ messagePinRouter.delete(
   async (req, res) => {
     res.json(
       await unpinMessage(
-        req.server,
         req.channel,
+        req.channel.channel,
         req.user.id,
         req.params.messageId,
       ),

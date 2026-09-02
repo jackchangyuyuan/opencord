@@ -34,8 +34,8 @@ messagesRouter.post(
   sendMessageRateLimit,
   async (req, res) => {
     const result = await sendMessage(
-      req.server,
       req.channel,
+      req.channel.channel,
       req.user.id,
       req.body,
     );
@@ -49,7 +49,7 @@ messagesRouter.get(
   validate({ params: channelParamsSchema, query: messagePageSchema }),
   requireChannelPermission(),
   async (req, res) => {
-    const page = await listChannelMessages(req.channel.id, req.query);
+    const page = await listChannelMessages(req.channel.channel.id, req.query);
 
     res.json({
       data: await serializeMessages(page.rows, req.user.id),
@@ -65,8 +65,8 @@ messagesRouter.patch(
   async (req, res) => {
     res.json(
       await editMessage(
-        req.server,
         req.channel,
+        req.channel.channel,
         req.user.id,
         req.params.messageId,
         req.body,
@@ -82,8 +82,8 @@ messagesRouter.delete(
   async (req, res) => {
     res.json(
       await deleteMessage(
-        req.server,
         req.channel,
+        req.channel.channel,
         req.user.id,
         req.params.messageId,
       ),

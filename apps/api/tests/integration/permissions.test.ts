@@ -112,7 +112,7 @@ async function grantRole(
   return role.id;
 }
 
-describe("requirePermission on GET /api/v1/servers/:serverId", () => {
+describe("requireServerPermission on GET /api/v1/servers/:serverId", () => {
   beforeAll(() => {
     requireTestDatabase();
   });

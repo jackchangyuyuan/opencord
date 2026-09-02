@@ -3,7 +3,7 @@ import { paginationSchema } from "@opencord/shared/schemas";
 import { Router } from "express";
 import { z } from "zod";
 
-import { requirePermission } from "../../middleware/permissions.js";
+import { requireServerPermission } from "../../middleware/permissions.js";
 import { validate } from "../../middleware/validate.js";
 import { kickMember } from "../moderation/service.js";
 import { listServerMembers } from "../servers/queries.js";
@@ -26,7 +26,7 @@ export const serverMembersRouter = Router({ mergeParams: true });
 serverMembersRouter.get(
   "/",
   validate({ params: serverParamsSchema, query: paginationSchema }),
-  requirePermission(),
+  requireServerPermission(),
   async (req, res) => {
     res.json(await listServerMembers(req.server.server.id, req.query));
   },
@@ -35,7 +35,7 @@ serverMembersRouter.get(
 serverMembersRouter.delete(
   "/@me",
   validate({ params: serverParamsSchema }),
-  requirePermission(),
+  requireServerPermission(),
   async (req, res) => {
     await leaveServer(req.server, req.user.id);
     res.status(204).end();
@@ -45,7 +45,7 @@ serverMembersRouter.delete(
 serverMembersRouter.delete(
   "/:userId",
   validate({ params: memberParamsSchema }),
-  requirePermission(Permissions.KICK_MEMBERS),
+  requireServerPermission(Permissions.KICK_MEMBERS),
   async (req, res) => {
     await kickMember(req.server, req.user.id, req.params.userId);
     res.status(204).end();
@@ -55,7 +55,7 @@ serverMembersRouter.delete(
 serverMembersRouter.put(
   "/:userId/roles/:roleId",
   validate({ params: memberRoleParamsSchema }),
-  requirePermission(Permissions.MANAGE_ROLES),
+  requireServerPermission(Permissions.MANAGE_ROLES),
   async (req, res) => {
     res.json({
       roleIds: await assignRole(
@@ -71,7 +71,7 @@ serverMembersRouter.put(
 serverMembersRouter.delete(
   "/:userId/roles/:roleId",
   validate({ params: memberRoleParamsSchema }),
-  requirePermission(Permissions.MANAGE_ROLES),
+  requireServerPermission(Permissions.MANAGE_ROLES),
   async (req, res) => {
     res.json({
       roleIds: await unassignRole(

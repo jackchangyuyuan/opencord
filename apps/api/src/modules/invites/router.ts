@@ -3,7 +3,7 @@ import { createInviteSchema, inviteCodeSchema } from "@opencord/shared/schemas";
 import { Router } from "express";
 import { z } from "zod";
 
-import { requirePermission } from "../../middleware/permissions.js";
+import { requireServerPermission } from "../../middleware/permissions.js";
 import { redeemInviteRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
 import { listServerInvites } from "./queries.js";
@@ -17,7 +17,7 @@ export const serverInvitesRouter = Router({ mergeParams: true });
 serverInvitesRouter.get(
   "/",
   validate({ params: serverParamsSchema }),
-  requirePermission(Permissions.CREATE_INVITE),
+  requireServerPermission(Permissions.CREATE_INVITE),
   async (req, res) => {
     res.json(await listServerInvites(req.server.server.id));
   },
@@ -26,7 +26,7 @@ serverInvitesRouter.get(
 serverInvitesRouter.post(
   "/",
   validate({ params: serverParamsSchema, body: createInviteSchema }),
-  requirePermission(Permissions.CREATE_INVITE),
+  requireServerPermission(Permissions.CREATE_INVITE),
   async (req, res) => {
     res.status(201).json(await createInvite(req.server, req.user.id, req.body));
   },

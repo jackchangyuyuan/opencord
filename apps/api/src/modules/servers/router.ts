@@ -7,7 +7,7 @@ import {
 import { Router } from "express";
 import { z } from "zod";
 
-import { requirePermission } from "../../middleware/permissions.js";
+import { requireServerPermission } from "../../middleware/permissions.js";
 import { createResourceRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
 import { listAuditLog } from "./audit-log.js";
@@ -45,7 +45,7 @@ serversRouter.post(
 serversRouter.get(
   "/:serverId",
   validate({ params: serverParamsSchema }),
-  requirePermission(),
+  requireServerPermission(),
   (req, res) => {
     res.json(serializeServerDetail(req.server));
   },
@@ -54,7 +54,7 @@ serversRouter.get(
 serversRouter.get(
   "/:serverId/members",
   validate({ params: serverParamsSchema, query: paginationSchema }),
-  requirePermission(),
+  requireServerPermission(),
   async (req, res) => {
     res.json(await listServerMembers(req.server.server.id, req.query));
   },
@@ -63,7 +63,7 @@ serversRouter.get(
 serversRouter.patch(
   "/:serverId",
   validate({ params: serverParamsSchema, body: updateServerSchema }),
-  requirePermission(Permissions.MANAGE_SERVER),
+  requireServerPermission(Permissions.MANAGE_SERVER),
   async (req, res) => {
     res.json(await updateServer(req.server, req.user.id, req.body));
   },
@@ -72,7 +72,7 @@ serversRouter.patch(
 serversRouter.get(
   "/:serverId/audit-log",
   validate({ params: serverParamsSchema, query: paginationSchema }),
-  requirePermission(Permissions.MANAGE_SERVER),
+  requireServerPermission(Permissions.MANAGE_SERVER),
   async (req, res) => {
     res.json(await listAuditLog(req.server.server.id, req.query));
   },
@@ -81,7 +81,7 @@ serversRouter.get(
 serversRouter.post(
   "/:serverId/owner",
   validate({ params: serverParamsSchema, body: transferOwnershipSchema }),
-  requirePermission(),
+  requireServerPermission(),
   async (req, res) => {
     res.json(await transferOwnership(req.server, req.user.id, req.body.userId));
   },
@@ -90,7 +90,7 @@ serversRouter.post(
 serversRouter.delete(
   "/:serverId/members/@me",
   validate({ params: serverParamsSchema }),
-  requirePermission(),
+  requireServerPermission(),
   async (req, res) => {
     await leaveServer(req.server, req.user.id);
     res.status(204).end();
@@ -100,7 +100,7 @@ serversRouter.delete(
 serversRouter.delete(
   "/:serverId",
   validate({ params: serverParamsSchema }),
-  requirePermission(),
+  requireServerPermission(),
   async (req, res) => {
     await deleteServer(req.server, req.user.id);
     res.status(204).end();

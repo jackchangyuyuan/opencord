@@ -6,7 +6,7 @@ import type {
 import type { Message } from "@opencord/shared/types";
 import { and, eq, sql } from "drizzle-orm";
 
-import type { ChannelRow, ServerContext } from "../../access/context.js";
+import type { ChannelContext, ChannelRow } from "../../access/context.js";
 import { db, type Transaction } from "../../db/index.js";
 import { channels, mentions, messages } from "../../db/schema/index.js";
 import { writeAudit } from "../../lib/audit.js";
@@ -33,7 +33,7 @@ export interface SendMessageResult {
   message: Message;
 }
 
-function mayMentionEveryone(context: ServerContext): boolean {
+function mayMentionEveryone(context: ChannelContext): boolean {
   return (context.permissions & Permissions.MENTION_EVERYONE) !== 0;
 }
 
@@ -44,10 +44,14 @@ interface PreparedContent {
 }
 
 async function prepareContent(
-  serverId: string,
+  serverId: string | null,
   authorId: string,
   raw: string,
 ): Promise<PreparedContent> {
+  if (serverId === null) {
+    return { content: raw, mentionedUserIds: [], everyone: false };
+  }
+
   const candidates = findMentionCandidates(raw);
   const resolution = await resolveMentions(serverId, candidates);
 
@@ -121,14 +125,14 @@ function isReplay(
 }
 
 export async function sendMessage(
-  context: ServerContext,
+  context: ChannelContext,
   channel: ChannelRow,
   authorId: string,
   input: SendMessageInput,
 ): Promise<SendMessageResult> {
   const replyToId = input.replyToId ?? null;
   const prepared = await prepareContent(
-    context.server.id,
+    context.server?.server.id ?? null,
     authorId,
     input.content,
   );
@@ -230,7 +234,7 @@ async function requireLiveMessage(
 }
 
 export async function editMessage(
-  context: ServerContext,
+  context: ChannelContext,
   channel: ChannelRow,
   actorId: string,
   messageId: string,
@@ -243,7 +247,7 @@ export async function editMessage(
   }
 
   const prepared = await prepareContent(
-    context.server.id,
+    context.server?.server.id ?? null,
     actorId,
     input.content,
   );
@@ -285,7 +289,7 @@ export async function editMessage(
 }
 
 export async function deleteMessage(
-  context: ServerContext,
+  context: ChannelContext,
   channel: ChannelRow,
   actorId: string,
   messageId: string,
@@ -294,17 +298,24 @@ export async function deleteMessage(
   const byModerator = message.authorId !== actorId;
 
   if (byModerator) {
+    if (context.server === null) {
+      throw forbidden(
+        "NOT_THE_AUTHOR",
+        "Only the author may delete a direct message",
+      );
+    }
+
     if ((context.permissions & Permissions.MANAGE_MESSAGES) === 0) {
       throw forbidden();
     }
 
-    if (context.server.ownerId === message.authorId) {
+    if (context.server.server.ownerId === message.authorId) {
       throw forbidden("TARGET_IS_OWNER", "The owner is outside the hierarchy");
     }
 
     requireBelowActor(
-      await highestPositionOf(context.server.id, message.authorId),
-      actorPosition(context, actorId),
+      await highestPositionOf(context.server.server.id, message.authorId),
+      actorPosition(context.server, actorId),
     );
   }
 
@@ -332,9 +343,9 @@ export async function deleteMessage(
 
     await repairEveryoneWatermark(tx, channel.id, message.id);
 
-    if (byModerator) {
+    if (byModerator && context.server !== null) {
       await writeAudit(tx, {
-        serverId: context.server.id,
+        serverId: context.server.server.id,
         actorId,
         action: "message_delete",
         targetType: "message",

@@ -20,7 +20,7 @@ reactionsRouter.put(
   requireChannelPermission(Permissions.ADD_REACTIONS),
   async (req, res) => {
     await addReaction(
-      req.channel.id,
+      req.channel.channel.id,
       req.user.id,
       req.params.messageId,
       req.params.emoji,
@@ -36,7 +36,7 @@ reactionsRouter.delete(
   requireChannelPermission(Permissions.ADD_REACTIONS),
   async (req, res) => {
     await removeReaction(
-      req.channel.id,
+      req.channel.channel.id,
       req.user.id,
       req.params.messageId,
       req.params.emoji,

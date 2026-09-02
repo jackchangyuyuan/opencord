@@ -1,9 +1,14 @@
-import { Permissions, resolve } from "@opencord/shared/permissions";
+import {
+  DM_PERMISSIONS,
+  Permissions,
+  resolve,
+} from "@opencord/shared/permissions";
 import { and, eq, inArray } from "drizzle-orm";
 
 import { db } from "../db/index.js";
 import {
   channelMemberOverwrites,
+  channelMembers,
   channelRoleOverwrites,
   channels,
   memberRoles,
@@ -11,6 +16,23 @@ import {
   serverMembers,
   servers,
 } from "../db/schema/index.js";
+
+export async function isDmParticipant(
+  channelId: string,
+  userId: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({ userId: channelMembers.userId })
+    .from(channelMembers)
+    .where(
+      and(
+        eq(channelMembers.channelId, channelId),
+        eq(channelMembers.userId, userId),
+      ),
+    );
+
+  return rows.length > 0;
+}
 
 export async function resolveAccessibleChannels(
   userId: string,
@@ -22,6 +44,15 @@ export async function resolveAccessibleChannels(
 
   const serverIds = memberships.map((membership) => membership.serverId);
   const accessible = new Set<string>();
+
+  const dmRows = await db
+    .select({ channelId: channelMembers.channelId })
+    .from(channelMembers)
+    .where(eq(channelMembers.userId, userId));
+
+  for (const row of dmRows) {
+    accessible.add(row.channelId);
+  }
 
   if (serverIds.length === 0) {
     return accessible;
@@ -122,8 +153,12 @@ export async function resolveChannelPermissions(
     where: { id: channelId },
   });
 
-  if (channel?.serverId == null) {
+  if (channel === undefined) {
     return null;
+  }
+
+  if (channel.serverId === null) {
+    return (await isDmParticipant(channel.id, userId)) ? DM_PERMISSIONS : null;
   }
 
   const server = await db.query.servers.findFirst({

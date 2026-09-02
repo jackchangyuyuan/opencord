@@ -73,3 +73,11 @@ export function nonceReused(): AppError {
     "That nonce already belongs to a different message",
   );
 }
+
+export function notADirectMessage(): AppError {
+  return new AppError(
+    400,
+    "NOT_A_DM_CHANNEL",
+    "That channel's roster is its server's member list",
+  );
+}

@@ -14,6 +14,7 @@ import {
   channelsRouter,
   serverChannelsRouter,
 } from "./modules/channels/router.js";
+import { dmsRouter } from "./modules/dms/router.js";
 import {
   invitesRouter,
   serverInvitesRouter,
@@ -77,6 +78,7 @@ apiRouter.use(requireAuth);
 apiRouter.use(express.json());
 apiRouter.use("/channels", channelsRouter);
 apiRouter.use("/channels/:channelId/messages", messagesRouter);
+apiRouter.use("/dms", dmsRouter);
 apiRouter.use("/invites", invitesRouter);
 apiRouter.use("/search", searchRateLimit, searchRouter);
 apiRouter.use("/servers", serversRouter);

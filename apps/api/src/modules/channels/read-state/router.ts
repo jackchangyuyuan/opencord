@@ -15,6 +15,8 @@ readRouter.put(
   validate({ params: channelParamsSchema, body: markReadSchema }),
   requireChannelPermission(),
   async (req, res) => {
-    res.json(await markRead(req.user.id, req.channel.id, req.body.messageId));
+    res.json(
+      await markRead(req.user.id, req.channel.channel.id, req.body.messageId),
+    );
   },
 );

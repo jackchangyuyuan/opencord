@@ -3,7 +3,7 @@ import { overwriteSchema } from "@opencord/shared/schemas";
 import { Router } from "express";
 import { z } from "zod";
 
-import { requireChannelPermission } from "../../../middleware/permissions.js";
+import { requireServerChannel } from "../../../middleware/permissions.js";
 import { validate } from "../../../middleware/validate.js";
 import { listChannelOverwrites } from "./queries.js";
 import {
@@ -28,21 +28,21 @@ export const overwritesRouter = Router({ mergeParams: true });
 overwritesRouter.get(
   "/",
   validate({ params: channelParamsSchema }),
-  requireChannelPermission(),
+  requireServerChannel(),
   async (req, res) => {
-    res.json(await listChannelOverwrites(req.channel.id));
+    res.json(await listChannelOverwrites(req.channel.channel.id));
   },
 );
 
 overwritesRouter.put(
   "/roles/:roleId",
   validate({ params: roleParamsSchema, body: overwriteSchema }),
-  requireChannelPermission(Permissions.MANAGE_ROLES),
+  requireServerChannel(Permissions.MANAGE_ROLES),
   async (req, res) => {
     res.json(
       await putRoleOverwrite(
         req.server,
-        req.channel,
+        req.channel.channel,
         req.user.id,
         req.params.roleId,
         req.body,
@@ -54,11 +54,11 @@ overwritesRouter.put(
 overwritesRouter.delete(
   "/roles/:roleId",
   validate({ params: roleParamsSchema }),
-  requireChannelPermission(Permissions.MANAGE_ROLES),
+  requireServerChannel(Permissions.MANAGE_ROLES),
   async (req, res) => {
     await deleteRoleOverwrite(
       req.server,
-      req.channel,
+      req.channel.channel,
       req.user.id,
       req.params.roleId,
     );
@@ -69,12 +69,12 @@ overwritesRouter.delete(
 overwritesRouter.put(
   "/members/:userId",
   validate({ params: memberParamsSchema, body: overwriteSchema }),
-  requireChannelPermission(Permissions.MANAGE_ROLES),
+  requireServerChannel(Permissions.MANAGE_ROLES),
   async (req, res) => {
     res.json(
       await putMemberOverwrite(
         req.server,
-        req.channel,
+        req.channel.channel,
         req.user.id,
         req.params.userId,
         req.body,
@@ -86,11 +86,11 @@ overwritesRouter.put(
 overwritesRouter.delete(
   "/members/:userId",
   validate({ params: memberParamsSchema }),
-  requireChannelPermission(Permissions.MANAGE_ROLES),
+  requireServerChannel(Permissions.MANAGE_ROLES),
   async (req, res) => {
     await deleteMemberOverwrite(
       req.server,
-      req.channel,
+      req.channel.channel,
       req.user.id,
       req.params.userId,
     );

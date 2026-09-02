@@ -1,7 +1,7 @@
 import type { Message } from "@opencord/shared/types";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 
-import type { ChannelRow, ServerContext } from "../../../access/context.js";
+import type { ChannelContext, ChannelRow } from "../../../access/context.js";
 import { db } from "../../../db/index.js";
 import { messages } from "../../../db/schema/index.js";
 import { lockChannelPins } from "../../../lib/advisory-locks.js";
@@ -25,7 +25,7 @@ async function requireLive(channel: ChannelRow, messageId: string) {
 }
 
 export async function pinMessage(
-  context: ServerContext,
+  context: ChannelContext,
   channel: ChannelRow,
   actorId: string,
   messageId: string,
@@ -49,14 +49,16 @@ export async function pinMessage(
       throw pinLimitReached();
     }
 
-    await writeAudit(tx, {
-      serverId: context.server.id,
-      actorId,
-      action: "message_pin",
-      targetType: "message",
-      targetId: row.id,
-      metadata: { channelId: channel.id },
-    });
+    if (context.server !== null) {
+      await writeAudit(tx, {
+        serverId: context.server.server.id,
+        actorId,
+        action: "message_pin",
+        targetType: "message",
+        targetId: row.id,
+        metadata: { channelId: channel.id },
+      });
+    }
 
     return row;
   });
@@ -74,7 +76,7 @@ export async function pinMessage(
 }
 
 export async function unpinMessage(
-  context: ServerContext,
+  context: ChannelContext,
   channel: ChannelRow,
   actorId: string,
   messageId: string,
@@ -92,14 +94,16 @@ export async function unpinMessage(
       return null;
     }
 
-    await writeAudit(tx, {
-      serverId: context.server.id,
-      actorId,
-      action: "message_unpin",
-      targetType: "message",
-      targetId: row.id,
-      metadata: { channelId: channel.id },
-    });
+    if (context.server !== null) {
+      await writeAudit(tx, {
+        serverId: context.server.server.id,
+        actorId,
+        action: "message_unpin",
+        targetType: "message",
+        targetId: row.id,
+        metadata: { channelId: channel.id },
+      });
+    }
 
     return row;
   });

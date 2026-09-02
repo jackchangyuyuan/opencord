@@ -19,3 +19,9 @@ export const ALL_PERMISSIONS: number = Object.values(Permissions).reduce(
   (mask, bit) => mask | bit,
   0,
 );
+
+export const DM_PERMISSIONS: number =
+  Permissions.VIEW_CHANNEL |
+  Permissions.SEND_MESSAGES |
+  Permissions.ADD_REACTIONS |
+  Permissions.MANAGE_MESSAGES;

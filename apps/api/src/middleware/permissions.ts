@@ -2,11 +2,11 @@ import { Permissions } from "@opencord/shared/permissions";
 import type { RequestHandler } from "express";
 
 import {
-  type ChannelRow,
+  type ChannelContext,
+  loadChannelContext,
   loadServerContext,
   type ServerContext,
 } from "../access/context.js";
-import { db } from "../db/index.js";
 import { forbidden, notFound } from "../lib/errors.js";
 
 declare global {
@@ -14,7 +14,7 @@ declare global {
   namespace Express {
     interface Request {
       server: ServerContext;
-      channel: ChannelRow;
+      channel: ChannelContext;
     }
   }
 }
@@ -27,13 +27,13 @@ export interface ChannelParams {
   channelId: string;
 }
 
-export function requirePermission(
-  bit = 0,
+export function requireServerPermission(
+  required = 0,
 ): RequestHandler<ServerParams, unknown, unknown, unknown> {
   return async (req, _res, next) => {
     const context = await loadServerContext(req.params.serverId, req.user.id);
 
-    if ((context.permissions & bit) !== bit) {
+    if ((context.permissions & required) !== required) {
       next(forbidden());
       return;
     }
@@ -44,43 +44,45 @@ export function requirePermission(
   };
 }
 
-export function requireChannelPermission(
-  bit = 0,
+function channelGuard(
+  required: number,
+  serverOnly: boolean,
 ): RequestHandler<ChannelParams, unknown, unknown, unknown> {
   return async (req, _res, next) => {
-    const channel = await db.query.channels.findFirst({
-      where: { id: req.params.channelId },
-    });
+    const context = await loadChannelContext(req.params.channelId, req.user.id);
 
-    if (channel === undefined) {
+    if (
+      context === null ||
+      (serverOnly && context.server === null) ||
+      (context.permissions & Permissions.VIEW_CHANNEL) === 0
+    ) {
       next(notFound("NOT_FOUND", "Channel not found"));
       return;
     }
 
-    if (channel.serverId === null) {
-      next(notFound("NOT_FOUND", "Channel not found"));
-      return;
-    }
-
-    const context = await loadServerContext(
-      channel.serverId,
-      req.user.id,
-      channel.id,
-    );
-
-    if ((context.permissions & Permissions.VIEW_CHANNEL) === 0) {
-      next(notFound("NOT_FOUND", "Channel not found"));
-      return;
-    }
-
-    if ((context.permissions & bit) !== bit) {
+    if ((context.permissions & required) !== required) {
       next(forbidden());
       return;
     }
 
-    req.server = context;
-    req.channel = channel;
+    req.channel = context;
+
+    if (context.server !== null) {
+      req.server = context.server;
+    }
 
     next();
   };
+}
+
+export function requireChannelPermission(
+  required = 0,
+): RequestHandler<ChannelParams, unknown, unknown, unknown> {
+  return channelGuard(required, false);
+}
+
+export function requireServerChannel(
+  required = 0,
+): RequestHandler<ChannelParams, unknown, unknown, unknown> {
+  return channelGuard(required, true);
 }

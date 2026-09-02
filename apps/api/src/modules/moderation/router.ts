@@ -2,7 +2,7 @@ import { Permissions } from "@opencord/shared/permissions";
 import { Router } from "express";
 import { z } from "zod";
 
-import { requirePermission } from "../../middleware/permissions.js";
+import { requireServerPermission } from "../../middleware/permissions.js";
 import { validate } from "../../middleware/validate.js";
 import { listBans } from "./queries.js";
 import { banMember, unbanMember } from "./service.js";
@@ -22,7 +22,7 @@ export const serverBansRouter = Router({ mergeParams: true });
 serverBansRouter.get(
   "/",
   validate({ params: serverParamsSchema }),
-  requirePermission(Permissions.BAN_MEMBERS),
+  requireServerPermission(Permissions.BAN_MEMBERS),
   async (req, res) => {
     res.json(await listBans(req.server.server.id));
   },
@@ -31,7 +31,7 @@ serverBansRouter.get(
 serverBansRouter.put(
   "/:userId",
   validate({ params: targetParamsSchema, body: banBodySchema }),
-  requirePermission(Permissions.BAN_MEMBERS),
+  requireServerPermission(Permissions.BAN_MEMBERS),
   async (req, res) => {
     await banMember(
       req.server,
@@ -47,7 +47,7 @@ serverBansRouter.put(
 serverBansRouter.delete(
   "/:userId",
   validate({ params: targetParamsSchema }),
-  requirePermission(Permissions.BAN_MEMBERS),
+  requireServerPermission(Permissions.BAN_MEMBERS),
   async (req, res) => {
     await unbanMember(req.server, req.user.id, req.params.userId);
     res.status(204).end();

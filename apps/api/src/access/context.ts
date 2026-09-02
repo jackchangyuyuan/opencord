@@ -1,4 +1,8 @@
-import { resolve, type ResolveInput } from "@opencord/shared/permissions";
+import {
+  DM_PERMISSIONS,
+  resolve,
+  type ResolveInput,
+} from "@opencord/shared/permissions";
 import { and, eq } from "drizzle-orm";
 
 import { db } from "../db/index.js";
@@ -12,6 +16,7 @@ import {
   servers,
 } from "../db/schema/index.js";
 import { forbidden, notFound } from "../lib/errors.js";
+import { isDmParticipant } from "./channels.js";
 
 export type ServerRow = typeof servers.$inferSelect;
 export type RoleRow = typeof roles.$inferSelect;
@@ -22,6 +27,12 @@ export interface ServerContext {
   everyoneRole: RoleRow;
   memberRoles: RoleRow[];
   permissions: number;
+}
+
+export interface ChannelContext {
+  channel: ChannelRow;
+  permissions: number;
+  server: ServerContext | null;
 }
 
 async function loadChannelOverwrites(
@@ -116,4 +127,27 @@ export async function loadServerContext(
       ...overwrites,
     }),
   };
+}
+
+export async function loadChannelContext(
+  channelId: string,
+  userId: string,
+): Promise<ChannelContext | null> {
+  const channel = await db.query.channels.findFirst({
+    where: { id: channelId },
+  });
+
+  if (channel === undefined) {
+    return null;
+  }
+
+  if (channel.serverId === null) {
+    return (await isDmParticipant(channel.id, userId))
+      ? { channel, permissions: DM_PERMISSIONS, server: null }
+      : null;
+  }
+
+  const server = await loadServerContext(channel.serverId, userId, channel.id);
+
+  return { channel, permissions: server.permissions, server };
 }
