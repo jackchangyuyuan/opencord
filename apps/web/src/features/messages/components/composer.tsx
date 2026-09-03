@@ -1,7 +1,8 @@
+import { MAX_ATTACHMENTS_PER_MESSAGE } from "@opencord/shared/constants";
 import { Permissions } from "@opencord/shared/permissions";
 import { useQuery } from "@tanstack/react-query";
-import { SendHorizontal } from "lucide-react";
-import { type KeyboardEvent, useRef } from "react";
+import { Paperclip, SendHorizontal } from "lucide-react";
+import { type ChangeEvent, type KeyboardEvent, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ReplyPreview } from "@/features/messages/components/reply-preview";
@@ -13,6 +14,8 @@ import {
   has,
   useChannelPermissions,
 } from "@/features/permissions/hooks/use-permissions";
+import { AttachmentTray } from "@/features/uploads/components/attachment-tray";
+import { useUpload } from "@/features/uploads/hooks/use-upload";
 import { currentUserQuery } from "@/features/users/api/queries";
 import { socket } from "@/lib/socket";
 import { useDraft, useDrafts } from "@/stores/drafts";
@@ -22,12 +25,14 @@ const TYPING_THROTTLE_MS = 2000;
 
 export function Composer({ channelId }: { channelId: string }) {
   const lastTypedRef = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const draft = useDraft(channelId);
   const setDraft = useDrafts((state) => state.setDraft);
   const { data: me } = useQuery(currentUserQuery);
   const { send } = useSendMessage(channelId);
   const replyTarget = useUi((state) => state.replyTarget);
   const setReplyTarget = useUi((state) => state.setReplyTarget);
+  const uploads = useUpload("attachment");
 
   const maySend = has(
     useChannelPermissions(channelId),
@@ -35,7 +40,12 @@ export function Composer({ channelId }: { channelId: string }) {
   );
 
   const content = draft.trim();
-  const ready = maySend && content.length > 0 && me !== undefined;
+
+  const ready =
+    maySend &&
+    me !== undefined &&
+    !uploads.isUploading &&
+    (content.length > 0 || uploads.drafts.length > 0);
 
   function submit() {
     if (!ready) {
@@ -50,10 +60,17 @@ export function Composer({ channelId }: { channelId: string }) {
       nonce: newNonce(),
       authorId: me.id,
       ...(replyToId === undefined ? {} : { replyToId }),
+      ...(uploads.drafts.length === 0 ? {} : { attachments: uploads.drafts }),
     });
 
     setDraft(channelId, "");
     setReplyTarget(null);
+    uploads.clear();
+  }
+
+  function onFilesChosen(event: ChangeEvent<HTMLInputElement>) {
+    uploads.add([...(event.target.files ?? [])]);
+    event.target.value = "";
   }
 
   function announceTyping() {
@@ -77,7 +94,28 @@ export function Composer({ channelId }: { channelId: string }) {
   return (
     <>
       <ReplyPreview channelId={channelId} />
+      <AttachmentTray items={uploads.items} onRemove={uploads.remove} />
       <div className="flex items-end gap-2 border-t p-3">
+        <input
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          className="sr-only"
+          multiple
+          onChange={onFilesChosen}
+          ref={fileInputRef}
+          tabIndex={-1}
+          type="file"
+        />
+        <Button
+          aria-label={`Attach images, up to ${String(MAX_ATTACHMENTS_PER_MESSAGE)}`}
+          disabled={uploads.isFull}
+          onClick={() => {
+            fileInputRef.current?.click();
+          }}
+          size="icon"
+          variant="ghost"
+        >
+          <Paperclip />
+        </Button>
         <textarea
           aria-label="Message"
           className="max-h-40 min-h-9 flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"

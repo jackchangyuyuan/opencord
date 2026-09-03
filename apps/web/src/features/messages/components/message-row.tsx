@@ -8,6 +8,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { MessageAttachments } from "@/features/messages/components/message-attachments";
 import { MessageContent } from "@/features/messages/components/message-content";
 import { PinnedIndicator } from "@/features/messages/components/pinned-indicator";
 import { ReactionBar } from "@/features/messages/components/reaction-bar";
@@ -88,6 +89,7 @@ export function MessageRow({
           channelId={message.channelId}
           content={message.content}
         />
+        <MessageAttachments attachments={message.attachments} />
         {message.editedAt === null ? null : (
           <span className="text-xs text-muted-foreground">(edited)</span>
         )}

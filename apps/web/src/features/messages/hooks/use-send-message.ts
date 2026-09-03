@@ -1,3 +1,4 @@
+import type { MessageAttachmentInput } from "@opencord/shared/schemas";
 import type { Message } from "@opencord/shared/types";
 import {
   type InfiniteData,
@@ -147,6 +148,7 @@ export interface SendInput {
   nonce: string;
   authorId: string;
   replyToId?: string;
+  attachments?: MessageAttachmentInput[];
 }
 
 export function useSendMessage(channelId: string) {
@@ -161,13 +163,16 @@ export function useSendMessage(channelId: string) {
   );
 
   const { mutate, isPending } = useMutation({
-    mutationFn: ({ content, nonce, replyToId }: SendInput) =>
+    mutationFn: ({ content, nonce, replyToId, attachments }: SendInput) =>
       api<Message>(`/channels/${channelId}/messages`, {
         method: "POST",
         body: {
           content,
           nonce,
           ...(replyToId === undefined ? {} : { replyToId }),
+          ...(attachments === undefined || attachments.length === 0
+            ? {}
+            : { attachments }),
         },
       }),
 
