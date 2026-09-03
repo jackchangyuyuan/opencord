@@ -1,9 +1,10 @@
 import type { Message } from "@opencord/shared/types";
 import { type SQL, sql } from "drizzle-orm";
 
+import { resolvePublicChannels } from "../../access/channels.js";
 import { db } from "../../db/index.js";
 import { AppError } from "../../lib/errors.js";
-import { loadAttachments } from "../messages/attachments.js";
+import { loadAttachments, signAttachments } from "../messages/attachments.js";
 import { serializeMessage } from "../messages/queries.js";
 import { parseSearchQuery } from "./query.js";
 
@@ -161,19 +162,28 @@ export async function searchMessages(
 
   const attachments = await loadAttachments(rows.map((row) => row.id));
 
+  const publicChannels = await resolvePublicChannels([
+    ...new Set(rows.map((row) => row.channelId)),
+  ]);
+
   return {
-    data: rows.map((row) => ({
-      ...serializeMessage({
-        ...row,
-        pinnedAt: row.pinnedAt === null ? null : new Date(row.pinnedAt),
-        editedAt: row.editedAt === null ? null : new Date(row.editedAt),
-        deletedAt: row.deletedAt === null ? null : new Date(row.deletedAt),
-        createdAt: new Date(row.createdAt),
-      }),
-      replyTo: null,
-      reactions: [],
-      attachments: attachments.get(row.id) ?? [],
-    })),
+    data: await Promise.all(
+      rows.map(async (row) => ({
+        ...serializeMessage({
+          ...row,
+          pinnedAt: row.pinnedAt === null ? null : new Date(row.pinnedAt),
+          editedAt: row.editedAt === null ? null : new Date(row.editedAt),
+          deletedAt: row.deletedAt === null ? null : new Date(row.deletedAt),
+          createdAt: new Date(row.createdAt),
+        }),
+        replyTo: null,
+        reactions: [],
+        attachments: await signAttachments(
+          attachments.get(row.id) ?? [],
+          publicChannels.has(row.channelId),
+        ),
+      })),
+    ),
     degraded,
     limit,
     offset,

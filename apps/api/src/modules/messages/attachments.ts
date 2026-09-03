@@ -16,7 +16,7 @@ import {
   uploadKeyForbidden,
   uploadNotFound,
 } from "../../lib/errors.js";
-import { deleteObject, headObject } from "../../lib/storage.js";
+import { deleteObject, headObject, signMediaUrl } from "../../lib/storage.js";
 
 export interface PreparedAttachment {
   objectKey: string;
@@ -108,10 +108,12 @@ export async function hasAttachments(messageId: string): Promise<boolean> {
   return row !== undefined;
 }
 
+export type AttachmentRow = Omit<MessageAttachment, "url">;
+
 export async function loadAttachments(
   messageIds: readonly string[],
-): Promise<Map<string, MessageAttachment[]>> {
-  const byMessage = new Map<string, MessageAttachment[]>();
+): Promise<Map<string, AttachmentRow[]>> {
+  const byMessage = new Map<string, AttachmentRow[]>();
 
   if (messageIds.length === 0) {
     return byMessage;
@@ -139,4 +141,16 @@ export async function loadAttachments(
   }
 
   return byMessage;
+}
+
+export function signAttachments(
+  rows: readonly AttachmentRow[],
+  isPublic: boolean,
+): Promise<MessageAttachment[]> {
+  return Promise.all(
+    rows.map(async (row) => ({
+      ...row,
+      url: await signMediaUrl(row.objectKey, isPublic),
+    })),
+  );
 }

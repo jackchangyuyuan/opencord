@@ -17,6 +17,9 @@ import {
   servers,
 } from "../db/schema/index.js";
 
+const EVERYONE = "@everyone";
+const NOBODY = "";
+
 export async function isDmParticipant(
   channelId: string,
   userId: string,
@@ -32,6 +35,76 @@ export async function isDmParticipant(
     );
 
   return rows.length > 0;
+}
+
+export async function resolvePublicChannels(
+  channelIds: readonly string[],
+): Promise<Set<string>> {
+  const publicChannels = new Set<string>();
+
+  if (channelIds.length === 0) {
+    return publicChannels;
+  }
+
+  const rows = await db
+    .select({ id: channels.id, serverId: channels.serverId })
+    .from(channels)
+    .where(inArray(channels.id, [...channelIds]));
+
+  const serverIds = [
+    ...new Set(
+      rows
+        .map((row) => row.serverId)
+        .filter((serverId): serverId is string => serverId !== null),
+    ),
+  ];
+
+  if (serverIds.length === 0) {
+    return publicChannels;
+  }
+
+  const everyoneRoles = await db
+    .select({
+      id: roles.id,
+      serverId: roles.serverId,
+      permissions: roles.permissions,
+    })
+    .from(roles)
+    .where(and(inArray(roles.serverId, serverIds), eq(roles.isDefault, true)));
+
+  const overwrites = await db
+    .select({
+      channelId: channelRoleOverwrites.channelId,
+      roleId: channelRoleOverwrites.roleId,
+      allow: channelRoleOverwrites.allow,
+      deny: channelRoleOverwrites.deny,
+    })
+    .from(channelRoleOverwrites)
+    .where(inArray(channelRoleOverwrites.serverId, serverIds));
+
+  for (const channel of rows) {
+    const everyoneRole = everyoneRoles.find(
+      (role) => role.serverId === channel.serverId,
+    );
+
+    if (everyoneRole === undefined) {
+      continue;
+    }
+
+    const permissions = resolve({
+      userId: EVERYONE,
+      serverOwnerId: NOBODY,
+      everyoneRole,
+      memberRoles: [],
+      roleOverwrites: overwrites.filter((row) => row.channelId === channel.id),
+    });
+
+    if ((permissions & Permissions.VIEW_CHANNEL) !== 0) {
+      publicChannels.add(channel.id);
+    }
+  }
+
+  return publicChannels;
 }
 
 export async function resolveAccessibleChannels(

@@ -1,9 +1,10 @@
 import type { Message, MessagePreview } from "@opencord/shared/types";
 import { inArray } from "drizzle-orm";
 
+import { resolvePublicChannels } from "../../access/channels.js";
 import { db } from "../../db/index.js";
 import { messages } from "../../db/schema/index.js";
-import { loadAttachments } from "./attachments.js";
+import { loadAttachments, signAttachments } from "./attachments.js";
 import {
   messageColumns,
   type MessageRow,
@@ -47,16 +48,25 @@ export async function serializeMessages(
 
   const attachments = await loadAttachments(rows.map((row) => row.id));
 
-  return rows.map((row) => {
-    const target = quoted.find((candidate) => candidate.id === row.replyToId);
+  const publicChannels = await resolvePublicChannels([
+    ...new Set(rows.map((row) => row.channelId)),
+  ]);
 
-    return {
-      ...serializeMessage(row),
-      replyTo: target === undefined ? null : preview(target),
-      reactions: reactions.get(row.id) ?? [],
-      attachments: attachments.get(row.id) ?? [],
-    };
-  });
+  return Promise.all(
+    rows.map(async (row) => {
+      const target = quoted.find((candidate) => candidate.id === row.replyToId);
+
+      return {
+        ...serializeMessage(row),
+        replyTo: target === undefined ? null : preview(target),
+        reactions: reactions.get(row.id) ?? [],
+        attachments: await signAttachments(
+          attachments.get(row.id) ?? [],
+          publicChannels.has(row.channelId),
+        ),
+      };
+    }),
+  );
 }
 
 export async function serializeOneMessage(

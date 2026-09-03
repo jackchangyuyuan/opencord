@@ -16,6 +16,7 @@ export interface MessageReaction {
 export interface MessageAttachment {
   id: string;
   objectKey: string;
+  url: string;
   filename: string;
   contentType: string;
   size: number;

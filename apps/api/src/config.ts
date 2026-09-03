@@ -10,6 +10,9 @@ const baseSchema = z.object({
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .optional(),
+  MEDIA_URL_SIGNING_BUCKET: z.coerce.number().int().min(1).default(3600),
+  MEDIA_URL_TTL_PRIVATE: z.coerce.number().int().min(1).default(900),
+  MEDIA_URL_TTL_PUBLIC: z.coerce.number().int().min(1).default(86_400),
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),

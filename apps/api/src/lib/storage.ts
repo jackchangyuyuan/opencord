@@ -110,3 +110,34 @@ export async function deleteObject(objectKey: string): Promise<void> {
     new DeleteObjectCommand({ Bucket: config.S3_BUCKET, Key: objectKey }),
   );
 }
+
+function bucketedSigningDate(): Date {
+  const width = config.MEDIA_URL_SIGNING_BUCKET * 1000;
+
+  return new Date(Math.floor(Date.now() / width) * width);
+}
+
+export function signMediaUrl(
+  objectKey: string,
+  isPublic: boolean,
+): Promise<string> {
+  const cacheControl = isPublic
+    ? `private, max-age=${String(config.MEDIA_URL_TTL_PUBLIC)}`
+    : "private, no-store";
+
+  return getSignedUrl(
+    signer,
+    new GetObjectCommand({
+      Bucket: config.S3_BUCKET,
+      Key: objectKey,
+      ResponseCacheControl: cacheControl,
+    }),
+    isPublic
+      ? {
+          signingDate: bucketedSigningDate(),
+          expiresIn:
+            config.MEDIA_URL_TTL_PUBLIC + config.MEDIA_URL_SIGNING_BUCKET,
+        }
+      : { expiresIn: config.MEDIA_URL_TTL_PRIVATE },
+  );
+}
