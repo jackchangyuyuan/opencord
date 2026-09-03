@@ -8,6 +8,7 @@ export default defineConfig({
       AWS_SECRET_ACCESS_KEY: "opencord-dev-secret",
       BETTER_AUTH_SECRET: "test-secret-test-secret-test-secret",
       DATABASE_URL: "postgres://localhost:5432/opencord_test",
+      JOB_LOCK_NAMESPACE: "jobs-test",
       PUBLIC_ORIGIN: "http://localhost:5173",
       RATE_LIMIT_AUTH_POINTS: "1000000",
       RATE_LIMIT_CREATE_POINTS: "1000000",

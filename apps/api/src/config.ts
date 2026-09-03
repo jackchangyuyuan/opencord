@@ -7,6 +7,7 @@ const baseSchema = z.object({
   BETTER_AUTH_SECRET: z.string().min(32),
   DATABASE_URL: z.url(),
   INSTANCE_ID: z.string().min(1).default("api-dev"),
+  JOB_LOCK_NAMESPACE: z.string().min(1).default("jobs"),
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .optional(),

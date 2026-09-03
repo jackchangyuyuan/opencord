@@ -2,6 +2,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  paginateListObjectsV2,
   S3Client,
 } from "@aws-sdk/client-s3";
 import {
@@ -140,4 +141,35 @@ export function signMediaUrl(
         }
       : { expiresIn: config.MEDIA_URL_TTL_PRIVATE },
   );
+}
+
+export interface ListedObject {
+  objectKey: string;
+  lastModified: Date;
+}
+
+export async function* listObjectPages(
+  prefix: string,
+): AsyncIterable<ListedObject[]> {
+  const pages = paginateListObjectsV2(
+    { client: s3 },
+    { Bucket: config.S3_BUCKET, Prefix: prefix },
+  );
+
+  for await (const page of pages) {
+    const objects = (page.Contents ?? []).flatMap((object) =>
+      object.Key === undefined
+        ? []
+        : [
+            {
+              objectKey: object.Key,
+              lastModified: object.LastModified ?? new Date(0),
+            },
+          ],
+    );
+
+    if (objects.length > 0) {
+      yield objects;
+    }
+  }
 }

@@ -44,6 +44,19 @@ export default defineConfig([
   },
 
   {
+    files: [
+      "src/lib/leader-election.test.ts",
+      "tests/integration/jobs.test.ts",
+    ],
+    rules: {
+      "turbo/no-undeclared-env-vars": [
+        "error",
+        { allowList: ["^JOB_LOCK_NAMESPACE$"] },
+      ],
+    },
+  },
+
+  {
     files: ["tests/setup.ts"],
     rules: {
       "turbo/no-undeclared-env-vars": [

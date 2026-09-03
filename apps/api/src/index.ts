@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { app } from "./app.js";
 import { config } from "./config.js";
 import { db } from "./db/index.js";
+import { startJobRunner } from "./jobs/index.js";
 import { logger } from "./lib/logger.js";
 import { assertStorageOrigin } from "./lib/storage.js";
 import { redis } from "./redis.js";
@@ -19,6 +20,8 @@ try {
   logger.error({ err: error }, "Storage origin assertion failed");
   process.exit(1);
 }
+
+const jobRunner = startJobRunner();
 
 httpServer.listen(config.PORT, () => {
   logger.info({ port: config.PORT }, "API listening");
@@ -53,6 +56,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     httpServer.closeIdleConnections();
 
     await drained;
+    await jobRunner.stop();
     await db.$client.end();
     await redis.quit();
   } catch (error) {
