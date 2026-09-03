@@ -31,3 +31,20 @@ export const signUpSchema = z.object({
 });
 
 export type SignUpInput = z.infer<typeof signUpSchema>;
+
+export const updateProfileSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(NAME_MIN_LENGTH)
+      .max(NAME_MAX_LENGTH)
+      .optional(),
+    avatarObjectKey: z.string().min(1).max(512).optional(),
+  })
+  .refine(
+    (input) => Object.values(input).some((value) => value !== undefined),
+    "Supply at least one field to update",
+  );
+
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

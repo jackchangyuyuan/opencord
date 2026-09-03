@@ -25,6 +25,10 @@ import {
 } from "../../socket/emit.js";
 import { createDefaultChannels } from "../channels/service.js";
 import {
+  discardReplacedUpload,
+  requireOwnedUpload,
+} from "../uploads/associate.js";
+import {
   isServerMember,
   serializeServer,
   serializeServerDetail,
@@ -68,7 +72,7 @@ export async function createServer(
       .insert(serverMembers)
       .values({ serverId: server.id, userId: ownerId });
 
-    return { channelIds, summary: serializeServer(server) };
+    return { channelIds, summary: await serializeServer(server) };
   });
 
   joinCreatedServerRooms(ownerId, created.summary.id, created.channelIds);
@@ -81,10 +85,20 @@ export async function updateServer(
   actorId: string,
   input: UpdateServerInput,
 ): Promise<ServerDetail> {
+  const { iconObjectKey, ...rest } = input;
+
+  if (iconObjectKey !== undefined) {
+    await requireOwnedUpload("icon", actorId, iconObjectKey);
+  }
+
   const detail = await db.transaction(async (tx) => {
     const [server] = await tx
       .update(servers)
-      .set(input)
+      .set(
+        iconObjectKey === undefined
+          ? rest
+          : { ...rest, iconKey: iconObjectKey },
+      )
       .where(eq(servers.id, context.server.id))
       .returning();
 
@@ -103,6 +117,10 @@ export async function updateServer(
 
     return serializeServerDetail({ ...context, server });
   });
+
+  if (iconObjectKey !== undefined) {
+    await discardReplacedUpload(context.server.iconKey, iconObjectKey);
+  }
 
   emitServerEvent("server:update", context.server.id);
 

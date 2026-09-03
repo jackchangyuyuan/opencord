@@ -20,6 +20,7 @@ export const users = pgTable("users", {
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
   username: text("username").notNull().unique(),
+  avatarObjectKey: text("avatar_object_key"),
   deactivatedAt: timestamp("deactivated_at"),
   guestExpiresAt: timestamp("guest_expires_at"),
 });

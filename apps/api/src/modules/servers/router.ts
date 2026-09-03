@@ -46,8 +46,8 @@ serversRouter.get(
   "/:serverId",
   validate({ params: serverParamsSchema }),
   requireServerPermission(),
-  (req, res) => {
-    res.json(serializeServerDetail(req.server));
+  async (req, res) => {
+    res.json(await serializeServerDetail(req.server));
   },
 );
 

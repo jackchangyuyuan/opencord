@@ -13,7 +13,10 @@ export const createServerSchema = z.object({ name: serverNameSchema });
 export type CreateServerInput = z.infer<typeof createServerSchema>;
 
 export const updateServerSchema = z
-  .object({ name: serverNameSchema.optional() })
+  .object({
+    name: serverNameSchema.optional(),
+    iconObjectKey: z.string().min(1).max(512).optional(),
+  })
   .refine(
     (input) => Object.values(input).some((value) => value !== undefined),
     "Supply at least one field to update",

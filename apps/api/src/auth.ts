@@ -21,6 +21,7 @@ export const auth = betterAuth({
   user: {
     additionalFields: {
       username: { type: "string", required: true, unique: true },
+      avatarObjectKey: { type: "string", required: false, input: false },
       deactivatedAt: { type: "date", required: false, input: false },
       guestExpiresAt: { type: "date", required: false, input: false },
     },

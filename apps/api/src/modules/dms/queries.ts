@@ -8,7 +8,11 @@ import {
   NOTHING_UNREAD,
   type UnreadState,
 } from "../channels/read-state/unread.js";
-import { type PublicUser, serializeUser } from "../users/queries.js";
+import {
+  type PublicUser,
+  serializeUser,
+  serializeUsers,
+} from "../users/queries.js";
 
 export type DmSummary = ChannelSummary &
   UnreadState & { recipient: PublicUser };
@@ -74,6 +78,7 @@ export async function listDms(userId: string): Promise<DmSummary[]> {
       username: users.username,
       name: users.name,
       image: users.image,
+      avatarObjectKey: users.avatarObjectKey,
     })
     .from(channelMembers)
     .innerJoin(users, eq(users.id, channelMembers.userId))
@@ -87,26 +92,28 @@ export async function listDms(userId: string): Promise<DmSummary[]> {
   const unread = await loadUnreadStates(userId, channelIds);
   const byChannel = new Map(counterparts.map((row) => [row.channelId, row]));
 
-  return rows
-    .flatMap((channel) => {
+  const summaries = await Promise.all(
+    rows.flatMap((channel) => {
       const other = byChannel.get(channel.id);
 
       return other === undefined
         ? []
         : [
-            {
+            serializeUser(other).then((recipient) => ({
               ...serializeChannel(channel),
               ...(unread.get(channel.id) ?? NOTHING_UNREAD),
-              recipient: serializeUser(other),
-            },
+              recipient,
+            })),
           ];
-    })
-    .sort((left, right) => {
-      const a = left.lastMessageId ?? "";
-      const b = right.lastMessageId ?? "";
+    }),
+  );
 
-      return a < b ? 1 : a > b ? -1 : 0;
-    });
+  return summaries.sort((left, right) => {
+    const a = left.lastMessageId ?? "";
+    const b = right.lastMessageId ?? "";
+
+    return a < b ? 1 : a > b ? -1 : 0;
+  });
 }
 
 export async function listDmParticipants(
@@ -118,11 +125,12 @@ export async function listDmParticipants(
       username: users.username,
       name: users.name,
       image: users.image,
+      avatarObjectKey: users.avatarObjectKey,
     })
     .from(channelMembers)
     .innerJoin(users, eq(users.id, channelMembers.userId))
     .where(eq(channelMembers.channelId, channelId))
     .orderBy(users.username);
 
-  return rows.map((row) => serializeUser(row));
+  return serializeUsers(rows);
 }

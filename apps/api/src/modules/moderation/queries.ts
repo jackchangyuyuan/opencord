@@ -2,14 +2,10 @@ import { and, desc, eq } from "drizzle-orm";
 
 import { db } from "../../db/index.js";
 import { bans, serverMembers, users } from "../../db/schema/index.js";
+import { type PublicUser, serializeUser } from "../users/queries.js";
 
 export interface BanEntry {
-  user: {
-    id: string;
-    username: string;
-    name: string;
-    avatarUrl: string | null;
-  };
+  user: PublicUser;
   reason: string | null;
   bannedBy: string;
   createdAt: string;
@@ -38,7 +34,8 @@ export async function listBans(serverId: string): Promise<BanEntry[]> {
       id: users.id,
       username: users.username,
       name: users.name,
-      avatarUrl: users.image,
+      image: users.image,
+      avatarObjectKey: users.avatarObjectKey,
       reason: bans.reason,
       bannedBy: bans.bannedBy,
       createdAt: bans.createdAt,
@@ -48,15 +45,12 @@ export async function listBans(serverId: string): Promise<BanEntry[]> {
     .where(eq(bans.serverId, serverId))
     .orderBy(desc(bans.createdAt), users.id);
 
-  return rows.map((row) => ({
-    user: {
-      id: row.id,
-      username: row.username,
-      name: row.name,
-      avatarUrl: row.avatarUrl,
-    },
-    reason: row.reason,
-    bannedBy: row.bannedBy,
-    createdAt: row.createdAt.toISOString(),
-  }));
+  return Promise.all(
+    rows.map(async (row) => ({
+      user: await serializeUser(row),
+      reason: row.reason,
+      bannedBy: row.bannedBy,
+      createdAt: row.createdAt.toISOString(),
+    })),
+  );
 }
