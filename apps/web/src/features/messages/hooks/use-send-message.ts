@@ -199,6 +199,7 @@ export function useSendMessage(channelId: string) {
             deletedAt: null,
             createdAt: new Date().toISOString(),
             reactions: [],
+            attachments: [],
             local: sending,
           }),
         );

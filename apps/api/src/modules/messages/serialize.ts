@@ -3,6 +3,7 @@ import { inArray } from "drizzle-orm";
 
 import { db } from "../../db/index.js";
 import { messages } from "../../db/schema/index.js";
+import { loadAttachments } from "./attachments.js";
 import {
   messageColumns,
   type MessageRow,
@@ -44,6 +45,8 @@ export async function serializeMessages(
     viewerId,
   );
 
+  const attachments = await loadAttachments(rows.map((row) => row.id));
+
   return rows.map((row) => {
     const target = quoted.find((candidate) => candidate.id === row.replyToId);
 
@@ -51,6 +54,7 @@ export async function serializeMessages(
       ...serializeMessage(row),
       replyTo: target === undefined ? null : preview(target),
       reactions: reactions.get(row.id) ?? [],
+      attachments: attachments.get(row.id) ?? [],
     };
   });
 }

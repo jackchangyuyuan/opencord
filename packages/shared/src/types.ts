@@ -13,6 +13,16 @@ export interface MessageReaction {
   me: boolean;
 }
 
+export interface MessageAttachment {
+  id: string;
+  objectKey: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  width: number | null;
+  height: number | null;
+}
+
 export interface Message {
   id: string;
   channelId: string;
@@ -27,4 +37,5 @@ export interface Message {
   deletedAt: string | null;
   createdAt: string;
   reactions: MessageReaction[];
+  attachments: MessageAttachment[];
 }

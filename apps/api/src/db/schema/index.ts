@@ -1,3 +1,4 @@
+export * from "./attachments.js";
 export * from "./audit-log.js";
 export * from "./auth.js";
 export * from "./bans.js";

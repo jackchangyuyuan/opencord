@@ -3,6 +3,7 @@ import { type SQL, sql } from "drizzle-orm";
 
 import { db } from "../../db/index.js";
 import { AppError } from "../../lib/errors.js";
+import { loadAttachments } from "../messages/attachments.js";
 import { serializeMessage } from "../messages/queries.js";
 import { parseSearchQuery } from "./query.js";
 
@@ -158,6 +159,8 @@ export async function searchMessages(
      limit ${limit} offset ${offset}
   `);
 
+  const attachments = await loadAttachments(rows.map((row) => row.id));
+
   return {
     data: rows.map((row) => ({
       ...serializeMessage({
@@ -169,6 +172,7 @@ export async function searchMessages(
       }),
       replyTo: null,
       reactions: [],
+      attachments: attachments.get(row.id) ?? [],
     })),
     degraded,
     limit,

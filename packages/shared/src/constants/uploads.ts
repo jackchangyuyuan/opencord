@@ -29,6 +29,13 @@ export const MAX_AVATAR_BYTES = 1024 * 1024;
 
 export const FILENAME_MAX_LENGTH = 255;
 
+export const MAX_ATTACHMENTS_PER_MESSAGE = 4;
+
+export const DIMENSION_MIN = 1;
+export const DIMENSION_MAX = 20_000;
+
+export const UPLOAD_ASSOCIATION_WINDOW_MS = 10 * 60 * 1000;
+
 export const UPLOAD_GRANT_TTL_SECONDS = 60;
 
 export function maxUploadBytes(kind: UploadKind): number {

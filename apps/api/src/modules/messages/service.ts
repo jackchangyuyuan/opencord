@@ -1,3 +1,4 @@
+import { MESSAGE_MIN_LENGTH } from "@opencord/shared/constants";
 import { Permissions } from "@opencord/shared/permissions";
 import type {
   EditMessageInput,
@@ -10,7 +11,12 @@ import type { ChannelContext, ChannelRow } from "../../access/context.js";
 import { db, type Transaction } from "../../db/index.js";
 import { channels, mentions, messages } from "../../db/schema/index.js";
 import { writeAudit } from "../../lib/audit.js";
-import { forbidden, nonceReused, notFound } from "../../lib/errors.js";
+import {
+  contentRequired,
+  forbidden,
+  nonceReused,
+  notFound,
+} from "../../lib/errors.js";
 import {
   emitMessageCreate,
   emitMessageDelete,
@@ -18,6 +24,11 @@ import {
 } from "../../socket/emit.js";
 import { actorPosition, highestPositionOf } from "../roles/queries.js";
 import { requireBelowActor } from "../roles/service.js";
+import {
+  hasAttachments,
+  prepareAttachments,
+  writeAttachments,
+} from "./attachments.js";
 import { applyMentions, findMentionCandidates } from "./mentions.js";
 import {
   findLiveMessage,
@@ -137,6 +148,7 @@ export async function sendMessage(
     input.content,
   );
   const broadcast = prepared.everyone && mayMentionEveryone(context);
+  const files = await prepareAttachments(authorId, input.attachments ?? []);
 
   if (
     replyToId !== null &&
@@ -197,6 +209,7 @@ export async function sendMessage(
       .where(eq(channels.id, channel.id));
 
     await writeMentions(tx, channel.id, inserted.id, prepared.mentionedUserIds);
+    await writeAttachments(tx, inserted.id, files);
 
     if (broadcast) {
       await advanceEveryoneWatermark(tx, channel.id, inserted.id);
@@ -244,6 +257,13 @@ export async function editMessage(
 
   if (message.authorId !== actorId) {
     throw forbidden("NOT_THE_AUTHOR", "Only the author may edit a message");
+  }
+
+  if (
+    input.content.length < MESSAGE_MIN_LENGTH &&
+    !(await hasAttachments(message.id))
+  ) {
+    throw contentRequired();
   }
 
   const prepared = await prepareContent(

@@ -81,3 +81,22 @@ export function notADirectMessage(): AppError {
     "That channel's roster is its server's member list",
   );
 }
+
+export function contentRequired(): AppError {
+  return new AppError(
+    400,
+    "CONTENT_REQUIRED",
+    "Only a message carrying an attachment may have empty content",
+  );
+}
+
+export function uploadKeyForbidden(): AppError {
+  return forbidden(
+    "UPLOAD_KEY_FORBIDDEN",
+    "That object key was not uploaded by you",
+  );
+}
+
+export function uploadNotFound(): AppError {
+  return notFound("UPLOAD_NOT_FOUND", "That upload is not in storage");
+}

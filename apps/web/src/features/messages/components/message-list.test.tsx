@@ -54,6 +54,7 @@ function message(
     deletedAt: null,
     createdAt,
     reactions: [],
+    attachments: [],
   };
 }
 

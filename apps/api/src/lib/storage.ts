@@ -1,4 +1,9 @@
-import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import {
   createPresignedPost,
   type PresignedPost,
@@ -67,4 +72,41 @@ export function createUploadGrant(
     ],
     Expires: UPLOAD_GRANT_TTL_SECONDS,
   });
+}
+
+export interface StoredObject {
+  contentType: string;
+  size: number;
+  lastModified: Date;
+}
+
+export async function headObject(
+  objectKey: string,
+): Promise<StoredObject | null> {
+  try {
+    const head = await s3.send(
+      new HeadObjectCommand({ Bucket: config.S3_BUCKET, Key: objectKey }),
+    );
+
+    return {
+      contentType: head.ContentType ?? "application/octet-stream",
+      size: head.ContentLength ?? 0,
+      lastModified: head.LastModified ?? new Date(0),
+    };
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.name === "NotFound" || error.name === "NoSuchKey")
+    ) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+export async function deleteObject(objectKey: string): Promise<void> {
+  await s3.send(
+    new DeleteObjectCommand({ Bucket: config.S3_BUCKET, Key: objectKey }),
+  );
 }
