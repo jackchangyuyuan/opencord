@@ -46,6 +46,7 @@ function seed(everyonePermissions: number) {
     id: SERVER_ID,
     name: "Analytical Engine",
     iconKey: null,
+    iconUrl: null,
     ownerId: "someone-else",
     createdAt: "2026-09-11T10:00:00.000Z",
     everyoneRole: {

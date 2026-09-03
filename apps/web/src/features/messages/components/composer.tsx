@@ -98,6 +98,7 @@ export function Composer({ channelId }: { channelId: string }) {
       <div className="flex items-end gap-2 border-t p-3">
         <input
           accept="image/png,image/jpeg,image/webp,image/gif"
+          aria-label="Image files to attach"
           className="sr-only"
           multiple
           onChange={onFilesChosen}

@@ -7,6 +7,7 @@ export interface ServerSummary {
   id: string;
   name: string;
   iconKey: string | null;
+  iconUrl: string | null;
   ownerId: string;
   createdAt: string;
 }

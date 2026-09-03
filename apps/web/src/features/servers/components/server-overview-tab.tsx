@@ -28,6 +28,7 @@ import {
 } from "@/features/servers/api/queries";
 import { TransferOwnerForm } from "@/features/servers/components/transfer-owner-form";
 import { currentUserQuery } from "@/features/users/api/queries";
+import { AvatarPicker } from "@/features/users/components/avatar-picker";
 import { api, ApiError } from "@/lib/api-client";
 
 const OWNER_MUST_TRANSFER = "OWNER_MUST_TRANSFER";
@@ -96,6 +97,18 @@ export function ServerOverviewTab({
 
   return (
     <div className="flex flex-col gap-5">
+      {mayManage ? (
+        <AvatarPicker
+          currentUrl={server.iconUrl}
+          fallback={server.name.slice(0, 2).toUpperCase()}
+          kind="icon"
+          label="Choose an icon"
+          onPicked={(iconObjectKey) => {
+            rename.mutate({ iconObjectKey });
+          }}
+        />
+      ) : null}
+
       {mayManage ? (
         <form noValidate onSubmit={(event) => void onSubmit(event)}>
           <FieldGroup>
