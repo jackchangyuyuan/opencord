@@ -1,5 +1,10 @@
 import type { Request, RequestHandler } from "express";
-import { RateLimiterRedis, type RateLimiterRes } from "rate-limiter-flexible";
+import {
+  type RateLimiterAbstract,
+  RateLimiterMemory,
+  RateLimiterRedis,
+  type RateLimiterRes,
+} from "rate-limiter-flexible";
 
 import { config } from "../config.js";
 import { AppError } from "../lib/errors.js";
@@ -44,7 +49,9 @@ export function rateLimit(
         throw rejection;
       }
 
-      res.setHeader("retry-after", Math.ceil(bucket.duration));
+      const { msBeforeNext } = rejection as RateLimiterRes;
+
+      res.setHeader("retry-after", Math.ceil(msBeforeNext / 1000));
 
       next(
         new AppError(429, "RATE_LIMITED", "Too many requests, slow down", {
@@ -121,6 +128,15 @@ export const demoDailyRateLimit = rateLimit(
   () => "global",
 );
 
+export const demoClaimRateLimit = rateLimit(
+  {
+    name: "demo-claim",
+    points: config.RATE_LIMIT_CLAIM_POINTS,
+    duration: DEMO_WINDOW_SECONDS,
+  },
+  (req) => req.ip ?? "unknown",
+);
+
 export const uploadRateLimit = rateLimit(
   {
     name: "upload",
@@ -136,14 +152,10 @@ export interface SocketLimiter {
   consume(key: string): Promise<SocketVerdict>;
 }
 
-export function socketRateLimit(bucket: Bucket): SocketLimiter {
-  const limiter = new RateLimiterRedis({
-    storeClient: redis,
-    keyPrefix: `${config.RATE_LIMIT_NAMESPACE}:${bucket.name}`,
-    points: bucket.points,
-    duration: bucket.duration,
-  });
-
+function socketRateLimit(
+  bucket: Bucket,
+  limiter: RateLimiterAbstract,
+): SocketLimiter {
   return {
     async consume(key) {
       try {
@@ -165,14 +177,32 @@ export function socketRateLimit(bucket: Bucket): SocketLimiter {
   };
 }
 
-export const typingLimiter = socketRateLimit({
+const typingBucket: Bucket = {
   name: "typing",
   points: config.RATE_LIMIT_TYPING_POINTS,
   duration: TYPING_WINDOW_SECONDS,
-});
+};
 
-export const heartbeatLimiter = socketRateLimit({
+export const typingLimiter = socketRateLimit(
+  typingBucket,
+  new RateLimiterRedis({
+    storeClient: redis,
+    keyPrefix: `${config.RATE_LIMIT_NAMESPACE}:${typingBucket.name}`,
+    points: typingBucket.points,
+    duration: typingBucket.duration,
+  }),
+);
+
+const heartbeatBucket: Bucket = {
   name: "heartbeat",
   points: config.RATE_LIMIT_HEARTBEAT_POINTS,
   duration: HEARTBEAT_WINDOW_SECONDS,
-});
+};
+
+export const heartbeatLimiter = socketRateLimit(
+  heartbeatBucket,
+  new RateLimiterMemory({
+    points: heartbeatBucket.points,
+    duration: heartbeatBucket.duration,
+  }),
+);

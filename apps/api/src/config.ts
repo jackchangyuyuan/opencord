@@ -34,6 +34,7 @@ const baseSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   PUBLIC_ORIGIN: z.url(),
   RATE_LIMIT_AUTH_POINTS: z.coerce.number().int().min(1).default(20),
+  RATE_LIMIT_CLAIM_POINTS: z.coerce.number().int().min(1).default(5),
   RATE_LIMIT_CREATE_POINTS: z.coerce.number().int().min(1).default(10),
   RATE_LIMIT_DEMO_DAILY_POINTS: z.coerce.number().int().min(1).default(500),
   RATE_LIMIT_DEMO_POINTS: z.coerce.number().int().min(1).default(5),

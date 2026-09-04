@@ -116,3 +116,19 @@ export function dmNotPermitted(): AppError {
 }
 
 export const GUEST_USE_CLAIM = "GUEST_USE_CLAIM";
+
+export function notAGuest(): AppError {
+  return conflict("NOT_A_GUEST", "This session is already a real account");
+}
+
+export function alreadyClaimed(): AppError {
+  return conflict("ALREADY_CLAIMED", "This account has already been claimed");
+}
+
+export function emailTaken(): AppError {
+  return conflict("EMAIL_TAKEN", "That email address is already in use");
+}
+
+export function usernameTaken(): AppError {
+  return conflict("USERNAME_TAKEN", "That username is already taken");
+}
