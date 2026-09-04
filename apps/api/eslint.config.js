@@ -44,6 +44,13 @@ export default defineConfig([
   },
 
   {
+    files: ["tests/integration/quotas.test.ts"],
+    rules: {
+      "turbo/no-undeclared-env-vars": ["error", { allowList: ["^GUEST_"] }],
+    },
+  },
+
+  {
     files: [
       "src/lib/leader-election.test.ts",
       "tests/integration/jobs.test.ts",

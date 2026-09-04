@@ -38,7 +38,7 @@ serversRouter.post(
   validate({ body: createServerSchema }),
   createResourceRateLimit,
   async (req, res) => {
-    res.status(201).json(await createServer(req.user.id, req.body));
+    res.status(201).json(await createServer(req.user, req.body));
   },
 );
 

@@ -6,6 +6,15 @@ const baseSchema = z.object({
   AWS_SECRET_ACCESS_KEY: z.string().min(1),
   BETTER_AUTH_SECRET: z.string().min(32),
   DATABASE_URL: z.url(),
+  GUEST_INVITE_CEILING: z.coerce.number().int().min(1).default(20),
+  GUEST_MESSAGE_CEILING: z.coerce.number().int().min(1).default(200),
+  GUEST_SERVER_CEILING: z.coerce.number().int().min(1).default(5),
+  GUEST_UPLOAD_BYTES_CEILING: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(25 * 1024 * 1024),
+  GUEST_UPLOAD_GRANT_CEILING: z.coerce.number().int().min(1).default(10),
   GUEST_TTL_MS: z.coerce
     .number()
     .int()

@@ -36,7 +36,7 @@ messagesRouter.post(
     const result = await sendMessage(
       req.channel,
       req.channel.channel,
-      req.user.id,
+      req.user,
       req.body,
     );
 

@@ -100,3 +100,10 @@ export function uploadKeyForbidden(): AppError {
 export function uploadNotFound(): AppError {
   return notFound("UPLOAD_NOT_FOUND", "That upload is not in storage");
 }
+
+export function guestQuotaReached(quota: string, limit: number): AppError {
+  return forbidden("GUEST_QUOTA_REACHED", "Save your account to keep going", {
+    quota,
+    limit,
+  });
+}

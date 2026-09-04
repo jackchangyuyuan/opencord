@@ -8,6 +8,8 @@ import {
 } from "@opencord/shared/constants";
 import type { CreateUploadInput } from "@opencord/shared/schemas";
 
+import { db } from "../../db/index.js";
+import { consumeQuota, type QuotaSubject } from "../../lib/quota.js";
 import { createUploadGrant } from "../../lib/storage.js";
 
 export interface UploadAuthorization {
@@ -26,10 +28,12 @@ export function uploadObjectKey(
 }
 
 export async function authorizeUpload(
-  userId: string,
+  user: QuotaSubject,
   input: CreateUploadInput,
 ): Promise<UploadAuthorization> {
-  const objectKey = uploadObjectKey(userId, input);
+  await consumeQuota(db, user, "uploadGrants");
+
+  const objectKey = uploadObjectKey(user.id, input);
 
   const upload = await createUploadGrant({
     objectKey,

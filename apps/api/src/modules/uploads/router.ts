@@ -12,6 +12,6 @@ uploadsRouter.post(
   validate({ body: createUploadSchema }),
   uploadRateLimit,
   async (req, res) => {
-    res.status(201).json(await authorizeUpload(req.user.id, req.body));
+    res.status(201).json(await authorizeUpload(req.user, req.body));
   },
 );

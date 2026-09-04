@@ -4,6 +4,7 @@ export * from "./auth.js";
 export * from "./bans.js";
 export * from "./channels.js";
 export * from "./dms.js";
+export * from "./guest-quotas.js";
 export * from "./invites.js";
 export * from "./mentions.js";
 export * from "./messages.js";

@@ -28,7 +28,7 @@ serverInvitesRouter.post(
   validate({ params: serverParamsSchema, body: createInviteSchema }),
   requireServerPermission(Permissions.CREATE_INVITE),
   async (req, res) => {
-    res.status(201).json(await createInvite(req.server, req.user.id, req.body));
+    res.status(201).json(await createInvite(req.server, req.user, req.body));
   },
 );
 

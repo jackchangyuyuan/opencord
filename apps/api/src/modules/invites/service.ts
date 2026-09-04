@@ -12,6 +12,7 @@ import { invites, serverMembers } from "../../db/schema/index.js";
 import { lockMembershipPair } from "../../lib/advisory-locks.js";
 import { writeAudit } from "../../lib/audit.js";
 import { AppError, conflict, notFound, userBanned } from "../../lib/errors.js";
+import { consumeQuota, type QuotaSubject } from "../../lib/quota.js";
 import { emitMemberEvent, joinRedeemedServerRooms } from "../../socket/emit.js";
 import {
   findInvite,
@@ -49,14 +50,17 @@ function expiry(hours: number | null): Date | null {
 
 export async function createInvite(
   context: ServerContext,
-  actorId: string,
+  actor: QuotaSubject,
   input: CreateInviteInput,
 ): Promise<InviteSummary> {
+  const actorId = actor.id;
   const expiresAt = expiry(input.expiresInHours);
 
   for (let attempt = 0; attempt < CODE_ATTEMPTS; attempt += 1) {
     try {
       return await db.transaction(async (tx) => {
+        await consumeQuota(tx, actor, "invitesCreated");
+
         const [row] = await tx
           .insert(invites)
           .values({

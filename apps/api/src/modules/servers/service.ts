@@ -15,6 +15,7 @@ import {
   notFound,
   ownerMustTransfer,
 } from "../../lib/errors.js";
+import { consumeQuota, type QuotaSubject } from "../../lib/quota.js";
 import {
   emitMemberEvent,
   emitPermissionsChanged,
@@ -45,10 +46,14 @@ const EVERYONE_PERMISSIONS =
   Permissions.CREATE_INVITE;
 
 export async function createServer(
-  ownerId: string,
+  owner: QuotaSubject,
   input: CreateServerInput,
 ): Promise<ServerSummary> {
+  const ownerId = owner.id;
+
   const created = await db.transaction(async (tx) => {
+    await consumeQuota(tx, owner, "serversCreated");
+
     const [server] = await tx
       .insert(servers)
       .values({ name: input.name, ownerId })

@@ -17,6 +17,7 @@ import {
   nonceReused,
   notFound,
 } from "../../lib/errors.js";
+import { consumeQuota, type QuotaSubject } from "../../lib/quota.js";
 import {
   emitMessageCreate,
   emitMessageDelete,
@@ -138,9 +139,11 @@ function isReplay(
 export async function sendMessage(
   context: ChannelContext,
   channel: ChannelRow,
-  authorId: string,
+  author: QuotaSubject,
   input: SendMessageInput,
 ): Promise<SendMessageResult> {
+  const authorId = author.id;
+
   const replyToId = input.replyToId ?? null;
   const prepared = await prepareContent(
     context.server?.server.id ?? null,
@@ -200,6 +203,15 @@ export async function sendMessage(
 
       return { created: false, row: existing };
     }
+
+    await consumeQuota(tx, author, "messagesSent");
+
+    await consumeQuota(
+      tx,
+      author,
+      "uploadBytes",
+      files.reduce((total, file) => total + file.size, 0),
+    );
 
     await tx
       .update(channels)
