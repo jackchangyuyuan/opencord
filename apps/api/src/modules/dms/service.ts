@@ -1,6 +1,7 @@
 import { db } from "../../db/index.js";
 import { channelMembers, channels, dmPairs } from "../../db/schema/index.js";
-import { AppError, notFound } from "../../lib/errors.js";
+import { AppError, dmNotPermitted, notFound } from "../../lib/errors.js";
+import { sharesAServer } from "../demo/service.js";
 import { canonicalPair, findDmChannelId } from "./queries.js";
 
 const MAX_ATTEMPTS = 3;
@@ -52,7 +53,17 @@ export interface OpenDmResult {
   channelId: string;
 }
 
-export async function openDm(me: string, them: string): Promise<OpenDmResult> {
+export interface DmCaller {
+  id: string;
+  isAnonymous?: boolean | null | undefined;
+}
+
+export async function openDm(
+  caller: DmCaller,
+  them: string,
+): Promise<OpenDmResult> {
+  const me = caller.id;
+
   if (me === them) {
     throw new AppError(
       400,
@@ -68,6 +79,10 @@ export async function openDm(me: string, them: string): Promise<OpenDmResult> {
 
   if (recipient?.deactivatedAt !== null) {
     throw notFound("USER_NOT_FOUND", "That user does not exist");
+  }
+
+  if (caller.isAnonymous === true && !(await sharesAServer(me, them))) {
+    throw dmNotPermitted();
   }
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {

@@ -11,6 +11,8 @@ export const CREATE_WINDOW_SECONDS = 60;
 export const INVITE_WINDOW_SECONDS = 60;
 export const SEARCH_WINDOW_SECONDS = 10;
 export const UPLOAD_WINDOW_SECONDS = 60;
+export const DEMO_WINDOW_SECONDS = 3600;
+export const DEMO_DAY_SECONDS = 86_400;
 export const TYPING_WINDOW_SECONDS = 2;
 export const HEARTBEAT_WINDOW_SECONDS = 10;
 export const SOCKET_ABUSE_FACTOR = 10;
@@ -99,6 +101,24 @@ export const searchRateLimit = rateLimit(
     duration: SEARCH_WINDOW_SECONDS,
   },
   (req) => req.user.id,
+);
+
+export const demoGuestRateLimit = rateLimit(
+  {
+    name: "demo",
+    points: config.RATE_LIMIT_DEMO_POINTS,
+    duration: DEMO_WINDOW_SECONDS,
+  },
+  (req) => req.ip ?? "unknown",
+);
+
+export const demoDailyRateLimit = rateLimit(
+  {
+    name: "demo-daily",
+    points: config.RATE_LIMIT_DEMO_DAILY_POINTS,
+    duration: DEMO_DAY_SECONDS,
+  },
+  () => "global",
 );
 
 export const uploadRateLimit = rateLimit(

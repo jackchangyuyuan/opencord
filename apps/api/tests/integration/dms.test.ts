@@ -95,7 +95,7 @@ describe("direct messages", () => {
       },
     ]);
 
-    const opened = await openDm(upper, lower);
+    const opened = await openDm({ id: upper }, lower);
 
     expect(opened.created).toBe(true);
 

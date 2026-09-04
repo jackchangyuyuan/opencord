@@ -15,7 +15,7 @@ dmsRouter.get("/", async (req, res) => {
 });
 
 dmsRouter.post("/", validate({ body: openDmSchema }), async (req, res) => {
-  const result = await openDm(req.user.id, req.body.recipientId);
+  const result = await openDm(req.user, req.body.recipientId);
   const channel = serializeChannel(await loadDmChannel(result.channelId));
 
   res.status(result.created ? 201 : 200).json(channel);

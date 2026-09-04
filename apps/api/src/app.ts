@@ -14,6 +14,7 @@ import {
   channelsRouter,
   serverChannelsRouter,
 } from "./modules/channels/router.js";
+import { demoRouter } from "./modules/demo/router.js";
 import { dmsRouter } from "./modules/dms/router.js";
 import {
   invitesRouter,
@@ -72,6 +73,8 @@ app.all(
   revokeSignedOutSession,
   toNodeHandler(auth),
 );
+
+app.use("/api/v1/demo", demoRouter);
 
 const apiRouter = express.Router();
 

@@ -107,3 +107,10 @@ export function guestQuotaReached(quota: string, limit: number): AppError {
     limit,
   });
 }
+
+export function dmNotPermitted(): AppError {
+  return forbidden(
+    "DM_NOT_PERMITTED",
+    "You can only message people you share a server with",
+  );
+}
