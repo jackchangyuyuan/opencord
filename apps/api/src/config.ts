@@ -6,6 +6,11 @@ const baseSchema = z.object({
   AWS_SECRET_ACCESS_KEY: z.string().min(1),
   BETTER_AUTH_SECRET: z.string().min(32),
   DATABASE_URL: z.url(),
+  GUEST_TTL_MS: z.coerce
+    .number()
+    .int()
+    .min(60_000)
+    .default(45 * 60 * 1000),
   INSTANCE_ID: z.string().min(1).default("api-dev"),
   JOB_LOCK_NAMESPACE: z.string().min(1).default("jobs"),
   LOG_LEVEL: z

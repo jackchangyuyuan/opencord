@@ -21,6 +21,7 @@ export const users = pgTable("users", {
     .notNull(),
   username: text("username").notNull().unique(),
   avatarObjectKey: text("avatar_object_key"),
+  isAnonymous: boolean("is_anonymous").default(false),
   deactivatedAt: timestamp("deactivated_at"),
   guestExpiresAt: timestamp("guest_expires_at"),
 });
