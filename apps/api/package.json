@@ -15,7 +15,8 @@
     "test:coverage": "vitest run --coverage",
     "db:generate": "drizzle-kit generate",
     "db:drop": "drizzle-kit drop",
-    "db:migrate": "tsx --env-file=../../.env src/db/migrate.ts"
+    "db:migrate": "tsx --env-file=../../.env src/db/migrate.ts",
+    "db:seed": "tsx --env-file=../../.env src/db/seed/index.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1127.0",
@@ -37,6 +38,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@faker-js/faker": "^10.6.0",
     "@opencord/eslint-config": "workspace:*",
     "@opencord/typescript-config": "workspace:*",
     "@types/express": "^5.0.6",
