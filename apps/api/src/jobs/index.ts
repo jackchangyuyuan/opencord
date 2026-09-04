@@ -5,6 +5,7 @@ import {
   renewLeadership,
 } from "../lib/leader-election.js";
 import { logger } from "../lib/logger.js";
+import { ANONYMIZE_INTERVAL_MS, runGuestAnonymize } from "./guest-anonymize.js";
 import { GUEST_EXPIRY_INTERVAL_MS, runGuestExpiry } from "./guest-expiry.js";
 import { runOrphanSweep } from "./orphan-sweep.js";
 
@@ -21,6 +22,11 @@ export const jobs: ScheduledJob[] = [
     name: "guest-expiry",
     everyMs: GUEST_EXPIRY_INTERVAL_MS,
     run: () => runGuestExpiry(),
+  },
+  {
+    name: "guest-anonymize",
+    everyMs: ANONYMIZE_INTERVAL_MS,
+    run: () => runGuestAnonymize(),
   },
   { name: "orphan-sweep", everyMs: NIGHTLY_MS, run: () => runOrphanSweep() },
 ];

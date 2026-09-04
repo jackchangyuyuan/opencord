@@ -320,6 +320,31 @@ export async function editMessage(
   return serialized;
 }
 
+export async function softDeleteMessage(
+  tx: Transaction,
+  channelId: string,
+  messageId: string,
+  deletedAt: Date,
+): Promise<void> {
+  await tx
+    .update(messages)
+    .set({ deletedAt, pinnedAt: null, pinnedBy: null })
+    .where(eq(messages.id, messageId));
+
+  await tx.delete(mentions).where(eq(mentions.messageId, messageId));
+
+  await tx
+    .update(channels)
+    .set({
+      lastMessageId: sql`(select ${messages.id} from ${messages} where ${messages.channelId} = ${channelId} and ${messages.deletedAt} is null order by ${messages.id} desc limit 1)`,
+    })
+    .where(
+      and(eq(channels.id, channelId), eq(channels.lastMessageId, messageId)),
+    );
+
+  await repairEveryoneWatermark(tx, channelId, messageId);
+}
+
 export async function deleteMessage(
   context: ChannelContext,
   channel: ChannelRow,
@@ -354,26 +379,7 @@ export async function deleteMessage(
   const deletedAt = new Date();
 
   await db.transaction(async (tx) => {
-    await tx
-      .update(messages)
-      .set({ deletedAt, pinnedAt: null, pinnedBy: null })
-      .where(eq(messages.id, message.id));
-
-    await tx.delete(mentions).where(eq(mentions.messageId, message.id));
-
-    await tx
-      .update(channels)
-      .set({
-        lastMessageId: sql`(select ${messages.id} from ${messages} where ${messages.channelId} = ${channel.id} and ${messages.deletedAt} is null order by ${messages.id} desc limit 1)`,
-      })
-      .where(
-        and(
-          eq(channels.id, channel.id),
-          eq(channels.lastMessageId, message.id),
-        ),
-      );
-
-    await repairEveryoneWatermark(tx, channel.id, message.id);
+    await softDeleteMessage(tx, channel.id, message.id, deletedAt);
 
     if (byModerator && context.server !== null) {
       await writeAudit(tx, {
