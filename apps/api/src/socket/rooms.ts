@@ -154,6 +154,13 @@ export function disconnectUser(io: SocketServer, userId: string): void {
   io.in(userRoom(userId)).disconnectSockets(true);
 }
 
+export function revokeUser(io: SocketServer, userId: string): void {
+  const room = userRoom(userId);
+
+  io.to(room).emit("session:revoked");
+  io.in(room).disconnectSockets(true);
+}
+
 export function revokeSession(io: SocketServer, sessionId: string): void {
   const room = sessionRoom(sessionId);
 

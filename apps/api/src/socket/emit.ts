@@ -8,6 +8,7 @@ import {
   listViewableChannelRooms,
   rederiveRooms,
   revokeSession,
+  revokeUser,
   serverRoom,
   userRoom,
 } from "./rooms.js";
@@ -159,6 +160,14 @@ export async function disconnectMemberSockets(userId: string): Promise<void> {
   disconnectUser(current, userId);
 
   await Promise.resolve();
+}
+
+export function revokeUserEverywhere(userId: string): void {
+  if (current === null) {
+    return;
+  }
+
+  revokeUser(current, userId);
 }
 
 export function revokeSessionEverywhere(sessionId: string): void {
