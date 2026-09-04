@@ -114,3 +114,5 @@ export function dmNotPermitted(): AppError {
     "You can only message people you share a server with",
   );
 }
+
+export const GUEST_USE_CLAIM = "GUEST_USE_CLAIM";

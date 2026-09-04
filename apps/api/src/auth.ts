@@ -1,14 +1,20 @@
 import { randomBytes } from "node:crypto";
 
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
+import { GUEST_BLOCKED_AUTH_PATHS } from "@opencord/shared/constants";
 import { usernameSchema } from "@opencord/shared/schemas";
 import { betterAuth } from "better-auth";
-import { APIError } from "better-auth/api";
+import {
+  APIError,
+  createAuthMiddleware,
+  getSessionFromCtx,
+} from "better-auth/api";
 import { anonymous } from "better-auth/plugins/anonymous";
 
 import { config } from "./config.js";
 import { db } from "./db/index.js";
 import * as schema from "./db/schema/index.js";
+import { GUEST_USE_CLAIM } from "./lib/errors.js";
 
 function generateGuestUsername(): string {
   return `guest-${randomBytes(8).toString("hex")}`;
@@ -31,6 +37,22 @@ export const auth = betterAuth({
     }),
   ],
   secret: config.BETTER_AUTH_SECRET,
+  hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      if (!(GUEST_BLOCKED_AUTH_PATHS as readonly string[]).includes(ctx.path)) {
+        return;
+      }
+
+      const session = await getSessionFromCtx(ctx);
+
+      if (session?.user["isAnonymous"] === true) {
+        throw new APIError("FORBIDDEN", {
+          code: GUEST_USE_CLAIM,
+          message: "Save your account first",
+        });
+      }
+    }),
+  },
   user: {
     additionalFields: {
       username: { type: "string", required: true, unique: true },
