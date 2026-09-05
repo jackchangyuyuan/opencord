@@ -27,6 +27,9 @@ export default defineConfig({
             cwd: "../..",
             env: {
               RATE_LIMIT_AUTH_POINTS: "1000",
+              RATE_LIMIT_CLAIM_POINTS: "1000",
+              RATE_LIMIT_DEMO_DAILY_POINTS: "10000",
+              RATE_LIMIT_DEMO_POINTS: "1000",
               RATE_LIMIT_MESSAGE_POINTS: "1000",
             },
             url: "http://127.0.0.1:3000/readyz",

@@ -139,6 +139,23 @@
   }
 }
 
+@keyframes demo-loop-fade {
+  0%,
+  12% {
+    opacity: 0;
+    transform: translateY(0.25rem);
+  }
+  20%,
+  92% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(0.25rem);
+  }
+}
+
 @layer components {
   .message-markdown > :where(p, ul, ol, blockquote, pre) {
     margin: 0;
