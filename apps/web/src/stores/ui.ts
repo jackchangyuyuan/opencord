@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 export type ModalName =
   | "create-server"
@@ -40,35 +41,45 @@ interface UiState {
   dismissDemoPanel: () => void;
 }
 
-export const useUi = create<UiState>()((set) => ({
-  activeModal: null,
-  contextMenu: null,
-  rightPanel: "members",
-  replyTarget: null,
-  mobileDrawerOpen: false,
-  demoPanelDismissed: false,
-  openModal: (activeModal) => {
-    set({ activeModal });
-  },
-  closeModal: () => {
-    set({ activeModal: null });
-  },
-  openContextMenu: (contextMenu) => {
-    set({ contextMenu });
-  },
-  closeContextMenu: () => {
-    set({ contextMenu: null });
-  },
-  setRightPanel: (rightPanel) => {
-    set({ rightPanel });
-  },
-  setReplyTarget: (replyTarget) => {
-    set({ replyTarget });
-  },
-  setMobileDrawerOpen: (mobileDrawerOpen) => {
-    set({ mobileDrawerOpen });
-  },
-  dismissDemoPanel: () => {
-    set({ demoPanelDismissed: true });
-  },
-}));
+export const UI_STORAGE_KEY = "opencord:ui";
+
+export const useUi = create<UiState>()(
+  persist(
+    (set) => ({
+      activeModal: null,
+      contextMenu: null,
+      rightPanel: "members",
+      replyTarget: null,
+      mobileDrawerOpen: false,
+      demoPanelDismissed: false,
+      openModal: (activeModal) => {
+        set({ activeModal });
+      },
+      closeModal: () => {
+        set({ activeModal: null });
+      },
+      openContextMenu: (contextMenu) => {
+        set({ contextMenu });
+      },
+      closeContextMenu: () => {
+        set({ contextMenu: null });
+      },
+      setRightPanel: (rightPanel) => {
+        set({ rightPanel });
+      },
+      setReplyTarget: (replyTarget) => {
+        set({ replyTarget });
+      },
+      setMobileDrawerOpen: (mobileDrawerOpen) => {
+        set({ mobileDrawerOpen });
+      },
+      dismissDemoPanel: () => {
+        set({ demoPanelDismissed: true });
+      },
+    }),
+    {
+      name: UI_STORAGE_KEY,
+      partialize: (state) => ({ demoPanelDismissed: state.demoPanelDismissed }),
+    },
+  ),
+);

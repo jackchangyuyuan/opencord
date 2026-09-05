@@ -8,6 +8,7 @@ import { ServerRail } from "@/components/layout/server-rail";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useActiveChannelId } from "@/features/channels/api/queries";
+import { GuidePanel } from "@/features/demo/components/guide-panel";
 import { PinList } from "@/features/messages/components/pin-list";
 import { StatusPicker } from "@/features/realtime/components/status-picker";
 import { StatusWidget } from "@/features/realtime/components/status-widget";
@@ -88,6 +89,8 @@ export function AppShell({ children }: { children?: ReactNode }) {
 
           <MemberPanel />
         </div>
+
+        <GuidePanel />
       </div>
     </TooltipProvider>
   );
