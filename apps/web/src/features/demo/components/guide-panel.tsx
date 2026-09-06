@@ -6,6 +6,7 @@ import {
   ScrollText,
   Search,
   Shield,
+  UserRoundCheck,
   X,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
@@ -61,7 +62,7 @@ export function GuidePanel() {
             Try these
           </h2>
           <p className="text-xs text-muted-foreground">
-            Six things worth thirty seconds.
+            Seven things worth thirty seconds.
           </p>
         </div>
         <Button
@@ -131,6 +132,14 @@ export function GuidePanel() {
               ?.scrollIntoView({ block: "center" });
           }}
           proves="Serving instance, socket state, online count"
+        />
+        <GuideAction
+          icon={<UserRoundCheck aria-hidden className="size-4" />}
+          label="Save my account"
+          onSelect={() => {
+            openModal("claim-account");
+          }}
+          proves="Keep every server, message and DM you have made"
         />
       </ul>
     </aside>

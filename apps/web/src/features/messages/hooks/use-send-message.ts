@@ -13,7 +13,7 @@ import {
 } from "@/features/messages/api/queries";
 import { api, ApiError } from "@/lib/api-client";
 
-export type RetryMode = "same-nonce" | "new-nonce" | "none";
+export type RetryMode = "same-nonce" | "new-nonce" | "none" | "claim";
 
 export interface LocalState {
   status: "sending" | "failed";
@@ -131,8 +131,8 @@ function failureFor(error: unknown): LocalState {
   if (error instanceof ApiError && error.code === GUEST_QUOTA_REACHED) {
     return {
       status: "failed",
-      retry: "none",
-      reason: "Save your account to keep sending",
+      retry: "claim",
+      reason: "Your guest message allowance is used up",
     };
   }
 
@@ -232,15 +232,16 @@ export function useSendMessage(channelId: string) {
   const retry = useCallback(
     (entry: ChatMessage, authorId: string) => {
       const nonce = entry.nonce;
+      const mode = entry.local?.retry;
 
-      if (nonce === null || entry.local?.retry === "none") {
+      if (nonce === null || (mode !== "same-nonce" && mode !== "new-nonce")) {
         return;
       }
 
       const replyTo =
         entry.replyToId === null ? {} : { replyToId: entry.replyToId };
 
-      if (entry.local?.retry === "new-nonce") {
+      if (mode === "new-nonce") {
         update((cache) => removeByNonce(cache, nonce));
         mutate({
           content: entry.content,

@@ -295,7 +295,7 @@ describe("useSendMessage", () => {
     expect(nonces[1]).not.toBe(NONCE);
   });
 
-  it("offers no retry after GUEST_QUOTA_REACHED", async () => {
+  it("offers the claim, not a retry, after GUEST_QUOTA_REACHED", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       respond(403, {
         error: {
@@ -320,7 +320,7 @@ describe("useSendMessage", () => {
     });
 
     await waitFor(() => {
-      expect(entries()[0]?.local?.retry).toBe("none");
+      expect(entries()[0]?.local?.retry).toBe("claim");
     });
 
     const failed = entries()[0];

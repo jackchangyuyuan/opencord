@@ -4,7 +4,8 @@ import {
   updateProfileSchema,
 } from "@opencord/shared/schemas";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { UserRound } from "lucide-react";
+import { LogOut, UserRound, UserRoundCheck } from "lucide-react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
@@ -24,16 +25,22 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { useSession, useSignOut } from "@/features/auth/hooks/use-session";
 import {
   type CurrentUser,
   currentUserQuery,
 } from "@/features/users/api/queries";
 import { AvatarPicker } from "@/features/users/components/avatar-picker";
 import { api, ApiError } from "@/lib/api-client";
+import { useUi } from "@/stores/ui";
 
 export function ProfileDialog() {
   const queryClient = useQueryClient();
   const { data: me } = useQuery(currentUserQuery);
+  const { user } = useSession();
+  const openModal = useUi((state) => state.openModal);
+  const signOut = useSignOut();
+  const [open, setOpen] = useState(false);
 
   const form = useForm<UpdateProfileInput>({
     resolver: zodResolver(updateProfileSchema),
@@ -62,7 +69,7 @@ export function ProfileDialog() {
         : "Could not save your profile";
 
   return (
-    <Dialog>
+    <Dialog onOpenChange={setOpen} open={open}>
       <DialogTrigger
         aria-label="Your profile"
         render={<Button size="icon-xs" variant="ghost" />}
@@ -76,6 +83,35 @@ export function ProfileDialog() {
             Your display name and picture, as everybody else sees them.
           </DialogDescription>
         </DialogHeader>
+
+        <div className="flex flex-wrap gap-2">
+          {user?.isAnonymous === true ? (
+            <Button
+              onClick={() => {
+                setOpen(false);
+                openModal("claim-account");
+              }}
+              size="sm"
+              variant="outline"
+            >
+              <UserRoundCheck />
+              Save my account
+            </Button>
+          ) : null}
+
+          <Button
+            disabled={signOut.isPending}
+            onClick={() => {
+              setOpen(false);
+              signOut.mutate();
+            }}
+            size="sm"
+            variant="outline"
+          >
+            <LogOut />
+            Sign out
+          </Button>
+        </div>
 
         <AvatarPicker
           currentUrl={me?.avatarUrl ?? null}

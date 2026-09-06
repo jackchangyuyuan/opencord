@@ -45,6 +45,12 @@ export function SignUpForm() {
   return (
     <form noValidate onSubmit={(event) => void onSubmit(event)}>
       <FieldGroup>
+        <p className="text-sm text-muted-foreground">
+          Already exploring the demo? A new account starts empty — use{" "}
+          <strong className="font-medium">Save my account</strong> inside the
+          app to keep what you have made.
+        </p>
+
         <Field data-invalid={form.formState.errors.name !== undefined}>
           <FieldLabel htmlFor="sign-up-name">Display name</FieldLabel>
           <Input

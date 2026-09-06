@@ -16,6 +16,7 @@ import { ReplyContext } from "@/features/messages/components/reply-context";
 import type { ChatMessage } from "@/features/messages/hooks/use-send-message";
 import { userQuery } from "@/features/users/api/queries";
 import { cn } from "@/lib/cn";
+import { useUi } from "@/stores/ui";
 
 const TIME = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit",
@@ -40,6 +41,7 @@ export function MessageRow({
   onTogglePin?: (message: ChatMessage) => void;
 }) {
   const { data: author } = useQuery(userQuery(message.authorId));
+  const openModal = useUi((state) => state.openModal);
 
   const name = author?.name ?? "Unknown";
   const at = new Date(message.createdAt);
@@ -103,7 +105,17 @@ export function MessageRow({
         {local?.status === "failed" ? (
           <p className="flex items-center gap-2 text-xs text-destructive">
             <span role="alert">{local.reason ?? "Could not send"}</span>
-            {local.retry === "none" ? null : (
+            {local.retry === "claim" ? (
+              <Button
+                onClick={() => {
+                  openModal("claim-account");
+                }}
+                size="xs"
+                variant="ghost"
+              >
+                Save my account
+              </Button>
+            ) : local.retry === "none" ? null : (
               <Button
                 onClick={() => onRetry?.(message)}
                 size="xs"

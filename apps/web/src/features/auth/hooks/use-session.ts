@@ -48,9 +48,11 @@ export function useSignOut() {
         throw new Error(error.message ?? "Could not sign you out");
       }
     },
-    onSuccess: async () => {
-      queryClient.clear();
-      await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
+    onSuccess: () => {
+      queryClient.removeQueries({
+        predicate: (query) => query.queryKey[0] !== sessionQueryKey[0],
+      });
+      queryClient.setQueryData(sessionQueryKey, null);
     },
   });
 }

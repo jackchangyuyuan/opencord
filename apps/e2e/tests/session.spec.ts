@@ -4,7 +4,7 @@ import { type APIRequestContext, expect, test } from "@playwright/test";
 
 const password = "correct horse battery staple";
 
-test("brings the socket up after signing up in place, with no reload (flow 1)", async ({
+test("brings the socket up after signing up in place, with no reload", async ({
   page,
 }) => {
   const id = randomUUID().slice(0, 8);

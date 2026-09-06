@@ -101,7 +101,7 @@ afterEach(() => {
 });
 
 describe("GuidePanel", () => {
-  it("lists the six actions to a guest", async () => {
+  it("lists the seven actions to a guest", async () => {
     renderPanel();
 
     expect(
@@ -112,7 +112,7 @@ describe("GuidePanel", () => {
       screen
         .getAllByRole("button")
         .filter((button) => button.textContent !== ""),
-    ).toHaveLength(6);
+    ).toHaveLength(7);
   });
 
   it("shows nothing to a registered visitor", () => {
