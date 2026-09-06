@@ -2,9 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Search, X } from "lucide-react";
 import { useState } from "react";
 
+import { EmptyState } from "@/components/layout/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useActiveServerId } from "@/features/channels/api/queries";
 import { searchMessagesQuery } from "@/features/search/api/queries";
 import { SearchResult } from "@/features/search/components/search-result";
@@ -76,15 +78,21 @@ export function SearchPanel() {
 
       <ScrollArea className="flex-1">
         {submitted === "" ? (
-          <p className="p-4 text-sm text-muted-foreground">
-            Search this server&rsquo;s archive.
-          </p>
+          <EmptyState
+            description="Two hundred thousand messages, filtered by author, channel or date."
+            icon={<Search aria-hidden className="size-5" />}
+            title="Search this server's archive"
+          />
         ) : isError ? (
           <p className="p-4 text-sm text-muted-foreground" role="alert">
             Could not run that search.
           </p>
         ) : data === undefined ? (
-          <p className="p-4 text-sm text-muted-foreground">Searching&hellip;</p>
+          <div aria-hidden className="flex flex-col gap-1 p-2">
+            {["a", "b", "c", "d", "e"].map((key) => (
+              <Skeleton className="h-12 rounded-lg" key={key} />
+            ))}
+          </div>
         ) : (
           <>
             {data.degraded ? (
@@ -94,9 +102,10 @@ export function SearchPanel() {
             ) : null}
 
             {data.data.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">
-                No messages matched.
-              </p>
+              <EmptyState
+                description="Try fewer filters, or a different word."
+                title="No messages matched"
+              />
             ) : (
               <ul className="flex flex-col gap-0.5 p-2" aria-busy={isFetching}>
                 {data.data.map((message) => (

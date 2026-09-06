@@ -20,6 +20,7 @@ export function useTogglePin(channelId: string): TogglePinState {
   const queryClient = useQueryClient();
 
   const { mutate, isPending, error } = useMutation({
+    meta: { inline: true },
     mutationFn: ({ messageId, pin }: TogglePinInput) =>
       api<Message>(`/channels/${channelId}/messages/${messageId}/pin`, {
         method: pin ? "PUT" : "DELETE",

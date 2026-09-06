@@ -163,6 +163,7 @@ export function useSendMessage(channelId: string) {
   );
 
   const { mutate, isPending } = useMutation({
+    meta: { inline: true },
     mutationFn: ({ content, nonce, replyToId, attachments }: SendInput) =>
       api<Message>(`/channels/${channelId}/messages`, {
         method: "POST",

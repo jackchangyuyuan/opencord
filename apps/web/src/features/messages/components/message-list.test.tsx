@@ -405,7 +405,7 @@ describe("MessageList", () => {
     );
 
     expect(
-      screen.getByText("Choose a channel to start reading."),
+      screen.getByText("Choose a channel to start reading"),
     ).toBeInTheDocument();
   });
 });

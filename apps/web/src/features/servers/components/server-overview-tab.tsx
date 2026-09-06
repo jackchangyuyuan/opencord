@@ -66,6 +66,7 @@ export function ServerOverviewTab({
   });
 
   const leave = useMutation({
+    meta: { inline: true },
     mutationFn: () =>
       api<unknown>(`/servers/${server.id}/members/@me`, { method: "DELETE" }),
     onSuccess: async () => {

@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Hash } from "lucide-react";
 import { NavLink } from "react-router";
 
+import { EmptyState } from "@/components/layout/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   serverChannelsQuery,
   useActiveChannelId,
@@ -19,13 +21,11 @@ export function ChannelList({ serverId }: { serverId: string | undefined }) {
 
   if (serverId === undefined || isPending) {
     return (
-      <ul className="flex flex-col gap-1 p-2">
+      <div aria-hidden className="flex flex-col gap-1 p-2">
         {["a", "b", "c", "d"].map((key) => (
-          <li key={key}>
-            <div className="h-7 animate-pulse rounded-lg bg-muted" />
-          </li>
+          <Skeleton className="h-7 rounded-lg" key={key} />
         ))}
-      </ul>
+      </div>
     );
   }
 
@@ -39,7 +39,10 @@ export function ChannelList({ serverId }: { serverId: string | undefined }) {
 
   if (data.length === 0) {
     return (
-      <p className="p-4 text-sm text-muted-foreground">No channels yet.</p>
+      <EmptyState
+        description="Somebody with permission can add the first one."
+        title="No channels yet"
+      />
     );
   }
 

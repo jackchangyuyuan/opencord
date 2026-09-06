@@ -46,6 +46,7 @@ export function ClaimDialog() {
   });
 
   const claim = useMutation({
+    meta: { inline: true },
     mutationFn: (input: ClaimAccountInput) =>
       api<ClaimedAccount>("/demo/claim", { method: "POST", body: input }),
     onSuccess: async () => {

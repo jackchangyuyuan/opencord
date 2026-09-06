@@ -40,6 +40,7 @@ export function useMarkRead(channelId: string | undefined): MarkReadState {
   }, [queryClient]);
 
   const { mutate } = useMutation({
+    meta: { inline: true },
     mutationFn: ({ channelId: target, messageId }: PendingRead) =>
       api<unknown>(`/channels/${target}/read`, {
         method: "PUT",

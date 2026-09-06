@@ -2,6 +2,7 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
   TooltipContent,
@@ -53,13 +54,11 @@ export function ServerList({ activeServerId }: { activeServerId?: string }) {
 
   if (isPending) {
     return (
-      <ul className="flex flex-col items-center gap-2 px-3">
+      <div aria-hidden className="flex flex-col items-center gap-2 px-3">
         {["a", "b", "c"].map((key) => (
-          <li key={key}>
-            <div className="size-10 animate-pulse rounded-2xl bg-muted" />
-          </li>
+          <Skeleton className="size-10 rounded-2xl" key={key} />
         ))}
-      </ul>
+      </div>
     );
   }
 

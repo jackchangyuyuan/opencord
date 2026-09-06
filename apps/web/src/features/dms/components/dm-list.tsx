@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { NavLink } from "react-router";
 
+import { EmptyState } from "@/components/layout/empty-state";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useActiveChannelId } from "@/features/channels/api/queries";
 import { UnreadBadge } from "@/features/channels/components/unread-badge";
 import { dmsQuery } from "@/features/dms/api/queries";
@@ -17,13 +19,11 @@ export function DmList() {
 
   if (isPending) {
     return (
-      <ul className="flex flex-col gap-1 p-2">
+      <div aria-hidden className="flex flex-col gap-1 p-2">
         {["a", "b", "c"].map((key) => (
-          <li key={key}>
-            <div className="h-9 animate-pulse rounded-lg bg-muted" />
-          </li>
+          <Skeleton className="h-9 rounded-lg" key={key} />
         ))}
-      </ul>
+      </div>
     );
   }
 
@@ -37,9 +37,10 @@ export function DmList() {
 
   if (data.length === 0) {
     return (
-      <p className="p-4 text-sm text-muted-foreground">
-        No direct messages yet. Open one from a member list.
-      </p>
+      <EmptyState
+        description="Open one from a member list, and it will appear here."
+        title="No direct messages yet"
+      />
     );
   }
 

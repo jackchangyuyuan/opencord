@@ -2,12 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Pin } from "lucide-react";
 import { useNavigate } from "react-router";
 
+import { EmptyState } from "@/components/layout/empty-state";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
 import { channelPinsQuery } from "@/features/messages/api/queries";
 import { userQuery } from "@/features/users/api/queries";
 
@@ -70,15 +72,20 @@ export function PinList({ channelId }: { channelId: string | undefined }) {
       <PopoverContent className="w-80">
         <h3 className="px-2 text-xs font-semibold">Pinned messages</h3>
         {isPending ? (
-          <p className="px-2 text-sm text-muted-foreground">Loading&hellip;</p>
+          <div aria-hidden className="flex flex-col gap-1 p-2">
+            {["a", "b", "c"].map((key) => (
+              <Skeleton className="h-6" key={key} />
+            ))}
+          </div>
         ) : isError ? (
           <p className="px-2 text-sm text-muted-foreground" role="alert">
             Could not load the pins.
           </p>
         ) : data.length === 0 ? (
-          <p className="px-2 text-sm text-muted-foreground">
-            Nothing is pinned here yet.
-          </p>
+          <EmptyState
+            description="Pin a message from its context menu to keep it here."
+            title="Nothing is pinned yet"
+          />
         ) : (
           <ul className="flex max-h-80 flex-col gap-0.5 overflow-y-auto">
             {data.map((message) => (

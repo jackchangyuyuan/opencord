@@ -15,6 +15,7 @@ export function useEnterDemo() {
   const navigate = useNavigate();
 
   const mutation = useMutation({
+    meta: { inline: true },
     mutationFn: () => api<DemoScenario>("/demo/guest", { method: "POST" }),
     onSuccess: async (scenario) => {
       queryClient.clear();

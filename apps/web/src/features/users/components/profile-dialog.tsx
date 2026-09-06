@@ -48,6 +48,7 @@ export function ProfileDialog() {
   });
 
   const save = useMutation({
+    meta: { inline: true },
     mutationFn: (input: UpdateProfileInput) =>
       api<CurrentUser>("/users/@me", { method: "PATCH", body: input }),
     onSuccess: async () => {

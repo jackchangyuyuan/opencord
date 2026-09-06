@@ -64,6 +64,7 @@ export function ChannelSettingsDialog({ channelId }: { channelId: string }) {
   };
 
   const save = useMutation({
+    meta: { inline: true },
     mutationFn: (input: UpdateChannelInput) =>
       api<unknown>(`/channels/${channelId}`, { method: "PATCH", body: input }),
     onSuccess: async () => {

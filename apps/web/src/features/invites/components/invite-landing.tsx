@@ -41,6 +41,7 @@ export function InviteLanding() {
   const preview = useQuery(invitePreviewQuery(code));
 
   const redeem = useMutation({
+    meta: { inline: true },
     mutationFn: () =>
       api<{ serverId: string }>(`/invites/${code}`, { method: "POST" }),
     onSuccess: async ({ serverId }) => {

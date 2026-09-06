@@ -46,6 +46,7 @@ export function InviteDialog({ serverId }: { serverId: string }) {
   const { data } = useQuery({ ...serverInvitesQuery(serverId), enabled: open });
 
   const create = useMutation({
+    meta: { inline: true },
     mutationFn: () =>
       api<InviteSummary>(`/servers/${serverId}/invites`, {
         method: "POST",

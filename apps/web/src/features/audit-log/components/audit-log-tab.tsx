@@ -1,7 +1,9 @@
 import { Permissions } from "@opencord/shared/permissions";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
+import { EmptyState } from "@/components/layout/empty-state";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { auditLogQuery } from "@/features/audit-log/api/queries";
 import { AuditEntry } from "@/features/audit-log/components/audit-entry";
 import {
@@ -23,7 +25,13 @@ export function AuditLogTab({ serverId }: { serverId: string }) {
   }
 
   if (entries.isPending) {
-    return <p className="text-sm text-muted-foreground">Loading…</p>;
+    return (
+      <div aria-hidden className="flex flex-col gap-2">
+        {["a", "b", "c", "d"].map((key) => (
+          <Skeleton className="h-5" key={key} />
+        ))}
+      </div>
+    );
   }
 
   if (entries.isError) {
@@ -43,9 +51,10 @@ export function AuditLogTab({ serverId }: { serverId: string }) {
       </p>
 
       {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Nothing has happened yet.
-        </p>
+        <EmptyState
+          description="Kicks, bans, role changes and deletions are recorded here."
+          title="Nothing has happened yet"
+        />
       ) : (
         <ul className="flex flex-col">
           {rows.map((entry) => (

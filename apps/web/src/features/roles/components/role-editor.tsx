@@ -57,6 +57,7 @@ export function RoleEditor({
     (actorPermissions & Permissions.MANAGE_ROLES) === Permissions.MANAGE_ROLES;
 
   const save = useMutation({
+    meta: { inline: true },
     mutationFn: (input: RoleDraft) =>
       api<PublicRole>(`/servers/${serverId}/roles/${role.id}`, {
         method: "PATCH",

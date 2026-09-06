@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { EmptyState } from "@/components/layout/empty-state";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { serverBansQuery } from "@/features/members/api/queries";
 import { useMemberMutations } from "@/features/members/hooks/use-member-mutations";
 
@@ -9,7 +11,13 @@ export function BanList({ serverId }: { serverId: string }) {
   const { data, isPending, isError } = useQuery(serverBansQuery(serverId));
 
   if (isPending) {
-    return <p className="text-sm text-muted-foreground">Loading bans…</p>;
+    return (
+      <div aria-hidden className="flex flex-col gap-1">
+        {["a", "b"].map((key) => (
+          <Skeleton className="h-5" key={key} />
+        ))}
+      </div>
+    );
   }
 
   if (isError) {
@@ -21,7 +29,12 @@ export function BanList({ serverId }: { serverId: string }) {
   }
 
   if (data.length === 0) {
-    return <p className="text-sm text-muted-foreground">Nobody is banned.</p>;
+    return (
+      <EmptyState
+        description="Bans made here will be listed so they can be lifted."
+        title="Nobody is banned"
+      />
+    );
   }
 
   return (

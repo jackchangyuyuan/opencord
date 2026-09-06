@@ -5,6 +5,7 @@ import type { CSSProperties } from "react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useOpenDm } from "@/features/dms/api/queries";
 import {
   displayName,
@@ -105,14 +106,14 @@ export function MemberList({ serverId }: { serverId: string | undefined }) {
 
   if (!enabled || members.isPending || roles.isPending) {
     return (
-      <ul className="flex flex-col gap-2 p-3">
+      <div aria-hidden className="flex flex-col gap-2 p-3">
         {["a", "b", "c", "d"].map((key) => (
-          <li className="flex items-center gap-2" key={key}>
-            <div className="size-7 animate-pulse rounded-full bg-muted" />
-            <div className="h-3 flex-1 animate-pulse rounded bg-muted" />
-          </li>
+          <div className="flex items-center gap-2" key={key}>
+            <Skeleton className="size-7 rounded-full" />
+            <Skeleton className="h-3 flex-1" />
+          </div>
         ))}
-      </ul>
+      </div>
     );
   }
 

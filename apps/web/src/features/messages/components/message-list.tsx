@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 
+import { EmptyState } from "@/components/layout/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { channelMessagesQuery } from "@/features/messages/api/queries";
 import { Composer } from "@/features/messages/components/composer";
 import { DateDivider } from "@/features/messages/components/date-divider";
@@ -136,13 +138,33 @@ export function MessageList({
       </div>
 
       {!enabled ? (
-        <p className="p-4 text-sm text-muted-foreground">
-          Choose a channel to start reading.
-        </p>
+        <EmptyState
+          className="flex-1"
+          description="Pick one from the sidebar and its history opens here."
+          title="Choose a channel to start reading"
+        />
       ) : messages.isError ? (
         <p className="p-4 text-sm text-muted-foreground" role="alert">
           Could not load messages.
         </p>
+      ) : messages.isPending ? (
+        <div aria-hidden className="flex flex-1 flex-col gap-3 p-4">
+          {["a", "b", "c", "d", "e", "f"].map((key) => (
+            <div className="flex gap-3" key={key}>
+              <Skeleton className="size-9 shrink-0 rounded-full" />
+              <div className="flex flex-1 flex-col gap-1.5">
+                <Skeleton className="h-3 w-32" />
+                <Skeleton className="h-3 w-full" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        <EmptyState
+          className="flex-1"
+          description="Say the first thing in here."
+          title="No messages yet"
+        />
       ) : (
         <Virtuoso
           atBottomStateChange={(atBottom) => {

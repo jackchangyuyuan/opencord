@@ -87,7 +87,7 @@ describe("PinList", () => {
     await user.click(screen.getByRole("button", { name: "Pinned messages" }));
 
     expect(
-      await screen.findByText("Nothing is pinned here yet."),
+      await screen.findByText("Nothing is pinned yet"),
     ).toBeInTheDocument();
   });
 

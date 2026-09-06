@@ -83,7 +83,7 @@ describe("SearchPanel", () => {
     renderPanel();
 
     expect(
-      screen.getByText("Search this server’s archive."),
+      screen.getByText("Search this server's archive"),
     ).toBeInTheDocument();
     expect(requestedUrls.some((url) => url.startsWith("/api/v1/search"))).toBe(
       false,
@@ -160,7 +160,7 @@ describe("SearchPanel", () => {
     );
     await user.click(screen.getByRole("button", { name: "Search" }));
 
-    expect(await screen.findByText("No messages matched.")).toBeInTheDocument();
+    expect(await screen.findByText("No messages matched")).toBeInTheDocument();
   });
 
   it("jumps to the message the result names", async () => {

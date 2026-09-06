@@ -43,6 +43,7 @@ export function CreateServerDialog() {
   });
 
   const create = useMutation({
+    meta: { inline: true },
     mutationFn: (input: CreateServerInput) =>
       api<ServerSummary>("/servers", { method: "POST", body: input }),
     onSuccess: async () => {

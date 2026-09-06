@@ -6,6 +6,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router";
 
+import { Toaster } from "./components/ui/toast";
 import { sessionQueryKey } from "./features/auth/hooks/use-session";
 import { setSessionExpiredHandler } from "./lib/api-client";
 import { queryClient } from "./lib/query-client";
@@ -24,8 +25,10 @@ if (!container) {
 createRoot(container).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-      {import.meta.env.PROD ? null : <ReactQueryDevtools />}
+      <Toaster>
+        <RouterProvider router={router} />
+        {import.meta.env.PROD ? null : <ReactQueryDevtools />}
+      </Toaster>
     </QueryClientProvider>
   </StrictMode>,
 );

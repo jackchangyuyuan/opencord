@@ -49,6 +49,7 @@ export function CreateChannelDialog({ serverId }: { serverId: string }) {
   });
 
   const create = useMutation({
+    meta: { inline: true },
     mutationFn: (input: CreateChannelInput) =>
       api<ChannelSummary>(`/servers/${serverId}/channels`, {
         method: "POST",
