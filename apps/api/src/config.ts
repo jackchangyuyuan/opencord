@@ -1,6 +1,16 @@
 import { z } from "zod";
 
 const baseSchema = z.object({
+  AMBIENT_ACTIVITY_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .default(40_000),
+  AMBIENT_ACTIVITY_RETENTION_MS: z.coerce
+    .number()
+    .int()
+    .min(60_000)
+    .default(6 * 60 * 60 * 1000),
   AWS_ACCESS_KEY_ID: z.string().min(1),
   AWS_REGION: z.string().min(1),
   AWS_SECRET_ACCESS_KEY: z.string().min(1),

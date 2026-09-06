@@ -13,6 +13,7 @@ import {
 } from "../../lib/errors.js";
 import { logger } from "../../lib/logger.js";
 import { joinCreatedServerRooms } from "../../socket/emit.js";
+import { refreshDemoPresence } from "./presence.js";
 import {
   cloneSandbox,
   findCommunityServerIds,
@@ -81,6 +82,8 @@ export async function provisionDemoScenario(
   }
 
   joinCreatedServerRooms(userId, scenario.serverId, scenario.channelIds);
+
+  await refreshDemoPresence();
 
   logger.info(
     { userId, servers: shapes.length + 1 },

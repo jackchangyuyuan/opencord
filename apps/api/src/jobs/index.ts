@@ -1,3 +1,4 @@
+import { config } from "../config.js";
 import {
   acquireLeadership,
   releaseLeadership,
@@ -5,6 +6,7 @@ import {
   renewLeadership,
 } from "../lib/leader-election.js";
 import { logger } from "../lib/logger.js";
+import { runAmbientActivity } from "./ambient-activity.js";
 import { ANONYMIZE_INTERVAL_MS, runGuestAnonymize } from "./guest-anonymize.js";
 import { GUEST_EXPIRY_INTERVAL_MS, runGuestExpiry } from "./guest-expiry.js";
 import { runOrphanSweep } from "./orphan-sweep.js";
@@ -29,28 +31,60 @@ export const jobs: ScheduledJob[] = [
     run: () => runGuestAnonymize(),
   },
   { name: "orphan-sweep", everyMs: NIGHTLY_MS, run: () => runOrphanSweep() },
+  {
+    name: "ambient-activity",
+    everyMs: config.AMBIENT_ACTIVITY_INTERVAL_MS,
+    run: () => runAmbientActivity(),
+  },
 ];
 
 export interface JobRunner {
   stop: () => Promise<void>;
 }
 
+export interface JobRunnerOptions {
+  renewMs?: number;
+}
+
+// The lease decides who runs the schedule; it does not fence anyone out of the
+// database. A process paused past its expiry still completes statements it has
+// already issued, so each job carries its own exclusion -- an advisory lock for
+// the ambient pass, a row lock for expiry and anonymization, a re-read of
+// references for the sweep.
 export function startJobRunner(
   schedule: readonly ScheduledJob[] = jobs,
+  options: JobRunnerOptions = {},
 ): JobRunner {
+  const renewMs = options.renewMs ?? RENEW_SECONDS * 1000;
   const lastRun = new Map<string, number>();
 
-  const state = { leader: false, stopped: false };
-
+  let leader = false;
+  let stopped = false;
+  let renewing: Promise<void> | null = null;
   let running: Promise<void> | null = null;
 
-  const runnable = (): boolean => !state.stopped && state.leader;
+  function holdLeadership(): Promise<void> {
+    renewing ??= (async () => {
+      try {
+        leader = leader ? await renewLeadership() : await acquireLeadership();
+      } catch (error) {
+        logger.warn({ err: error }, "Leader lock unavailable, skipping jobs");
+        leader = false;
+      }
+    })().finally(() => {
+      renewing = null;
+    });
+
+    return renewing;
+  }
 
   async function pass(): Promise<void> {
     for (const job of schedule) {
-      const due = (lastRun.get(job.name) ?? 0) + job.everyMs <= Date.now();
+      if (stopped || !leader) {
+        return;
+      }
 
-      if (!due || !runnable()) {
+      if ((lastRun.get(job.name) ?? 0) + job.everyMs > Date.now()) {
         continue;
       }
 
@@ -65,19 +99,11 @@ export function startJobRunner(
   }
 
   async function tick(): Promise<void> {
-    if (state.stopped) {
+    if (stopped) {
       return;
     }
 
-    try {
-      state.leader = state.leader
-        ? await renewLeadership()
-        : await acquireLeadership();
-    } catch (error) {
-      logger.warn({ err: error }, "Leader lock unavailable, skipping jobs");
-      state.leader = false;
-      return;
-    }
+    await holdLeadership();
 
     running ??= pass().finally(() => {
       running = null;
@@ -88,7 +114,7 @@ export function startJobRunner(
 
   const timer = setInterval(() => {
     void tick();
-  }, RENEW_SECONDS * 1000);
+  }, renewMs);
 
   timer.unref();
 
@@ -96,14 +122,15 @@ export function startJobRunner(
 
   return {
     stop: async () => {
-      state.stopped = true;
+      stopped = true;
       clearInterval(timer);
 
       await running;
+      await renewing;
 
-      if (state.leader) {
+      if (leader) {
         await releaseLeadership();
-        state.leader = false;
+        leader = false;
       }
     },
   };

@@ -2,6 +2,7 @@ import type { PresenceStatus } from "@opencord/shared/types";
 
 import { config } from "../config.js";
 import { redis } from "../redis.js";
+import { currentSocketServer } from "./emit.js";
 import { listServerPeerIds, listServerRoomsFor } from "./rooms.js";
 import type { AppSocket, SocketServer } from "./types.js";
 
@@ -118,15 +119,12 @@ async function announce(
   io.to(rooms).emit("presence:update", { userId, status: after });
 }
 
-export async function recordHeartbeat(
-  io: SocketServer,
-  socket: AppSocket,
+async function writeConnection(
+  userId: string,
+  connectionId: string,
   input: { status: PresenceStatus; idle: boolean },
+  now: number,
 ): Promise<void> {
-  const userId = socket.data.user.id;
-  const before = await readAggregate(userId);
-  const now = Date.now();
-
   const connection: Connection = {
     status: input.status,
     idle: input.idle,
@@ -136,11 +134,37 @@ export async function recordHeartbeat(
 
   await redis
     .multi()
-    .hset(connectionsKey(userId), socket.id, JSON.stringify(connection))
-    .zadd(SEEN_KEY, now, seenMember(userId, socket.id))
+    .hset(connectionsKey(userId), connectionId, JSON.stringify(connection))
+    .zadd(SEEN_KEY, now, seenMember(userId, connectionId))
     .exec();
+}
 
+export async function recordHeartbeat(
+  io: SocketServer,
+  socket: AppSocket,
+  input: { status: PresenceStatus; idle: boolean },
+): Promise<void> {
+  const userId = socket.data.user.id;
+  const before = await readAggregate(userId);
+
+  await writeConnection(userId, socket.id, input, Date.now());
   await announce(io, userId, before);
+}
+
+export async function recordConnection(
+  userId: string,
+  connectionId: string,
+  input: { status: PresenceStatus; idle: boolean },
+): Promise<void> {
+  const before = await readAggregate(userId);
+
+  await writeConnection(userId, connectionId, input, Date.now());
+
+  const io = currentSocketServer();
+
+  if (io !== null) {
+    await announce(io, userId, before);
+  }
 }
 
 export async function dropConnection(
@@ -159,7 +183,7 @@ export async function dropConnection(
   await announce(io, userId, before);
 }
 
-export async function countOnlineUsers(now = Date.now()): Promise<number> {
+export async function listOnlineUserIds(now = Date.now()): Promise<string[]> {
   const members = await redis.zrangebyscore(
     SEEN_KEY,
     now - SWEEP_AFTER_MS,
@@ -171,7 +195,11 @@ export async function countOnlineUsers(now = Date.now()): Promise<number> {
     users.add(member.slice(0, member.lastIndexOf(":")));
   }
 
-  return users.size;
+  return [...users];
+}
+
+export async function countOnlineUsers(now = Date.now()): Promise<number> {
+  return (await listOnlineUserIds(now)).length;
 }
 
 export async function claimStaleConnection(

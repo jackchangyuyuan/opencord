@@ -405,6 +405,7 @@ describe("guest capability parity", () => {
       join("src", "lib", "quota.ts"),
       join("src", "modules", "demo", "service.ts"),
       join("src", "modules", "dms", "service.ts"),
+      join("src", "jobs", "ambient-activity.ts"),
       join("src", "jobs", "guest-anonymize.ts"),
       join("src", "jobs", "guest-expiry.ts"),
       join("src", "db", "schema", "auth.ts"),

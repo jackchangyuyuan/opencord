@@ -26,6 +26,10 @@ export function unregisterSocketServer(io: SocketServer): void {
   }
 }
 
+export function currentSocketServer(): SocketServer | null {
+  return current;
+}
+
 export function countLocalSockets(): number {
   return current === null ? 0 : current.of("/").sockets.size;
 }
@@ -69,6 +73,13 @@ export function emitReaction(
   },
 ): void {
   current?.to(channelRoom(payload.channelId)).emit(event, payload);
+}
+
+export function emitTypingStart(payload: {
+  channelId: string;
+  userId: string;
+}): void {
+  current?.to(channelRoom(payload.channelId)).emit("typing:start", payload);
 }
 
 export function emitReadUpdate(
