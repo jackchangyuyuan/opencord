@@ -1,2 +1,2 @@
-export { test } from "./axe.js";
+export { test, type Theme, THEMES } from "./axe.js";
 export { expect } from "@playwright/test";
