@@ -11,38 +11,13 @@ import {
   roles,
   serverMembers,
 } from "../../src/db/schema/index.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
 const validationDetails = z.object({
   error: z.object({ details: z.object({ name: z.array(z.string()).min(1) }) }),
 });
-
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
-async function signUp(username: string, name: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
 
 function createServer(account: Account, name: string) {
   return request(app)
@@ -180,6 +155,70 @@ describe("POST /api/v1/servers", () => {
 
     expect(res.status).toBe(401);
     expect(res.body).toMatchObject({ error: { code: "UNAUTHORIZED" } });
+  });
+});
+
+describe("the server description", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  it("is written, read back, and cleared by sending null", async () => {
+    const ada = await signUp("ada", "Ada");
+    const created = await createServer(ada, "Analytical Engine");
+    const serverId = serverBody.parse(created.body).id;
+
+    const written = await request(app)
+      .patch(`/api/v1/servers/${serverId}`)
+      .set("Cookie", ada.cookies)
+      .send({ description: "  Where the engine is argued about  " });
+
+    expect(written.status).toBe(200);
+    expect(written.body).toMatchObject({
+      description: "Where the engine is argued about",
+    });
+
+    const emptied = await request(app)
+      .patch(`/api/v1/servers/${serverId}`)
+      .set("Cookie", ada.cookies)
+      .send({ description: "   " });
+
+    expect(emptied.status).toBe(200);
+    expect(emptied.body).toMatchObject({ description: null });
+  });
+
+  it("is left alone by a patch that does not name it", async () => {
+    const ada = await signUp("ada", "Ada");
+    const created = await createServer(ada, "Analytical Engine");
+    const serverId = serverBody.parse(created.body).id;
+
+    await request(app)
+      .patch(`/api/v1/servers/${serverId}`)
+      .set("Cookie", ada.cookies)
+      .send({ description: "Kept" });
+
+    const renamed = await request(app)
+      .patch(`/api/v1/servers/${serverId}`)
+      .set("Cookie", ada.cookies)
+      .send({ name: "Difference Engine" });
+
+    expect(renamed.body).toMatchObject({
+      name: "Difference Engine",
+      description: "Kept",
+    });
+  });
+
+  it("refuses one longer than the column allows", async () => {
+    const ada = await signUp("ada", "Ada");
+    const created = await createServer(ada, "Analytical Engine");
+    const serverId = serverBody.parse(created.body).id;
+
+    const res = await request(app)
+      .patch(`/api/v1/servers/${serverId}`)
+      .set("Cookie", ada.cookies)
+      .send({ description: "x".repeat(257) });
+
+    expect(res.status).toBe(400);
   });
 });
 

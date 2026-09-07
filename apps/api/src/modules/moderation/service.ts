@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
 import type { ServerContext } from "../../access/context.js";
-import { db } from "../../db/index.js";
+import { db, type Transaction } from "../../db/index.js";
 import { bans, serverMembers } from "../../db/schema/index.js";
 import { lockMembershipPair } from "../../lib/advisory-locks.js";
 import { writeAudit } from "../../lib/audit.js";
@@ -11,9 +11,20 @@ import {
   emitMemberEvent,
   rederiveRoomsFor,
 } from "../../socket/emit.js";
+import { lockedServerOwner } from "../members/queries.js";
 import { actorPosition, highestPositionOf } from "../roles/queries.js";
 import { requireBelowActor } from "../roles/service.js";
 import { isMember } from "./queries.js";
+
+async function requireNotOwner(
+  tx: Transaction,
+  serverId: string,
+  targetId: string,
+): Promise<void> {
+  if ((await lockedServerOwner(tx, serverId)) === targetId) {
+    throw forbidden("TARGET_IS_OWNER", "The owner is outside the hierarchy");
+  }
+}
 
 async function requireRemovable(
   context: ServerContext,
@@ -46,6 +57,8 @@ export async function kickMember(
   await requireRemovable(context, actorId, targetId);
 
   await db.transaction(async (tx) => {
+    await requireNotOwner(tx, context.server.id, targetId);
+
     await tx
       .delete(serverMembers)
       .where(
@@ -78,6 +91,8 @@ export async function banMember(
   await requireRemovable(context, actorId, targetId);
 
   await db.transaction(async (tx) => {
+    await requireNotOwner(tx, context.server.id, targetId);
+
     await lockMembershipPair(tx, context.server.id, targetId);
 
     await tx

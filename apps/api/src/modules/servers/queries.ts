@@ -1,5 +1,5 @@
-import type { Pagination } from "@opencord/shared/schemas";
-import { and, eq, gte, inArray } from "drizzle-orm";
+import type { MemberPageQuery } from "@opencord/shared/schemas";
+import { and, eq, gte, ilike, inArray, or, type SQL } from "drizzle-orm";
 
 import type { ServerContext } from "../../access/context.js";
 import { db } from "../../db/index.js";
@@ -11,11 +11,16 @@ import {
 } from "../../db/schema/index.js";
 import { signMediaUrl } from "../../lib/storage.js";
 import { type PublicRole, serializeRole } from "../roles/queries.js";
-import { type PublicUser, serializeUser } from "../users/queries.js";
+import {
+  profileSelection,
+  type PublicUser,
+  serializeUser,
+} from "../users/queries.js";
 
 export interface ServerSummary {
   id: string;
   name: string;
+  description: string | null;
   iconKey: string | null;
   iconUrl: string | null;
   ownerId: string;
@@ -25,6 +30,7 @@ export interface ServerSummary {
 export async function serializeServer(server: {
   id: string;
   name: string;
+  description: string | null;
   iconKey: string | null;
   ownerId: string;
   createdAt: Date;
@@ -32,6 +38,7 @@ export async function serializeServer(server: {
   return {
     id: server.id,
     name: server.name,
+    description: server.description,
     iconKey: server.iconKey,
     iconUrl:
       server.iconKey === null ? null : await signMediaUrl(server.iconKey, true),
@@ -47,6 +54,7 @@ export async function listServersForUser(
     .select({
       id: servers.id,
       name: servers.name,
+      description: servers.description,
       iconKey: servers.iconKey,
       ownerId: servers.ownerId,
       createdAt: servers.createdAt,
@@ -103,17 +111,67 @@ export async function isServerMember(
   return rows.length > 0;
 }
 
+function escapeLike(term: string): string {
+  return term.replaceAll(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+function matching(term: string | undefined): SQL | undefined {
+  if (term === undefined) {
+    return undefined;
+  }
+
+  const pattern = `%${escapeLike(term)}%`;
+
+  return or(ilike(users.username, pattern), ilike(users.name, pattern));
+}
+
+export async function findServerMember(
+  serverId: string,
+  userId: string,
+): Promise<ServerMemberEntry | undefined> {
+  const [row] = await db
+    .select({
+      ...profileSelection,
+      nickname: serverMembers.nickname,
+      joinedAt: serverMembers.joinedAt,
+    })
+    .from(serverMembers)
+    .innerJoin(users, eq(users.id, serverMembers.userId))
+    .where(
+      and(
+        eq(serverMembers.serverId, serverId),
+        eq(serverMembers.userId, userId),
+      ),
+    )
+    .limit(1);
+
+  if (row === undefined) {
+    return undefined;
+  }
+
+  const assignments = await db
+    .select({ roleId: memberRoles.roleId })
+    .from(memberRoles)
+    .where(
+      and(eq(memberRoles.serverId, serverId), eq(memberRoles.userId, userId)),
+    )
+    .orderBy(memberRoles.roleId);
+
+  return {
+    user: await serializeUser(row),
+    nickname: row.nickname,
+    joinedAt: row.joinedAt.toISOString(),
+    roleIds: assignments.map((assignment) => assignment.roleId),
+  };
+}
+
 export async function listServerMembers(
   serverId: string,
-  page: Pagination,
+  page: MemberPageQuery,
 ): Promise<Page<ServerMemberEntry>> {
   const rows = await db
     .select({
-      id: users.id,
-      username: users.username,
-      name: users.name,
-      image: users.image,
-      avatarObjectKey: users.avatarObjectKey,
+      ...profileSelection,
       nickname: serverMembers.nickname,
       joinedAt: serverMembers.joinedAt,
     })
@@ -125,6 +183,7 @@ export async function listServerMembers(
         page.cursor === undefined
           ? undefined
           : gte(serverMembers.userId, page.cursor),
+        matching(page.q),
       ),
     )
     .orderBy(serverMembers.userId)

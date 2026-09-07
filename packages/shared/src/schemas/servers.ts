@@ -5,6 +5,7 @@ import {
   NAME_MAX_LENGTH,
   NAME_MIN_LENGTH,
 } from "../constants/index.js";
+import { paginationSchema } from "./common.js";
 
 export const serverNameSchema = z
   .string()
@@ -35,3 +36,9 @@ export const updateServerSchema = z
   );
 
 export type UpdateServerInput = z.infer<typeof updateServerSchema>;
+
+export const memberPageSchema = paginationSchema.extend({
+  q: z.string().trim().min(1).max(NAME_MAX_LENGTH).optional(),
+});
+
+export type MemberPageQuery = z.infer<typeof memberPageSchema>;

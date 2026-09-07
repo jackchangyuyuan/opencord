@@ -3,6 +3,23 @@ import { alias } from "drizzle-orm/pg-core";
 
 import { db, type Transaction } from "../../db/index.js";
 import { memberRoles, serverMembers, servers } from "../../db/schema/index.js";
+import { notFound } from "../../lib/errors.js";
+
+// Every caller needs the owner under the lock, and a server that vanished
+// between resolving the request context and taking the lock is the same answer
+// for all of them, so the check lives here rather than at each call site.
+export async function lockedServerOwner(
+  tx: Transaction,
+  serverId: string,
+): Promise<string> {
+  const server = await lockServerForMembership(tx, serverId);
+
+  if (server === undefined) {
+    throw notFound("SERVER_NOT_FOUND", "That server does not exist");
+  }
+
+  return server.ownerId;
+}
 
 export async function isServerMember(
   serverId: string,

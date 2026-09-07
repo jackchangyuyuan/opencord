@@ -25,12 +25,12 @@ import {
   serverMemberIds,
 } from "../../socket/emit.js";
 import { createDefaultChannels } from "../channels/service.js";
+import { isServerMember, lockedServerOwner } from "../members/queries.js";
 import {
   discardReplacedUpload,
   requireOwnedUpload,
 } from "../uploads/associate.js";
 import {
-  isServerMember,
   serializeServer,
   serializeServerDetail,
   type ServerDetail,
@@ -141,18 +141,27 @@ export async function transferOwnership(
     throw forbidden();
   }
 
-  if (targetUserId === context.server.ownerId) {
-    throw conflict("ALREADY_OWNER", "That user already owns this server");
-  }
-
-  if (!(await isServerMember(context.server.id, targetUserId))) {
-    throw notFound(
-      "MEMBER_NOT_FOUND",
-      "That user is not a member of this server",
-    );
-  }
-
+  // The lock serializes this against every other ownership or membership
+  // change on the server, so the checks below decide on the row as it is now
+  // rather than as the request context read it.
   const detail = await db.transaction(async (tx) => {
+    const ownerId = await lockedServerOwner(tx, context.server.id);
+
+    if (ownerId !== actorId) {
+      throw forbidden();
+    }
+
+    if (targetUserId === ownerId) {
+      throw conflict("ALREADY_OWNER", "That user already owns this server");
+    }
+
+    if (!(await isServerMember(context.server.id, targetUserId, tx))) {
+      throw notFound(
+        "MEMBER_NOT_FOUND",
+        "That user is not a member of this server",
+      );
+    }
+
     const [server] = await tx
       .update(servers)
       .set({ ownerId: targetUserId })
@@ -187,18 +196,20 @@ export async function leaveServer(
   context: ServerContext,
   userId: string,
 ): Promise<void> {
-  if (context.server.ownerId === userId) {
-    throw ownerMustTransfer();
-  }
+  await db.transaction(async (tx) => {
+    if ((await lockedServerOwner(tx, context.server.id)) === userId) {
+      throw ownerMustTransfer();
+    }
 
-  await db
-    .delete(serverMembers)
-    .where(
-      and(
-        eq(serverMembers.serverId, context.server.id),
-        eq(serverMembers.userId, userId),
-      ),
-    );
+    await tx
+      .delete(serverMembers)
+      .where(
+        and(
+          eq(serverMembers.serverId, context.server.id),
+          eq(serverMembers.userId, userId),
+        ),
+      );
+  });
 
   emitMemberEvent("member:leave", context.server.id, userId);
 

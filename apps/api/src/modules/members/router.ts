@@ -1,12 +1,13 @@
 import { Permissions } from "@opencord/shared/permissions";
-import { paginationSchema } from "@opencord/shared/schemas";
+import { memberPageSchema } from "@opencord/shared/schemas";
 import { Router } from "express";
 import { z } from "zod";
 
+import { notFound } from "../../lib/errors.js";
 import { requireServerPermission } from "../../middleware/permissions.js";
 import { validate } from "../../middleware/validate.js";
 import { kickMember } from "../moderation/service.js";
-import { listServerMembers } from "../servers/queries.js";
+import { findServerMember, listServerMembers } from "../servers/queries.js";
 import { leaveServer } from "../servers/service.js";
 import { assignRole, unassignRole } from "./service.js";
 
@@ -25,10 +26,28 @@ export const serverMembersRouter = Router({ mergeParams: true });
 
 serverMembersRouter.get(
   "/",
-  validate({ params: serverParamsSchema, query: paginationSchema }),
+  validate({ params: serverParamsSchema, query: memberPageSchema }),
   requireServerPermission(),
   async (req, res) => {
     res.json(await listServerMembers(req.server.server.id, req.query));
+  },
+);
+
+serverMembersRouter.get(
+  "/:userId",
+  validate({ params: memberParamsSchema }),
+  requireServerPermission(),
+  async (req, res) => {
+    const member = await findServerMember(
+      req.server.server.id,
+      req.params.userId,
+    );
+
+    if (member === undefined) {
+      throw notFound("MEMBER_NOT_FOUND", "That person is not in this server");
+    }
+
+    res.json(member);
   },
 );
 

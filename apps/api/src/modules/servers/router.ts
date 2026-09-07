@@ -11,11 +11,7 @@ import { requireServerPermission } from "../../middleware/permissions.js";
 import { createResourceRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
 import { listAuditLog } from "./audit-log.js";
-import {
-  listServerMembers,
-  listServersForUser,
-  serializeServerDetail,
-} from "./queries.js";
+import { listServersForUser, serializeServerDetail } from "./queries.js";
 import {
   createServer,
   deleteServer,
@@ -48,15 +44,6 @@ serversRouter.get(
   requireServerPermission(),
   async (req, res) => {
     res.json(await serializeServerDetail(req.server));
-  },
-);
-
-serversRouter.get(
-  "/:serverId/members",
-  validate({ params: serverParamsSchema, query: paginationSchema }),
-  requireServerPermission(),
-  async (req, res) => {
-    res.json(await listServerMembers(req.server.server.id, req.query));
   },
 );
 

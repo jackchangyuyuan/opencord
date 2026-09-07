@@ -12,35 +12,11 @@ import {
   serverMembers,
   servers,
 } from "../../src/db/schema/index.js";
+import { lockedServerOwner } from "../../src/modules/members/queries.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
-
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
 
 async function createServer(account: Account, name: string): Promise<string> {
   const res = await request(app)
@@ -274,5 +250,103 @@ describe("DELETE /api/v1/servers/:serverId", () => {
 
     expect(res.status).toBe(403);
     expect(await db.select().from(servers)).toHaveLength(1);
+  });
+});
+
+describe("ownership and membership changing at the same time", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  function kick(actor: Account, serverId: string, userId: string) {
+    return request(app)
+      .delete(`/api/v1/servers/${serverId}/members/${userId}`)
+      .set("Cookie", actor.cookies);
+  }
+
+  it("refuses to act on a server that went away under the lock", async () => {
+    const ada = await signUp("ada");
+    const serverId = await createServer(ada, "Analytical Engine");
+
+    await db.delete(servers).where(eq(servers.id, serverId));
+
+    await expect(
+      db.transaction((tx) => lockedServerOwner(tx, serverId)),
+    ).rejects.toMatchObject({ code: "SERVER_NOT_FOUND" });
+  });
+
+  it("never hands the server to somebody it is removing", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+    const serverId = await createServer(ada, "Analytical Engine");
+
+    await join(serverId, grace);
+
+    const [transferred, kicked] = await Promise.all([
+      transfer(ada, serverId, grace.id),
+      kick(ada, serverId, grace.id),
+    ]);
+
+    const [owner] = await db
+      .select({ ownerId: servers.ownerId })
+      .from(servers)
+      .where(eq(servers.id, serverId));
+
+    const members = (await countMembers(serverId)).map((row) => row.userId);
+
+    expect(members).toContain(owner?.ownerId);
+    expect([transferred.status, kicked.status]).not.toEqual([200, 204]);
+  });
+
+  it("never lets the incoming owner leave on their way in", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+    const serverId = await createServer(ada, "Analytical Engine");
+
+    await join(serverId, grace);
+
+    await Promise.all([
+      transfer(ada, serverId, grace.id),
+      leave(grace, serverId),
+    ]);
+
+    const [owner] = await db
+      .select({ ownerId: servers.ownerId })
+      .from(servers)
+      .where(eq(servers.id, serverId));
+
+    const members = (await countMembers(serverId)).map((row) => row.userId);
+
+    expect(members).toContain(owner?.ownerId);
+  });
+
+  it("lets only one of two simultaneous transfers take effect", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+    const hopper = await signUp("hopper");
+    const serverId = await createServer(ada, "Analytical Engine");
+
+    await join(serverId, grace);
+    await join(serverId, hopper);
+
+    const answers = await Promise.all([
+      transfer(ada, serverId, grace.id),
+      transfer(ada, serverId, hopper.id),
+    ]);
+
+    const [owner] = await db
+      .select({ ownerId: servers.ownerId })
+      .from(servers)
+      .where(eq(servers.id, serverId));
+
+    expect(answers.filter((res) => res.status === 200)).toHaveLength(1);
+    expect([grace.id, hopper.id]).toContain(owner?.ownerId);
+
+    const transfers = await db
+      .select({ id: auditLog.id })
+      .from(auditLog)
+      .where(eq(auditLog.action, "server_transfer"));
+
+    expect(transfers).toHaveLength(1);
   });
 });
