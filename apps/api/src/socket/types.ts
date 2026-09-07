@@ -2,9 +2,9 @@ import type {
   ClientToServerEvents,
   ServerToClientEvents,
 } from "@opencord/shared/events";
-import { type DefaultEventsMap, Server, type Socket } from "socket.io";
+import type { DefaultEventsMap, Server, Socket } from "socket.io";
 
-import { type SessionUser } from "../auth.js";
+import type { SessionUser } from "../auth.js";
 
 export interface SocketData {
   user: SessionUser;

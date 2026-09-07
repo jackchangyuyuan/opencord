@@ -1,5 +1,16 @@
 export type PresenceStatus = "online" | "idle" | "dnd" | "offline";
 
+export interface PublicUser {
+  id: string;
+  username: string;
+  name: string;
+  avatarUrl: string | null;
+  description: string | null;
+  customStatus: string | null;
+  customStatusEmoji: string | null;
+  isGuest: boolean;
+}
+
 export interface MessagePreview {
   id: string;
   authorId: string;

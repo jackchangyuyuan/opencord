@@ -14,6 +14,7 @@ import { config } from "../../src/config.js";
 import { createSocketServer } from "../../src/socket/index.js";
 import { countOnlineUsers, SWEEP_AFTER_MS } from "../../src/socket/presence.js";
 import type { SocketServer } from "../../src/socket/types.js";
+import { type Account, cookieHeader, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -23,43 +24,12 @@ interface Instance {
   origin: string;
 }
 
-interface Account {
-  id: string;
-  cookie: string;
-  cookies: string[];
-}
-
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
-
 const statsBody = z.object({
   instanceId: z.string(),
   sockets: z.number(),
   onlineUsers: z.number(),
   uptimeSeconds: z.number(),
 });
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  const cookies = res.get("Set-Cookie") ?? [];
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookie: cookies.flatMap((cookie) => cookie.split(";", 1)).join("; "),
-    cookies,
-  };
-}
 
 async function startInstance(): Promise<Instance> {
   const httpServer = createServer(app);
@@ -101,7 +71,7 @@ describe("GET /api/v1/stats", () => {
   async function open(account: Account): Promise<Client> {
     const client: Client = connect(instance.origin, {
       autoConnect: false,
-      extraHeaders: { cookie: account.cookie },
+      extraHeaders: { cookie: cookieHeader(account.cookies) },
       reconnection: false,
       transports: ["websocket"],
     });

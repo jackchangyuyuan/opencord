@@ -27,6 +27,10 @@ function dm(id: string, name: string, hasUnread: boolean): DmEntry {
       username: name.toLowerCase(),
       name,
       avatarUrl: null,
+      description: null,
+      customStatus: null,
+      customStatusEmoji: null,
+      isGuest: false,
     },
   };
 }

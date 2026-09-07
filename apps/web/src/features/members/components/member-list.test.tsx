@@ -45,7 +45,16 @@ function member(
   nickname: string | null = null,
 ): ServerMemberEntry {
   return {
-    user: { id, username: name.toLowerCase(), name, avatarUrl: null },
+    user: {
+      id,
+      username: name.toLowerCase(),
+      name,
+      avatarUrl: null,
+      description: null,
+      customStatus: null,
+      customStatusEmoji: null,
+      isGuest: false,
+    },
     nickname,
     joinedAt: "2026-09-01T00:00:00.000Z",
     roleIds,
@@ -68,7 +77,16 @@ const SERVER_DETAIL = {
   roles: [],
 };
 
-const ME = { id: "u-me", username: "me", name: "Me", avatarUrl: null };
+const ME = {
+  id: "u-me",
+  username: "me",
+  name: "Me",
+  avatarUrl: null,
+  description: null,
+  customStatus: null,
+  customStatusEmoji: null,
+  isGuest: false,
+};
 
 function stubApi(members: ServerMemberEntry[], roles: PublicRole[]) {
   const fetchMock = vi.fn<typeof fetch>().mockImplementation((input) => {

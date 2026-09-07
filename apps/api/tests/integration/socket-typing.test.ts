@@ -18,6 +18,8 @@ import {
 } from "vitest";
 import { z } from "zod";
 
+import { type Account, cookieHeader, signUp } from "../helpers/accounts.js";
+
 const namespace = vi.hoisted(() => {
   const value = `rl-typing-${Math.random().toString(36).slice(2)}`;
 
@@ -43,39 +45,10 @@ interface Instance {
   origin: string;
 }
 
-interface Account {
-  id: string;
-  cookie: string;
-  cookies: string[];
-}
-
-const password = "correct horse battery staple";
 const SETTLE_MS = 300;
 
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
 const channelList = z.array(z.object({ id: z.string() }));
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  const cookies = res.get("Set-Cookie") ?? [];
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookie: cookies.flatMap((cookie) => cookie.split(";", 1)).join("; "),
-    cookies,
-  };
-}
 
 async function createServerWithChannel(
   account: Account,
@@ -147,7 +120,7 @@ describe("typing indicators pass all three gates (S-9, SPEC 8.4)", () => {
   async function open(account: Account): Promise<Client> {
     const client: Client = connect(instance.origin, {
       autoConnect: false,
-      extraHeaders: { cookie: account.cookie },
+      extraHeaders: { cookie: cookieHeader(account.cookies) },
       reconnection: false,
       transports: ["websocket"],
     });

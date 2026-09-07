@@ -35,7 +35,16 @@ const ROLES: PublicRole[] = [
 
 function member(id: string, roleIds: string[]): ServerMemberEntry {
   return {
-    user: { id, username: id, name: id, avatarUrl: null },
+    user: {
+      id,
+      username: id,
+      name: id,
+      avatarUrl: null,
+      description: null,
+      customStatus: null,
+      customStatusEmoji: null,
+      isGuest: false,
+    },
     nickname: null,
     joinedAt: "2026-09-01T00:00:00.000Z",
     roleIds,

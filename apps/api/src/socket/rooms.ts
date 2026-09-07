@@ -1,8 +1,9 @@
 import { and, eq, inArray, ne } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 import { resolveAccessibleChannels } from "../access/channels.js";
 import { db } from "../db/index.js";
-import { channels, serverMembers } from "../db/schema/index.js";
+import { channelMembers, channels, serverMembers } from "../db/schema/index.js";
 import type { AppSocket, SocketServer } from "./types.js";
 
 export function channelRoom(channelId: string): string {
@@ -32,7 +33,7 @@ export async function listServerMemberIds(serverId: string): Promise<string[]> {
   return rows.map((row) => row.userId);
 }
 
-export async function listServerRoomsFor(userId: string): Promise<string[]> {
+async function listServerRoomsFor(userId: string): Promise<string[]> {
   const memberships = await db
     .select({ serverId: serverMembers.serverId })
     .from(serverMembers)
@@ -41,7 +42,7 @@ export async function listServerRoomsFor(userId: string): Promise<string[]> {
   return memberships.map((membership) => serverRoom(membership.serverId));
 }
 
-export async function listServerPeerIds(userId: string): Promise<string[]> {
+async function listServerPeerIds(userId: string): Promise<string[]> {
   const memberships = await db
     .select({ serverId: serverMembers.serverId })
     .from(serverMembers)
@@ -64,6 +65,40 @@ export async function listServerPeerIds(userId: string): Promise<string[]> {
     );
 
   return rows.map((row) => row.userId);
+}
+
+export async function listDmCounterpartIds(userId: string): Promise<string[]> {
+  const mine = alias(channelMembers, "mine");
+  const theirs = alias(channelMembers, "theirs");
+
+  const rows = await db
+    .selectDistinct({ userId: theirs.userId })
+    .from(mine)
+    .innerJoin(
+      theirs,
+      and(eq(theirs.channelId, mine.channelId), ne(theirs.userId, mine.userId)),
+    )
+    .where(eq(mine.userId, userId));
+
+  return rows.map((row) => row.userId);
+}
+
+export async function listUserAudienceRooms(userId: string): Promise<string[]> {
+  const [servers, counterparts] = await Promise.all([
+    listServerRoomsFor(userId),
+    listDmCounterpartIds(userId),
+  ]);
+
+  return [...new Set([...servers, ...counterparts.map(userRoom)])];
+}
+
+export async function listPresencePeerIds(userId: string): Promise<string[]> {
+  const [peers, counterparts] = await Promise.all([
+    listServerPeerIds(userId),
+    listDmCounterpartIds(userId),
+  ]);
+
+  return [...new Set([...peers, ...counterparts])];
 }
 
 export async function resolveMembershipRooms(

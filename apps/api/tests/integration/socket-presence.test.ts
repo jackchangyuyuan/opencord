@@ -23,6 +23,7 @@ import {
   sweepPresence,
 } from "../../src/socket/presence.js";
 import type { SocketServer } from "../../src/socket/types.js";
+import { type Account, cookieHeader, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -32,39 +33,10 @@ interface Instance {
   origin: string;
 }
 
-const password = "correct horse battery staple";
 const SETTLE_TIMEOUT_MS = 3000;
 const SETTLE_POLL_MS = 25;
 
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
-
-interface Account {
-  id: string;
-  cookie: string;
-  cookies: string[];
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  const cookies = res.get("Set-Cookie") ?? [];
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookie: cookies.flatMap((cookie) => cookie.split(";", 1)).join("; "),
-    cookies,
-  };
-}
 
 async function startInstance(): Promise<Instance> {
   const httpServer = createServer(app);
@@ -130,7 +102,7 @@ describe("presence aggregation across instances", () => {
   async function open(instance: Instance, account: Account): Promise<Client> {
     const client: Client = connect(instance.origin, {
       autoConnect: false,
-      extraHeaders: { cookie: account.cookie },
+      extraHeaders: { cookie: cookieHeader(account.cookies) },
       reconnection: false,
       transports: ["websocket"],
     });
@@ -232,6 +204,130 @@ describe("presence aggregation across instances", () => {
       { userId: ada.id, status: "online" },
       { userId: ada.id, status: "offline" },
     ]);
+  });
+
+  it("broadcasts to a direct-message counterpart who shares no server", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+
+    const opened = await request(app)
+      .post("/api/v1/dms")
+      .set("Cookie", ada.cookies)
+      .send({ recipientId: grace.id });
+
+    expect(opened.status).toBe(201);
+
+    const watcher = await open(one, grace);
+    const seen: { userId: string; status: PresenceStatus }[] = [];
+
+    watcher.on("presence:update", (payload) => {
+      seen.push(payload);
+    });
+
+    const adaClient = await open(two, ada);
+
+    await settle(ada.id, "online");
+    await sleep(SETTLE_POLL_MS * 4);
+
+    expect(seen.filter((event) => event.userId === ada.id)).toEqual([
+      { userId: ada.id, status: "online" },
+    ]);
+
+    adaClient.close();
+  });
+
+  it("tells a joining socket about a counterpart already online", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+
+    await request(app)
+      .post("/api/v1/dms")
+      .set("Cookie", ada.cookies)
+      .send({ recipientId: grace.id });
+
+    const early = await open(one, ada);
+
+    early.emit("presence:heartbeat", { status: "dnd", idle: false });
+
+    await settle(ada.id, "dnd");
+
+    const later: Client = connect(two.origin, {
+      autoConnect: false,
+      extraHeaders: { cookie: cookieHeader(grace.cookies) },
+      reconnection: false,
+      transports: ["websocket"],
+    });
+
+    clients.push(later);
+
+    const snapshot = new Promise<{ userId: string; status: PresenceStatus }>(
+      (resolve) => {
+        later.on("presence:update", resolve);
+      },
+    );
+
+    later.connect();
+
+    expect(await snapshot).toEqual({ userId: ada.id, status: "dnd" });
+  });
+
+  it("announces a profile edit to the servers and the conversations", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+
+    await request(app)
+      .post("/api/v1/dms")
+      .set("Cookie", ada.cookies)
+      .send({ recipientId: grace.id });
+
+    const watcher = await open(one, grace);
+    const own = await open(two, ada);
+
+    const seen: { userId: string }[] = [];
+    const ownTab: { userId: string }[] = [];
+
+    watcher.on("user:update", (payload) => {
+      seen.push(payload);
+    });
+
+    own.on("user:update", (payload) => {
+      ownTab.push(payload);
+    });
+
+    const saved = await request(app)
+      .patch("/api/v1/users/@me")
+      .set("Cookie", ada.cookies)
+      .send({ customStatus: "shipping bugs" });
+
+    expect(saved.status).toBe(200);
+
+    await sleep(SETTLE_POLL_MS * 8);
+
+    expect(seen).toEqual([{ userId: ada.id }]);
+    expect(ownTab).toEqual([{ userId: ada.id }]);
+  });
+
+  it("keeps a profile edit away from a stranger", async () => {
+    const ada = await signUp("ada");
+    const alan = await signUp("alan");
+
+    const stranger = await open(one, alan);
+    const seen: { userId: string }[] = [];
+
+    stranger.on("user:update", (payload) => {
+      seen.push(payload);
+    });
+
+    await open(two, ada);
+
+    await request(app)
+      .patch("/api/v1/users/@me")
+      .set("Cookie", ada.cookies)
+      .send({ description: "nobody else should hear this" });
+
+    await sleep(SETTLE_POLL_MS * 8);
+
+    expect(seen).toEqual([]);
   });
 
   it("drops a malformed heartbeat without touching the hash", async () => {
@@ -336,7 +432,7 @@ describe("presence aggregation across instances", () => {
 
     const late: Client = connect(two.origin, {
       autoConnect: false,
-      extraHeaders: { cookie: grace.cookie },
+      extraHeaders: { cookie: cookieHeader(grace.cookies) },
       reconnection: false,
       transports: ["websocket"],
     });

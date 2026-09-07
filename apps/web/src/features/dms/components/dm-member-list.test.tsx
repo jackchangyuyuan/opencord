@@ -8,8 +8,26 @@ import { usePresence } from "@/stores/presence";
 import { DmMemberList } from "./dm-member-list";
 
 const PARTICIPANTS: PublicUser[] = [
-  { id: "u-ada", username: "ada", name: "Ada Lovelace", avatarUrl: null },
-  { id: "u-grace", username: "grace", name: "Grace Hopper", avatarUrl: null },
+  {
+    id: "u-ada",
+    username: "ada",
+    name: "Ada Lovelace",
+    avatarUrl: null,
+    description: null,
+    customStatus: null,
+    customStatusEmoji: null,
+    isGuest: false,
+  },
+  {
+    id: "u-grace",
+    username: "grace",
+    name: "Grace Hopper",
+    avatarUrl: null,
+    description: null,
+    customStatus: null,
+    customStatusEmoji: null,
+    isGuest: false,
+  },
 ];
 
 function stubFetch(body: unknown, status = 200) {

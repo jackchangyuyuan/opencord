@@ -23,6 +23,10 @@ function seed(everyonePermissions: number) {
     username: "ada",
     name: "Ada",
     avatarUrl: null,
+    description: null,
+    customStatus: null,
+    customStatusEmoji: null,
+    isGuest: false,
   });
 
   client.setQueryData(channelQuery(CHANNEL_ID).queryKey, {

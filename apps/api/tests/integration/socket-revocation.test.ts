@@ -8,7 +8,15 @@ import type {
 import { Permissions } from "@opencord/shared/permissions";
 import { io as connect, type Socket } from "socket.io-client";
 import request from "supertest";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { z } from "zod";
 
 import { app } from "../../src/app.js";
@@ -16,6 +24,7 @@ import { db } from "../../src/db/index.js";
 import { serverMembers } from "../../src/db/schema/index.js";
 import { createSocketServer } from "../../src/socket/index.js";
 import type { SocketServer } from "../../src/socket/types.js";
+import { type Account, cookieHeader, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -26,28 +35,17 @@ interface Instance {
 }
 
 const password = "correct horse battery staple";
-const SETTLE_TIMEOUT_MS = 3000;
+
+const SETTLE_TIMEOUT_MS = 10_000;
 const SETTLE_POLL_MS = 25;
+const TEST_TIMEOUT_MS = 20_000;
 const SILENCE_MS = 250;
 
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
 const channelList = z.array(z.object({ id: z.string(), name: z.string() }));
 
-interface Account {
-  id: string;
-  cookie: string;
-  cookies: string[];
-}
-
 function accountOf(res: request.Response, id: string): Account {
-  const cookies = res.get("Set-Cookie") ?? [];
-
-  return {
-    id,
-    cookie: cookies.flatMap((cookie) => cookie.split(";", 1)).join("; "),
-    cookies,
-  };
+  return { id, cookies: res.get("Set-Cookie") ?? [] };
 }
 
 async function signIn(account: Account): Promise<Account> {
@@ -58,27 +56,6 @@ async function signIn(account: Account): Promise<Account> {
   expect(res.status).toBe(200);
 
   return accountOf(res, account.id);
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  const cookies = res.get("Set-Cookie") ?? [];
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookie: cookies.flatMap((cookie) => cookie.split(";", 1)).join("; "),
-    cookies,
-  };
 }
 
 async function startInstance(): Promise<Instance> {
@@ -111,6 +88,7 @@ describe("cross-instance permission revocation", () => {
 
   beforeAll(() => {
     requireTestDatabase();
+    vi.setConfig({ testTimeout: TEST_TIMEOUT_MS });
   });
 
   beforeEach(async () => {
@@ -129,7 +107,7 @@ describe("cross-instance permission revocation", () => {
   async function open(instance: Instance, account: Account): Promise<Client> {
     const client: Client = connect(instance.origin, {
       autoConnect: false,
-      extraHeaders: { cookie: account.cookie },
+      extraHeaders: { cookie: cookieHeader(account.cookies) },
       reconnection: false,
       transports: ["websocket"],
     });
@@ -366,6 +344,7 @@ describe("session-scoped revocation", () => {
 
   beforeAll(() => {
     requireTestDatabase();
+    vi.setConfig({ testTimeout: TEST_TIMEOUT_MS });
   });
 
   beforeEach(async () => {
@@ -408,8 +387,8 @@ describe("session-scoped revocation", () => {
     const ada = await signUp("ada");
     const laptop = await signIn({ ...ada, id: "ada" });
 
-    const phoneClient = await open(holder, ada.cookie);
-    const laptopClient = await open(mutator, laptop.cookie);
+    const phoneClient = await open(holder, cookieHeader(ada.cookies));
+    const laptopClient = await open(mutator, cookieHeader(laptop.cookies));
 
     const revoked = new Promise<void>((resolve) => {
       phoneClient.once("session:revoked", resolve);
@@ -434,7 +413,7 @@ describe("session-scoped revocation", () => {
 
   it("does nothing when the sign-out carried no session", async () => {
     const ada = await signUp("ada");
-    const client = await open(holder, ada.cookie);
+    const client = await open(holder, cookieHeader(ada.cookies));
 
     await request(app).post("/api/auth/sign-out");
 

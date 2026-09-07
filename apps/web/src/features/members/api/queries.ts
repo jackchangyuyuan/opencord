@@ -1,13 +1,9 @@
+import type { PublicUser } from "@opencord/shared/types";
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 
 import { api } from "@/lib/api-client";
 
-export interface PublicUser {
-  id: string;
-  username: string;
-  name: string;
-  avatarUrl: string | null;
-}
+export type { PublicUser };
 
 export interface ServerMemberEntry {
   user: PublicUser;

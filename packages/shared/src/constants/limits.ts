@@ -3,6 +3,12 @@ export const NAME_MAX_LENGTH = 100;
 
 export const CHANNEL_TOPIC_MAX_LENGTH = 1024;
 
+export const DESCRIPTION_MAX_LENGTH = 256;
+
+export const CUSTOM_STATUS_MAX_LENGTH = 128;
+
+export const CUSTOM_STATUS_EMOJI_MAX_LENGTH = 16;
+
 export const MESSAGE_MIN_LENGTH = 1;
 export const MESSAGE_MAX_LENGTH = 2000;
 

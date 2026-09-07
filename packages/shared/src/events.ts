@@ -36,6 +36,7 @@ export interface ServerToClientEvents {
   "channel:delete": (p: { serverId: string; channelId: string }) => void;
   "server:update": (p: { serverId: string }) => void;
   "server:delete": (p: { serverId: string }) => void;
+  "user:update": (p: { userId: string }) => void;
   "member:join": (p: { serverId: string; userId: string }) => void;
   "member:leave": (p: { serverId: string; userId: string }) => void;
   "role:update": (p: { serverId: string }) => void;

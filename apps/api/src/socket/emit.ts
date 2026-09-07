@@ -1,10 +1,12 @@
 import type { Message } from "@opencord/shared/types";
 
+import { logger } from "../lib/logger.js";
 import {
   channelRoom,
   disconnectUser,
   joinServerRooms,
   listServerMemberIds,
+  listUserAudienceRooms,
   listViewableChannelRooms,
   rederiveRooms,
   revokeSession,
@@ -120,6 +122,20 @@ export function emitMemberEvent(
   current?.to(serverRoom(serverId)).emit(event, { serverId, userId });
 }
 
+export async function emitUserUpdate(userId: string): Promise<void> {
+  if (current === null) {
+    return;
+  }
+
+  try {
+    const rooms = await listUserAudienceRooms(userId);
+
+    current.to([...rooms, userRoom(userId)]).emit("user:update", { userId });
+  } catch (error) {
+    logger.error({ err: error, userId }, "Announcing a profile change failed");
+  }
+}
+
 export function emitRoleUpdate(serverId: string): void {
   current?.to(serverRoom(serverId)).emit("role:update", { serverId });
 }
@@ -157,6 +173,19 @@ export function joinCreatedServerRooms(
   }
 
   joinServerRooms(current, userId, serverId, channelIds);
+}
+
+export function joinDmRoom(
+  channelId: string,
+  userIds: readonly string[],
+): void {
+  if (current === null) {
+    return;
+  }
+
+  for (const userId of new Set(userIds)) {
+    current.in(userRoom(userId)).socketsJoin(channelRoom(channelId));
+  }
 }
 
 export function serverMemberIds(serverId: string): Promise<string[]> {

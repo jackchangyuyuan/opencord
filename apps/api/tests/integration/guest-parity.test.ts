@@ -390,7 +390,9 @@ describe("guest capability parity", () => {
       ...sourceFiles(join("src", "modules")).filter(
         (path) => !path.includes(join("modules", "demo")),
       ),
-    ].filter((path) => !path.includes(join("modules", "dms")));
+    ]
+      .filter((path) => !path.includes(join("modules", "dms")))
+      .filter((path) => path !== join("src", "modules", "users", "queries.ts"));
 
     const offenders = authorizationPaths.filter((path) =>
       /isAnonymous|is_anonymous/.test(readFileSync(path, "utf8")),
@@ -409,6 +411,7 @@ describe("guest capability parity", () => {
       join("src", "jobs", "guest-anonymize.ts"),
       join("src", "jobs", "guest-expiry.ts"),
       join("src", "db", "schema", "auth.ts"),
+      join("src", "modules", "users", "queries.ts"),
     ];
 
     const readers = sourceFiles("src").filter((path) =>

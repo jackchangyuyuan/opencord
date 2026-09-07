@@ -3,7 +3,7 @@ import type { PresenceStatus } from "@opencord/shared/types";
 import { config } from "../config.js";
 import { redis } from "../redis.js";
 import { currentSocketServer } from "./emit.js";
-import { listServerPeerIds, listServerRoomsFor } from "./rooms.js";
+import { listPresencePeerIds, listUserAudienceRooms } from "./rooms.js";
 import type { AppSocket, SocketServer } from "./types.js";
 
 export const SWEEP_AFTER_MS = 90_000;
@@ -110,7 +110,7 @@ async function announce(
     return;
   }
 
-  const rooms = await listServerRoomsFor(userId);
+  const rooms = await listUserAudienceRooms(userId);
 
   if (rooms.length === 0) {
     return;
@@ -242,7 +242,7 @@ export async function sweepPresence(
 }
 
 export async function sendPresenceSnapshot(socket: AppSocket): Promise<void> {
-  const peers = await listServerPeerIds(socket.data.user.id);
+  const peers = await listPresencePeerIds(socket.data.user.id);
 
   if (peers.length === 0) {
     return;

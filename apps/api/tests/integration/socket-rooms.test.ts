@@ -21,44 +21,16 @@ import {
 } from "../../src/db/schema/index.js";
 import { revalidateSessions } from "../../src/socket/auth.js";
 import { createSocketServer } from "../../src/socket/index.js";
+import { type Account, cookieHeader, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 
-const password = "correct horse battery staple";
 const SETTLE_TIMEOUT_MS = 2000;
 const SETTLE_POLL_MS = 25;
 
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
 const channelList = z.array(z.object({ id: z.string(), name: z.string() }));
-
-interface Account {
-  id: string;
-  cookie: string;
-  cookies: string[];
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  const cookies = res.get("Set-Cookie") ?? [];
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookie: cookies.flatMap((cookie) => cookie.split(";", 1)).join("; "),
-    cookies,
-  };
-}
 
 async function createServerFor(
   account: Account,
@@ -123,7 +95,7 @@ describe("socket rooms", () => {
   async function open(account: Account): Promise<Client> {
     const client: Client = connect(origin, {
       autoConnect: false,
-      extraHeaders: { cookie: account.cookie },
+      extraHeaders: { cookie: cookieHeader(account.cookies) },
       reconnection: false,
       transports: ["websocket"],
     });

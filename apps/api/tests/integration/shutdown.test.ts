@@ -245,7 +245,7 @@ describe("SIGTERM drains the instance that received it", () => {
           return { child, origin };
         }
       } catch {
-        /* not listening yet */
+        // Not listening yet.
       }
 
       if (Date.now() > deadline) {
