@@ -18,6 +18,7 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
         render={
           <Button aria-label="Add reaction" size="icon-xs" variant="ghost" />
         }
+        tabIndex={-1}
       >
         <SmilePlus />
       </PopoverTrigger>

@@ -68,6 +68,13 @@ export function AppShell({ children }: { children?: ReactNode }) {
   return (
     <TooltipProvider>
       <div className="flex h-svh flex-col bg-background text-foreground">
+        <a
+          className="sr-only rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50"
+          href="#main"
+        >
+          Skip to the conversation
+        </a>
+
         <header className="flex shrink-0 items-center gap-3 border-b px-3 py-2">
           {isMobile ? <MobileDrawer>{navigation}</MobileDrawer> : null}
           <h1 className="text-sm font-semibold">OpenCord</h1>
@@ -84,7 +91,11 @@ export function AppShell({ children }: { children?: ReactNode }) {
         <div className="flex min-h-0 flex-1">
           {isMobile ? null : navigation}
 
-          <main className="flex min-h-0 flex-1 flex-col">
+          <main
+            className="flex min-h-0 flex-1 flex-col"
+            id="main"
+            tabIndex={-1}
+          >
             <h2 className="sr-only">Conversation</h2>
             {children}
           </main>

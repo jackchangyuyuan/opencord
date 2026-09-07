@@ -26,6 +26,7 @@ export function ReactionBar({
                   onToggle(reaction.emoji, !reaction.me);
                 }}
                 size="xs"
+                tabIndex={-1}
                 variant={reaction.me ? "secondary" : "ghost"}
               >
                 <span aria-hidden="true">{reaction.emoji}</span>

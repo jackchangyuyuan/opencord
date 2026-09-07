@@ -166,7 +166,7 @@ export function MemberList({ serverId }: { serverId: string | undefined }) {
                     <PresenceDot status={statusOf(presence, member.user.id)} />
                   </span>
                 </span>
-                <span className="flex-1 truncate text-sm text-[color:var(--member-color,var(--color-foreground))]">
+                <span className="role-color flex-1 truncate text-sm">
                   {displayName(member)}
                 </span>
                 {member.user.id === actor.id ? null : (

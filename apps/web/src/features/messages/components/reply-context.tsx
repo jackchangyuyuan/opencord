@@ -28,6 +28,7 @@ export function ReplyContext({
   return (
     <button
       className="flex w-full min-w-0 items-center gap-1.5 rounded px-1 text-left text-xs text-muted-foreground hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none"
+      tabIndex={-1}
       data-slot="reply-context"
       disabled={removed}
       onClick={() => {

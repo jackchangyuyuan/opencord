@@ -64,6 +64,8 @@ export function MessageRow({
         local?.status === "failed" && "opacity-100",
       )}
       data-local-status={local?.status}
+      data-message-row
+      tabIndex={-1}
     >
       <div className="w-9 shrink-0">
         {grouped ? null : (
@@ -111,6 +113,7 @@ export function MessageRow({
                   openModal("claim-account");
                 }}
                 size="xs"
+                tabIndex={-1}
                 variant="ghost"
               >
                 Save my account
@@ -119,6 +122,7 @@ export function MessageRow({
               <Button
                 onClick={() => onRetry?.(message)}
                 size="xs"
+                tabIndex={-1}
                 variant="ghost"
               >
                 Retry
@@ -127,6 +131,7 @@ export function MessageRow({
             <Button
               onClick={() => onDiscard?.(message)}
               size="xs"
+              tabIndex={-1}
               variant="ghost"
             >
               Delete

@@ -15,6 +15,7 @@ export function MessageAttachments({
         <li key={file.id}>
           <a
             className="block max-w-xs rounded-lg focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none"
+            tabIndex={-1}
             href={file.url}
             rel="noreferrer"
             target="_blank"

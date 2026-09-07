@@ -33,6 +33,27 @@ import { useUi } from "@/stores/ui";
 
 const FIRST_ITEM_BASE = 1_000_000;
 
+const ROW = "[data-message-row]";
+const CONTROL = "button:not([disabled]), a[href]";
+
+function elements(root: HTMLElement | null, selector: string): HTMLElement[] {
+  return [...(root?.querySelectorAll<HTMLElement>(selector) ?? [])];
+}
+
+function step(items: HTMLElement[], from: HTMLElement | null, by: number) {
+  if (items.length === 0) {
+    return undefined;
+  }
+
+  const index = items.findIndex((item) => item === from || item.contains(from));
+
+  if (index === -1) {
+    return by > 0 ? items[0] : items[items.length - 1];
+  }
+
+  return items[Math.min(Math.max(index + by, 0), items.length - 1)];
+}
+
 export function MessageList({
   channelId,
   initialTopMostItemIndex,
@@ -71,6 +92,68 @@ export function MessageList({
 
   const [announcement, setAnnouncement] = useState("");
   const announcedRef = useRef<string | null>(null);
+  const rovingRef = useRef<HTMLDivElement>(null);
+
+  const onRovingKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const container = rovingRef.current;
+    const active = document.activeElement as HTMLElement | null;
+
+    if (container === null) {
+      return;
+    }
+
+    const rowList = elements(container, ROW);
+    const row = rowList.find(
+      (entry) => entry === active || entry.contains(active),
+    );
+
+    const vertical =
+      event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
+
+    if (vertical !== 0) {
+      const next =
+        active === container
+          ? rowList[rowList.length - 1]
+          : step(rowList, active, vertical);
+
+      next?.focus();
+      event.preventDefault();
+      return;
+    }
+
+    if (event.key === "Home" || event.key === "End") {
+      const edge =
+        event.key === "Home" ? rowList[0] : rowList[rowList.length - 1];
+
+      edge?.focus();
+      event.preventDefault();
+      return;
+    }
+
+    if (row === undefined) {
+      return;
+    }
+
+    const controls = elements(row, CONTROL);
+    const horizontal =
+      event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+
+    if (horizontal !== 0 && controls.length > 0) {
+      (active === row
+        ? horizontal > 0
+          ? controls[0]
+          : controls[controls.length - 1]
+        : step(controls, active, horizontal)
+      )?.focus();
+      event.preventDefault();
+      return;
+    }
+
+    if (event.key === "Escape" && active !== row) {
+      row.focus();
+      event.preventDefault();
+    }
+  };
 
   const rows =
     enabled && messages.data !== undefined
@@ -166,81 +249,91 @@ export function MessageList({
           title="No messages yet"
         />
       ) : (
-        <Virtuoso
-          atBottomStateChange={(atBottom) => {
-            if (atBottom && newestId !== null) {
-              markRead(newestId);
-            }
-          }}
-          className="flex-1"
-          data={rows}
-          firstItemIndex={firstItemIndexRef.current}
-          followOutput="auto"
-          itemContent={(_index, row) =>
-            row.kind === "date" ? (
-              <DateDivider day={row.day} />
-            ) : (
-              <>
-                {row.key === dividerBeforeKey ? <NewMessagesDivider /> : null}
-                <div
-                  className={
-                    row.message.id === jumpTo
-                      ? "bg-primary/10 ring-1 ring-primary/40"
-                      : undefined
-                  }
-                  data-highlighted={row.message.id === jumpTo ? "" : undefined}
-                >
-                  <MessageRow
-                    grouped={row.grouped}
-                    message={row.message}
-                    onDiscard={discard}
-                    onRetry={(entry) => {
-                      if (me !== undefined) {
-                        retry(entry, me.id);
-                      }
-                    }}
-                    onReply={(entry) => {
-                      setReplyTarget({
-                        channelId: entry.channelId,
-                        messageId: entry.id,
-                        authorId: entry.authorId,
-                        content: entry.content,
-                      });
-                    }}
-                    {...(mayReact
-                      ? {
-                          onToggleReaction: (
-                            messageId: string,
-                            emoji: string,
-                            add: boolean,
-                          ) => {
-                            toggleReaction({ messageId, emoji, add });
-                          },
+        <div
+          className="flex min-h-0 flex-1 flex-col"
+          onKeyDown={onRovingKeyDown}
+          ref={rovingRef}
+        >
+          <Virtuoso
+            aria-label="Message history"
+            atBottomStateChange={(atBottom) => {
+              if (atBottom && newestId !== null) {
+                markRead(newestId);
+              }
+            }}
+            className="flex-1 focus-visible:outline-2! focus-visible:outline-offset-[-2px]! focus-visible:outline-ring!"
+            data={rows}
+            firstItemIndex={firstItemIndexRef.current}
+            followOutput="auto"
+            itemContent={(_index, row) =>
+              row.kind === "date" ? (
+                <DateDivider day={row.day} />
+              ) : (
+                <>
+                  {row.key === dividerBeforeKey ? <NewMessagesDivider /> : null}
+                  <div
+                    className={
+                      row.message.id === jumpTo
+                        ? "bg-primary/10 ring-1 ring-primary/40"
+                        : undefined
+                    }
+                    data-highlighted={
+                      row.message.id === jumpTo ? "" : undefined
+                    }
+                  >
+                    <MessageRow
+                      grouped={row.grouped}
+                      message={row.message}
+                      onDiscard={discard}
+                      onRetry={(entry) => {
+                        if (me !== undefined) {
+                          retry(entry, me.id);
                         }
-                      : {})}
-                    {...(mayManageMessages
-                      ? {
-                          onTogglePin: (entry: ChatMessage) => {
-                            togglePin({
-                              messageId: entry.id,
-                              pin: entry.pinnedAt === null,
-                            });
-                          },
-                        }
-                      : {})}
-                  />
-                </div>
-              </>
-            )
-          }
-          ref={listRef}
-          startReached={() => {
-            if (messages.hasNextPage && !messages.isFetchingNextPage) {
-              void messages.fetchNextPage();
+                      }}
+                      onReply={(entry) => {
+                        setReplyTarget({
+                          channelId: entry.channelId,
+                          messageId: entry.id,
+                          authorId: entry.authorId,
+                          content: entry.content,
+                        });
+                      }}
+                      {...(mayReact
+                        ? {
+                            onToggleReaction: (
+                              messageId: string,
+                              emoji: string,
+                              add: boolean,
+                            ) => {
+                              toggleReaction({ messageId, emoji, add });
+                            },
+                          }
+                        : {})}
+                      {...(mayManageMessages
+                        ? {
+                            onTogglePin: (entry: ChatMessage) => {
+                              togglePin({
+                                messageId: entry.id,
+                                pin: entry.pinnedAt === null,
+                              });
+                            },
+                          }
+                        : {})}
+                    />
+                  </div>
+                </>
+              )
             }
-          }}
-          initialTopMostItemIndex={mountAt}
-        />
+            ref={listRef}
+            role="group"
+            startReached={() => {
+              if (messages.hasNextPage && !messages.isFetchingNextPage) {
+                void messages.fetchNextPage();
+              }
+            }}
+            initialTopMostItemIndex={mountAt}
+          />
+        </div>
       )}
 
       {reactionError === null ? null : (
