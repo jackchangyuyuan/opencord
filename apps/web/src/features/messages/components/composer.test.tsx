@@ -49,6 +49,7 @@ function seed(everyonePermissions: number) {
   client.setQueryData(serverQuery(SERVER_ID).queryKey, {
     id: SERVER_ID,
     name: "Analytical Engine",
+    description: null,
     iconKey: null,
     iconUrl: null,
     ownerId: "someone-else",

@@ -18,6 +18,7 @@ export const servers = pgTable(
       .primaryKey()
       .default(sql`uuidv7()`),
     name: text("name").notNull(),
+    description: text("description"),
     iconKey: text("icon_key"),
     ownerId: text("owner_id")
       .notNull()
@@ -52,3 +53,5 @@ export const serverMembers = pgTable(
     index("server_members_user_id_idx").on(table.userId),
   ],
 );
+
+export type ServerRow = typeof servers.$inferSelect;

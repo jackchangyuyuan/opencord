@@ -6,6 +6,7 @@ import { api } from "@/lib/api-client";
 export interface ServerSummary {
   id: string;
   name: string;
+  description: string | null;
   iconKey: string | null;
   iconUrl: string | null;
   ownerId: string;
