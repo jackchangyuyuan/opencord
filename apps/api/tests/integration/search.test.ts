@@ -11,11 +11,9 @@ import {
   channelRoleOverwrites,
   serverMembers,
 } from "../../src/db/schema/index.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const idBody = z.object({ id: z.string() });
 const errorBody = z.object({ error: z.object({ code: z.string() }) });
 
@@ -33,12 +31,6 @@ const searchBody = z.object({
   offset: z.int(),
 });
 
-interface Account {
-  id: string;
-  username: string;
-  cookies: string[];
-}
-
 interface Fixture {
   ada: Account;
   grace: Account;
@@ -46,25 +38,6 @@ interface Fixture {
   generalId: string;
   randomId: string;
   everyoneRoleId: string;
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    username,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
 }
 
 async function createChannel(
@@ -230,6 +203,70 @@ describe("GET /api/v1/search", () => {
 
     expect(body.data.map((row) => row.id)).toEqual([alsoGeneral, inGeneral]);
     expect(body.degraded).toBe(false);
+  });
+
+  it("filters by a channel id sent beside the query", async () => {
+    const fixture = await seed();
+
+    const wanted = await send(fixture.ada, fixture.generalId, "one");
+
+    await send(fixture.ada, fixture.randomId, "elsewhere");
+
+    const res = await search(fixture.grace, {
+      q: "",
+      channel_id: fixture.generalId,
+    });
+
+    expect(res.status).toBe(200);
+    expect(searchBody.parse(res.body).data.map((row) => row.id)).toEqual([
+      wanted,
+    ]);
+  });
+
+  it("still finds a renamed channel by the id the picker resolved", async () => {
+    const fixture = await seed();
+
+    const wanted = await send(fixture.ada, fixture.generalId, "one");
+
+    await send(fixture.ada, fixture.randomId, "elsewhere");
+
+    const renamed = await request(app)
+      .patch(`/api/v1/channels/${fixture.generalId}`)
+      .set("Cookie", fixture.ada.cookies)
+      .send({ name: "general-archive" });
+
+    expect(renamed.status).toBe(200);
+
+    const res = await search(fixture.grace, {
+      q: "in:#general",
+      channel_id: fixture.generalId,
+    });
+
+    expect(searchBody.parse(res.body).data.map((row) => row.id)).toEqual([
+      wanted,
+    ]);
+  });
+
+  it("never lets a channel id reach past what the caller may read", async () => {
+    const fixture = await seed();
+
+    await db.insert(channelRoleOverwrites).values({
+      serverId: fixture.serverId,
+      channelId: fixture.randomId,
+      roleId: fixture.everyoneRoleId,
+      allow: 0,
+      deny: Permissions.VIEW_CHANNEL,
+    });
+
+    await send(fixture.ada, fixture.randomId, "classified");
+
+    const res = await search(fixture.grace, {
+      q: "",
+      channel_id: fixture.randomId,
+    });
+
+    expect(res.status).toBe(200);
+    expect(searchBody.parse(res.body).data).toEqual([]);
   });
 
   it("filters by author", async () => {

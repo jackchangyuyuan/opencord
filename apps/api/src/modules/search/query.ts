@@ -3,6 +3,7 @@ export interface SearchFilters {
   in: string[];
   before: string | null;
   after: string | null;
+  on: string | null;
 }
 
 export interface ParsedSearchQuery {
@@ -32,6 +33,7 @@ export function parseSearchQuery(raw: string): ParsedSearchQuery {
     in: [],
     before: null,
     after: null,
+    on: null,
   };
   const rest: string[] = [];
 
@@ -60,6 +62,11 @@ export function parseSearchQuery(raw: string): ParsedSearchQuery {
       continue;
     }
 
+    if (key === "on" && isDate(value)) {
+      filters.on = value;
+      continue;
+    }
+
     rest.push(token);
   }
 
@@ -70,6 +77,7 @@ export function parseSearchQuery(raw: string): ParsedSearchQuery {
       filters.from.length > 0 ||
       filters.in.length > 0 ||
       filters.before !== null ||
-      filters.after !== null,
+      filters.after !== null ||
+      filters.on !== null,
   };
 }

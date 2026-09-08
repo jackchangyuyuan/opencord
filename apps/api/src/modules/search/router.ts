@@ -5,9 +5,18 @@ import { resolveAccessibleChannels } from "../../access/channels.js";
 import { validate } from "../../middleware/validate.js";
 import { SEARCH_MAX_LIMIT, searchMessages } from "./queries.js";
 
+const channelIdsSchema = z
+  .union([z.uuid(), z.array(z.uuid()).max(20)])
+  .optional()
+  .transform((value) =>
+    value === undefined ? [] : Array.isArray(value) ? value : [value],
+  );
+
 const searchQuerySchema = z.object({
   q: z.string().max(256).default(""),
+  channel_id: channelIdsSchema,
   server_id: z.uuid().optional(),
+  tz: z.string().max(64).optional(),
   limit: z.coerce.number().int().min(1).max(SEARCH_MAX_LIMIT).default(25),
   offset: z.coerce.number().int().min(0).max(1_000).default(0),
 });
@@ -23,10 +32,12 @@ searchRouter.get(
     res.json(
       await searchMessages({
         raw: req.query.q,
+        channelIds: req.query.channel_id,
         accessibleChannelIds: [...accessible],
         ...(req.query.server_id === undefined
           ? {}
           : { serverId: req.query.server_id }),
+        ...(req.query.tz === undefined ? {} : { timeZone: req.query.tz }),
         limit: req.query.limit,
         offset: req.query.offset,
       }),

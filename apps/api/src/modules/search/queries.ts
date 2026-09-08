@@ -4,17 +4,27 @@ import { type SQL, sql } from "drizzle-orm";
 import { resolvePublicChannels } from "../../access/channels.js";
 import { db } from "../../db/index.js";
 import { AppError } from "../../lib/errors.js";
+import {
+  knownTimeZone,
+  uuidV7LowerBound,
+  zonedDayEnd,
+  zonedDayStart,
+} from "../../lib/time-window.js";
 import { loadAttachments, signAttachments } from "../messages/attachments.js";
 import { serializeMessage } from "../messages/queries.js";
 import { parseSearchQuery } from "./query.js";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const SEARCH_MAX_LIMIT = 25;
 export const SEARCH_MAX_RESULTS = 100;
 
 export interface SearchRequest {
   raw: string;
+  channelIds?: readonly string[];
   accessibleChannelIds: readonly string[];
   serverId?: string;
+  timeZone?: string;
   limit: number;
   offset: number;
 }
@@ -77,7 +87,18 @@ export async function searchMessages(
 ): Promise<SearchResult> {
   const parsed = parseSearchQuery(request.raw);
 
-  if (parsed.text === "" && !parsed.hasFilters) {
+  const namedChannelIds = [
+    ...new Set([
+      ...(request.channelIds ?? []),
+      ...parsed.filters.in.filter((value) => UUID.test(value)),
+    ]),
+  ];
+
+  if (
+    parsed.text === "" &&
+    !parsed.hasFilters &&
+    namedChannelIds.length === 0
+  ) {
     throw new AppError(
       400,
       "SEARCH_QUERY_EMPTY",
@@ -96,7 +117,12 @@ export async function searchMessages(
   const degraded = parsed.text !== "" && (await reducesToNothing(parsed.text));
   const ranked = parsed.text !== "" && !degraded;
 
-  if (parsed.text !== "" && degraded && !parsed.hasFilters) {
+  if (
+    parsed.text !== "" &&
+    degraded &&
+    !parsed.hasFilters &&
+    namedChannelIds.length === 0
+  ) {
     return { ...empty, degraded: true };
   }
 
@@ -115,8 +141,30 @@ export async function searchMessages(
     where.push(sql`c.server_id = ${request.serverId}::uuid`);
   }
 
-  if (parsed.filters.in.length > 0) {
-    where.push(sql`c.name = any(${literalArray(parsed.filters.in, "text")})`);
+  // Answered by id where the caller resolved one and by name where it did not.
+  // Either way the predicate is intersected with the channels this user can
+  // already see -- the `channel_id = any(accessible)` clause above is never
+  // relaxed -- so naming a private channel matches nothing rather than revealing
+  // anything.
+  const channelIds = namedChannelIds;
+  const channelNames = parsed.filters.in.filter((value) => !UUID.test(value));
+
+  if (channelIds.length > 0 || channelNames.length > 0) {
+    const alternatives: SQL[] = [];
+
+    if (channelIds.length > 0) {
+      alternatives.push(
+        sql`m.channel_id = any(${literalArray(channelIds, "uuid")})`,
+      );
+    }
+
+    if (channelNames.length > 0) {
+      alternatives.push(
+        sql`c.name = any(${literalArray(channelNames, "text")})`,
+      );
+    }
+
+    where.push(sql`(${sql.join(alternatives, sql` or `)})`);
   }
 
   if (parsed.filters.from.length > 0) {
@@ -125,13 +173,19 @@ export async function searchMessages(
     );
   }
 
-  if (parsed.filters.after !== null) {
-    where.push(sql`m.created_at >= ${parsed.filters.after}::date`);
+  const timeZone = knownTimeZone(request.timeZone);
+  const from = parsed.filters.on ?? parsed.filters.after;
+  const until = parsed.filters.on ?? parsed.filters.before;
+
+  if (from !== null) {
+    where.push(
+      sql`m.id >= ${uuidV7LowerBound(zonedDayStart(from, timeZone))}::uuid`,
+    );
   }
 
-  if (parsed.filters.before !== null) {
+  if (until !== null) {
     where.push(
-      sql`m.created_at < (${parsed.filters.before}::date + interval '1 day')`,
+      sql`m.id < ${uuidV7LowerBound(zonedDayEnd(until, timeZone))}::uuid`,
     );
   }
 

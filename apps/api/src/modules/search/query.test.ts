@@ -13,6 +13,7 @@ describe("parseSearchQuery", () => {
       in: [],
       before: null,
       after: null,
+      on: null,
     });
   });
 
@@ -94,5 +95,32 @@ describe("parseSearchQuery", () => {
 
     expect(parsed.text).toBe("");
     expect(parsed.hasFilters).toBe(false);
+  });
+});
+
+describe("parseSearchQuery — on:", () => {
+  it("lifts a single calendar day out of the free text", () => {
+    const parsed = parseSearchQuery("on:2026-03-14 rollback");
+
+    expect(parsed.text).toBe("rollback");
+    expect(parsed.filters.on).toBe("2026-03-14");
+    expect(parsed.hasFilters).toBe(true);
+  });
+
+  it("is a filter on its own, with no words to search for", () => {
+    expect(parseSearchQuery("on:2026-03-14").hasFilters).toBe(true);
+  });
+
+  it("leaves a date that does not exist as free text", () => {
+    const parsed = parseSearchQuery("on:2026-02-31");
+
+    expect(parsed.filters.on).toBeNull();
+    expect(parsed.text).toBe("on:2026-02-31");
+  });
+
+  it("keeps the last of a repeated day", () => {
+    expect(parseSearchQuery("on:2026-03-01 on:2026-03-02").filters.on).toBe(
+      "2026-03-02",
+    );
   });
 });
