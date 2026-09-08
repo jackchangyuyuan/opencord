@@ -1,7 +1,7 @@
 import { db } from "../../db/index.js";
 import { channelMembers, channels, dmPairs } from "../../db/schema/index.js";
 import { AppError, dmNotPermitted, notFound } from "../../lib/errors.js";
-import { sharesAServer } from "../demo/service.js";
+import { sharesAServer } from "../members/queries.js";
 import { canonicalPair, findDmChannelId } from "./queries.js";
 
 const MAX_ATTEMPTS = 3;

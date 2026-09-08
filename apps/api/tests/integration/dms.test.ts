@@ -9,11 +9,9 @@ import { db } from "../../src/db/index.js";
 import { channels, dmPairs, users } from "../../src/db/schema/index.js";
 import * as dmQueries from "../../src/modules/dms/queries.js";
 import { openDm } from "../../src/modules/dms/service.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const channelBody = z.object({
   id: z.string(),
   serverId: z.null(),
@@ -32,29 +30,6 @@ const channelList = z.array(z.object({ id: z.string() }));
 const participants = z.array(
   z.object({ id: z.string(), username: z.string(), name: z.string() }),
 );
-
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
 
 function openDmRequest(account: Account, recipientId: string) {
   return request(app)

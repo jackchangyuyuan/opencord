@@ -9,6 +9,7 @@ import {
   type UnreadState,
 } from "../channels/read-state/unread.js";
 import {
+  profileSelection,
   type PublicUser,
   serializeUser,
   serializeUsers,
@@ -74,11 +75,7 @@ export async function listDms(userId: string): Promise<DmSummary[]> {
   const counterparts = await db
     .select({
       channelId: channelMembers.channelId,
-      id: users.id,
-      username: users.username,
-      name: users.name,
-      image: users.image,
-      avatarObjectKey: users.avatarObjectKey,
+      ...profileSelection,
     })
     .from(channelMembers)
     .innerJoin(users, eq(users.id, channelMembers.userId))
@@ -120,13 +117,7 @@ export async function listDmParticipants(
   channelId: string,
 ): Promise<PublicUser[]> {
   const rows = await db
-    .select({
-      id: users.id,
-      username: users.username,
-      name: users.name,
-      image: users.image,
-      avatarObjectKey: users.avatarObjectKey,
-    })
+    .select(profileSelection)
     .from(channelMembers)
     .innerJoin(users, eq(users.id, channelMembers.userId))
     .where(eq(channelMembers.channelId, channelId))
