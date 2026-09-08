@@ -5,8 +5,9 @@ import type {
   SendMessageInput,
 } from "@opencord/shared/schemas";
 import type { Message } from "@opencord/shared/types";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
+import { resolveAccessibleChannels } from "../../access/channels.js";
 import type { ChannelContext, ChannelRow } from "../../access/context.js";
 import { db, type Transaction } from "../../db/index.js";
 import { channels, mentions, messages } from "../../db/schema/index.js";
@@ -17,12 +18,16 @@ import {
   nonceReused,
   notFound,
 } from "../../lib/errors.js";
-import { consumeQuota, type QuotaSubject } from "../../lib/quota.js";
+import type { QuotaSubject } from "../../lib/quota.js";
+import { consumeQuota } from "../../lib/quota.js";
 import {
   emitMessageCreate,
   emitMessageDelete,
   emitMessageUpdate,
 } from "../../socket/emit.js";
+import { listOnlineUserIds } from "../../socket/presence.js";
+import { advanceWatermark } from "../channels/read-state/watermark.js";
+import { listMembersAmong } from "../members/queries.js";
 import { actorPosition, highestPositionOf } from "../roles/queries.js";
 import { requireBelowActor } from "../roles/service.js";
 import {
@@ -30,13 +35,18 @@ import {
   prepareAttachments,
   writeAttachments,
 } from "./attachments.js";
-import { applyMentions, findMentionCandidates } from "./mentions.js";
+import {
+  applyMentions,
+  type BroadcastToken,
+  findMentionCandidates,
+} from "./mentions.js";
 import {
   findLiveMessage,
   findMessageByNonce,
   messageColumns,
   type MessageRow,
-  resolveMentions,
+  resolveDmMentions,
+  resolveServerMentions,
 } from "./queries.js";
 import { serializeOneMessage } from "./serialize.js";
 
@@ -52,27 +62,100 @@ function mayMentionEveryone(context: ChannelContext): boolean {
 interface PreparedContent {
   content: string;
   mentionedUserIds: string[];
-  everyone: boolean;
+  broadcast: BroadcastToken | null;
 }
 
-async function prepareContent(
-  serverId: string | null,
+async function prepareDirectMessage(
+  channelId: string,
   authorId: string,
   raw: string,
 ): Promise<PreparedContent> {
-  if (serverId === null) {
-    return { content: raw, mentionedUserIds: [], everyone: false };
-  }
-
   const candidates = findMentionCandidates(raw);
-  const resolution = await resolveMentions(serverId, candidates);
+  const resolution = await resolveDmMentions(channelId, candidates);
 
   return {
     content: applyMentions(raw, resolution),
     mentionedUserIds: [...resolution.users.values()].filter(
       (userId) => userId !== authorId,
     ),
-    everyone: candidates.everyone,
+    broadcast: null,
+  };
+}
+
+async function prepareContent(
+  serverId: string | null,
+  channelId: string,
+  authorId: string,
+  raw: string,
+): Promise<PreparedContent> {
+  if (serverId === null) {
+    return prepareDirectMessage(channelId, authorId, raw);
+  }
+
+  const candidates = findMentionCandidates(raw);
+
+  const accessible =
+    candidates.channels.length === 0
+      ? new Set<string>()
+      : await resolveAccessibleChannels(authorId);
+
+  const { resolution, roleMemberIds } = await resolveServerMentions(
+    serverId,
+    candidates,
+    accessible,
+  );
+
+  return {
+    content: applyMentions(raw, resolution),
+    mentionedUserIds: [
+      ...new Set([...resolution.users.values(), ...roleMemberIds]),
+    ].filter((userId) => userId !== authorId),
+    broadcast: candidates.broadcast,
+  };
+}
+
+async function hereRecipients(
+  serverId: string,
+  authorId: string,
+): Promise<string[]> {
+  const online = await listOnlineUserIds();
+  const members = await listMembersAmong(serverId, online);
+
+  return members.filter((userId) => userId !== authorId);
+}
+
+interface Broadcast {
+  token: BroadcastToken | null;
+  mentionedUserIds: string[];
+}
+
+async function authorizeBroadcast(
+  context: ChannelContext,
+  prepared: PreparedContent,
+  authorId: string,
+): Promise<Broadcast> {
+  const serverId = context.server?.server.id ?? null;
+
+  if (
+    prepared.broadcast === null ||
+    serverId === null ||
+    !mayMentionEveryone(context)
+  ) {
+    return { token: null, mentionedUserIds: prepared.mentionedUserIds };
+  }
+
+  if (prepared.broadcast === "everyone") {
+    return { token: "everyone", mentionedUserIds: prepared.mentionedUserIds };
+  }
+
+  return {
+    token: "here",
+    mentionedUserIds: [
+      ...new Set([
+        ...prepared.mentionedUserIds,
+        ...(await hereRecipients(serverId, authorId)),
+      ]),
+    ],
   };
 }
 
@@ -147,30 +230,39 @@ export async function sendMessage(
   const replyToId = input.replyToId ?? null;
   const prepared = await prepareContent(
     context.server?.server.id ?? null,
+    channel.id,
     authorId,
     input.content,
   );
-  const broadcast = prepared.everyone && mayMentionEveryone(context);
-  const files = await prepareAttachments(authorId, input.attachments ?? []);
+  const broadcast = await authorizeBroadcast(context, prepared, authorId);
+
+  // A replay is answered from the row that already exists, so a retry neither
+  // re-reads the uploaded objects nor has to find a reply target that has been
+  // deleted since the first attempt.
+  const replayed = await findMessageByNonce(authorId, input.nonce);
+
+  if (replayed !== undefined) {
+    if (!isReplay(replayed, channel.id, prepared.content, replyToId)) {
+      throw nonceReused();
+    }
+
+    return {
+      created: false,
+      message: await serializeOneMessage(replayed, authorId),
+    };
+  }
 
   if (
     replyToId !== null &&
     (await findLiveMessage(channel.id, replyToId)) === undefined
   ) {
-    const existing = await findMessageByNonce(authorId, input.nonce);
-
-    if (isReplay(existing, channel.id, prepared.content, replyToId)) {
-      return {
-        created: false,
-        message: await serializeOneMessage(existing, authorId),
-      };
-    }
-
     throw notFound(
       "MESSAGE_NOT_FOUND",
       "The quoted message is not in this channel",
     );
   }
+
+  const files = await prepareAttachments(authorId, input.attachments ?? []);
 
   const result = await db.transaction(async (tx) => {
     const [inserted] = await tx
@@ -181,7 +273,7 @@ export async function sendMessage(
         content: prepared.content,
         nonce: input.nonce,
         replyToId,
-        mentionsEveryone: broadcast,
+        mentionsEveryone: broadcast.token === "everyone",
       })
       .onConflictDoNothing({
         target: [messages.authorId, messages.nonce],
@@ -220,10 +312,17 @@ export async function sendMessage(
       })
       .where(eq(channels.id, channel.id));
 
-    await writeMentions(tx, channel.id, inserted.id, prepared.mentionedUserIds);
+    await writeMentions(
+      tx,
+      channel.id,
+      inserted.id,
+      broadcast.mentionedUserIds,
+    );
     await writeAttachments(tx, inserted.id, files);
 
-    if (broadcast) {
+    await advanceWatermark(authorId, channel.id, inserted.id, tx);
+
+    if (broadcast.token === "everyone") {
       await advanceEveryoneWatermark(tx, channel.id, inserted.id);
     }
 
@@ -280,31 +379,35 @@ export async function editMessage(
 
   const prepared = await prepareContent(
     context.server?.server.id ?? null,
+    channel.id,
     actorId,
     input.content,
   );
 
-  const broadcast = prepared.everyone && mayMentionEveryone(context);
+  const broadcast = await authorizeBroadcast(context, prepared, actorId);
 
   const edited = await db.transaction(async (tx) => {
     const [row] = await tx
       .update(messages)
       .set({
         content: prepared.content,
-        mentionsEveryone: broadcast,
+        mentionsEveryone: broadcast.token === "everyone",
         editedAt: new Date(),
       })
-      .where(eq(messages.id, message.id))
+      .where(and(eq(messages.id, message.id), isNull(messages.deletedAt)))
       .returning(messageColumns);
 
     if (row === undefined) {
-      throw new Error("Message edit returned no row");
+      throw notFound(
+        "MESSAGE_NOT_FOUND",
+        "That message is not in this channel",
+      );
     }
 
     await tx.delete(mentions).where(eq(mentions.messageId, message.id));
-    await writeMentions(tx, channel.id, message.id, prepared.mentionedUserIds);
+    await writeMentions(tx, channel.id, message.id, broadcast.mentionedUserIds);
 
-    if (broadcast) {
+    if (broadcast.token === "everyone") {
       await advanceEveryoneWatermark(tx, channel.id, message.id);
     } else {
       await repairEveryoneWatermark(tx, channel.id, message.id);

@@ -15,11 +15,9 @@ import {
   serverMembers,
 } from "../../src/db/schema/index.js";
 import { PIN_LIMIT } from "../../src/modules/messages/pins/queries.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const idBody = z.object({ id: z.string() });
 const errorBody = z.object({ error: z.object({ code: z.string() }) });
 
@@ -29,35 +27,12 @@ const pinnedMessage = z.object({
   pinnedBy: z.string().nullable(),
 });
 
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
 interface Fixture {
   ada: Account;
   grace: Account;
   serverId: string;
   channelId: string;
   everyoneRoleId: string;
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
 }
 
 async function seed(): Promise<Fixture> {

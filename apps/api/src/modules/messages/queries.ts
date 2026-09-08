@@ -16,7 +16,9 @@ import {
 
 import { db } from "../../db/index.js";
 import {
+  channelMembers,
   channels,
+  memberRoles,
   messages,
   roles,
   serverMembers,
@@ -189,10 +191,32 @@ function paginate(rows: MessageRow[], limit: number): MessagePage {
   };
 }
 
-export async function resolveMentions(
+export interface ServerMentionResolution {
+  resolution: MentionResolution;
+  roleMemberIds: string[];
+}
+
+function firstByName(
+  rows: { id: string; name: string | null }[],
+): Map<string, string> {
+  const byName = new Map<string, string>();
+
+  for (const row of rows) {
+    const name = row.name ?? "";
+
+    if (!byName.has(name)) {
+      byName.set(name, row.id);
+    }
+  }
+
+  return byName;
+}
+
+export async function resolveServerMentions(
   serverId: string,
   candidates: MentionCandidates,
-): Promise<MentionResolution> {
+  accessibleChannels: ReadonlySet<string>,
+): Promise<ServerMentionResolution> {
   const userRows =
     candidates.names.length === 0
       ? []
@@ -218,24 +242,85 @@ export async function resolveMentions(
               eq(roles.serverId, serverId),
               inArray(sql`lower(${roles.name})`, candidates.names),
             ),
+          )
+          .orderBy(desc(roles.position), roles.id);
+
+  const roleByName = new Map<string, string>();
+
+  for (const row of roleRows) {
+    const name = row.name.toLowerCase();
+
+    if (!roleByName.has(name)) {
+      roleByName.set(name, row.id);
+    }
+  }
+
+  const shadowed = new Set(userRows.map((row) => row.username.toLowerCase()));
+
+  const mentionedRoleIds = [...roleByName]
+    .filter(([name]) => !shadowed.has(name))
+    .map(([, id]) => id);
+
+  const roleMemberRows =
+    mentionedRoleIds.length === 0
+      ? []
+      : await db
+          .select({ userId: memberRoles.userId })
+          .from(memberRoles)
+          .where(
+            and(
+              eq(memberRoles.serverId, serverId),
+              inArray(memberRoles.roleId, mentionedRoleIds),
+            ),
           );
 
   const channelRows =
     candidates.channels.length === 0
       ? []
+      : (
+          await db
+            .select({ id: channels.id, name: channels.name })
+            .from(channels)
+            .where(
+              and(
+                eq(channels.serverId, serverId),
+                inArray(channels.name, candidates.channels),
+              ),
+            )
+            .orderBy(channels.position, channels.id)
+        ).filter((row) => accessibleChannels.has(row.id));
+
+  return {
+    resolution: {
+      users: new Map(userRows.map((row) => [row.username, row.id])),
+      roles: roleByName,
+      channels: firstByName(channelRows),
+    },
+    roleMemberIds: [...new Set(roleMemberRows.map((row) => row.userId))],
+  };
+}
+
+export async function resolveDmMentions(
+  channelId: string,
+  candidates: MentionCandidates,
+): Promise<MentionResolution> {
+  const rows =
+    candidates.names.length === 0
+      ? []
       : await db
-          .select({ id: channels.id, name: channels.name })
-          .from(channels)
+          .select({ id: users.id, username: users.username })
+          .from(channelMembers)
+          .innerJoin(users, eq(users.id, channelMembers.userId))
           .where(
             and(
-              eq(channels.serverId, serverId),
-              inArray(channels.name, candidates.channels),
+              eq(channelMembers.channelId, channelId),
+              inArray(users.username, candidates.names),
             ),
           );
 
   return {
-    users: new Map(userRows.map((row) => [row.username, row.id])),
-    roles: new Map(roleRows.map((row) => [row.name.toLowerCase(), row.id])),
-    channels: new Map(channelRows.map((row) => [row.name ?? "", row.id])),
+    users: new Map(rows.map((row) => [row.username, row.id])),
+    roles: new Map(),
+    channels: new Map(),
   };
 }

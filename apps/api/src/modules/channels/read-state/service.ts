@@ -27,7 +27,11 @@ export async function markRead(
   const state = {
     channelId,
     lastReadMessageId,
-    mentionCount: await countUnreadMentions(userId, channelId),
+    mentionCount: await countUnreadMentions(
+      userId,
+      channelId,
+      lastReadMessageId,
+    ),
   };
 
   emitReadUpdate(userId, state);

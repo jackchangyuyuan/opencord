@@ -8,11 +8,9 @@ import { z } from "zod";
 import { app } from "../../src/app.js";
 import { db } from "../../src/db/index.js";
 import { readStates, serverMembers } from "../../src/db/schema/index.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
 const channelBody = z.object({ id: z.string() });
 const channelList = z.array(z.object({ id: z.string() }));
@@ -24,35 +22,12 @@ const readBody = z.object({
 });
 const errorBody = z.object({ error: z.object({ code: z.string() }) });
 
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
 interface Fixture {
   ada: Account;
   grace: Account;
   serverId: string;
   channelId: string;
   otherChannelId: string;
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
 }
 
 async function seed(): Promise<Fixture> {
@@ -357,6 +332,41 @@ describe("PUT /api/v1/channels/:channelId/read", () => {
     const after = await listChannels(fixture.grace, fixture.serverId);
 
     expect(after.get(fixture.channelId)).toBe(false);
+  });
+
+  it("does not report your own message as unread", async () => {
+    const fixture = await seed();
+
+    await send(fixture.ada, fixture.channelId, "mine");
+
+    const list = await listChannels(fixture.ada, fixture.serverId);
+
+    expect(list.get(fixture.channelId)).toBe(false);
+  });
+
+  it("stops reporting unread once the only new message is deleted", async () => {
+    const fixture = await seed();
+    const messageId = await send(fixture.ada, fixture.channelId, "hello");
+
+    expect(
+      (await listChannels(fixture.grace, fixture.serverId)).get(
+        fixture.channelId,
+      ),
+    ).toBe(true);
+
+    expect(
+      (
+        await request(app)
+          .delete(`/api/v1/channels/${fixture.channelId}/messages/${messageId}`)
+          .set("Cookie", fixture.ada.cookies)
+      ).status,
+    ).toBe(200);
+
+    expect(
+      (await listChannels(fixture.grace, fixture.serverId)).get(
+        fixture.channelId,
+      ),
+    ).toBe(false);
   });
 
   it("reports the mentions still unread after the watermark moves", async () => {

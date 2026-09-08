@@ -3,12 +3,13 @@ import { randomUUID } from "node:crypto";
 import { Permissions } from "@opencord/shared/permissions";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import request from "supertest";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { app } from "../../src/app.js";
 import { db } from "../../src/db/index.js";
 import {
+  attachments,
   auditLog,
   channelRoleOverwrites,
   memberRoles,
@@ -17,11 +18,10 @@ import {
   roles,
   serverMembers,
 } from "../../src/db/schema/index.js";
+import * as storage from "../../src/lib/storage.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
 const channelList = z.array(z.object({ id: z.string(), name: z.string() }));
 const messageBody = z.object({
@@ -36,35 +36,12 @@ const messageBody = z.object({
   createdAt: z.string(),
 });
 
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
 interface Fixture {
   ada: Account;
   grace: Account;
   serverId: string;
   channelId: string;
   everyoneRoleId: string;
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
 }
 
 async function createServer(account: Account, name: string): Promise<string> {
@@ -376,6 +353,37 @@ describe("nonce idempotency", () => {
       messageBody.parse(first.body).id,
     );
     expect(await db.select().from(messages)).toHaveLength(1);
+  });
+
+  it("charges no second allowance and re-prepares no attachment", async () => {
+    const fixture = await seed();
+    const nonce = randomUUID();
+    const objectKey = `attachments/${fixture.ada.id}/${randomUUID()}.png`;
+
+    const head = vi.spyOn(storage, "headObject").mockResolvedValue({
+      contentType: "image/png",
+      size: 2048,
+      lastModified: new Date(),
+    });
+
+    const body = {
+      content: "with a file",
+      nonce,
+      attachments: [{ objectKey, filename: "diagram.png" }],
+    };
+
+    expect((await send(fixture.ada, fixture.channelId, body)).status).toBe(201);
+
+    const preparedOnce = head.mock.calls.length;
+
+    const retry = await send(fixture.ada, fixture.channelId, body);
+
+    expect(retry.status).toBe(200);
+    expect(head.mock.calls.length).toBe(preparedOnce);
+    expect(await db.select().from(messages)).toHaveLength(1);
+    expect(await db.select().from(attachments)).toHaveLength(1);
+
+    vi.restoreAllMocks();
   });
 
   it("returns 409 NONCE_REUSED for a different channel", async () => {
@@ -845,6 +853,33 @@ describe("editing and soft-deleting messages", () => {
     expect(messageBody.parse(res.body).editedAt).not.toBeNull();
   });
 
+  it("refuses an edit of a message deleted after the check", async () => {
+    const fixture = await seed();
+    const [id] = await sendMany(fixture.ada, fixture.channelId, 1);
+
+    const [edited, removed] = await Promise.all([
+      editMessage(fixture.ada, fixture.channelId, id ?? "", "@grace look"),
+      removeMessage(fixture.ada, fixture.channelId, id ?? ""),
+    ]);
+
+    expect(removed.status).toBe(200);
+    expect([200, 404]).toContain(edited.status);
+
+    const row = await db.query.messages.findFirst({
+      columns: { deletedAt: true },
+      where: { id: id ?? "" },
+    });
+
+    expect(row?.deletedAt).not.toBeNull();
+
+    expect(
+      await db
+        .select()
+        .from(mentions)
+        .where(eq(mentions.messageId, id ?? "")),
+    ).toEqual([]);
+  });
+
   it("refuses an edit of someone else's message", async () => {
     const fixture = await seed();
     const [id] = await sendMany(fixture.grace, fixture.channelId, 1);
@@ -1132,6 +1167,25 @@ describe("the @everyone watermark", () => {
     expect(await everyoneWatermark(fixture.channelId)).toBe(
       messageBody.parse(allowed.body).id,
     );
+  });
+
+  it("leaves the channel watermark alone for @here", async () => {
+    const fixture = await seed();
+
+    const here = await send(fixture.ada, fixture.channelId, {
+      content: "@here quick one",
+      nonce: randomUUID(),
+    });
+
+    expect(here.status).toBe(201);
+    expect(await everyoneWatermark(fixture.channelId)).toBeNull();
+
+    const row = await db.query.messages.findFirst({
+      columns: { mentionsEveryone: true },
+      where: { id: messageBody.parse(here.body).id },
+    });
+
+    expect(row?.mentionsEveryone).toBe(false);
   });
 
   it("clears the badge when the pointing message is deleted", async () => {

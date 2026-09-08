@@ -1,13 +1,15 @@
 import { sql } from "drizzle-orm";
 
+import type { Transaction } from "../../../db/index.js";
 import { db } from "../../../db/index.js";
 
 export async function advanceWatermark(
   userId: string,
   channelId: string,
   messageId: string,
+  executor: Transaction | typeof db = db,
 ): Promise<string | null> {
-  const rows = await db.execute<{ last_read_message_id: string }>(sql`
+  const rows = await executor.execute<{ last_read_message_id: string }>(sql`
     insert into read_states (user_id, channel_id, last_read_message_id)
     select ${userId}, ${channelId}, m.id
       from messages m

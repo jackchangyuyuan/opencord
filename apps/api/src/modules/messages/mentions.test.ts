@@ -4,7 +4,6 @@ import {
   applyMentions,
   findMentionCandidates,
   type MentionResolution,
-  mentionsEveryone,
 } from "./mentions.js";
 
 const resolution: MentionResolution = {
@@ -14,22 +13,31 @@ const resolution: MentionResolution = {
 };
 
 describe("findMentionCandidates", () => {
-  it("collects names, channels and the everyone flag", () => {
+  it("collects names and channels, with no broadcast in sight", () => {
     expect(findMentionCandidates("hi @Ada and @staff in #general")).toEqual({
       names: ["ada", "staff"],
       channels: ["general"],
-      everyone: false,
+      broadcast: null,
     });
   });
 
-  it("treats @everyone and @here as the broadcast token, not a name", () => {
+  it("keeps @everyone and @here apart as broadcast tokens", () => {
     expect(findMentionCandidates("@everyone listen")).toEqual({
       names: [],
       channels: [],
-      everyone: true,
+      broadcast: "everyone",
     });
     expect(findMentionCandidates("@here too")).toMatchObject({
-      everyone: true,
+      broadcast: "here",
+    });
+  });
+
+  it("lets @everyone outrank @here when a message carries both", () => {
+    expect(findMentionCandidates("@here and @everyone")).toMatchObject({
+      broadcast: "everyone",
+    });
+    expect(findMentionCandidates("@everyone and @here")).toMatchObject({
+      broadcast: "everyone",
     });
   });
 
@@ -43,7 +51,7 @@ describe("findMentionCandidates", () => {
     expect(findMentionCandidates("no mentions here")).toEqual({
       names: [],
       channels: [],
-      everyone: false,
+      broadcast: null,
     });
   });
 
@@ -91,11 +99,12 @@ describe("applyMentions", () => {
   });
 });
 
-describe("mentionsEveryone", () => {
-  it("is true only for the broadcast tokens", () => {
-    expect(mentionsEveryone("@everyone")).toBe(true);
-    expect(mentionsEveryone("@here")).toBe(true);
-    expect(mentionsEveryone("@ada")).toBe(false);
-    expect(mentionsEveryone("everyone")).toBe(false);
+describe("the broadcast token", () => {
+  it("names the token, and only for a real one", () => {
+    expect(findMentionCandidates("@everyone").broadcast).toBe("everyone");
+    expect(findMentionCandidates("@here").broadcast).toBe("here");
+    expect(findMentionCandidates("@ada").broadcast).toBeNull();
+    expect(findMentionCandidates("everyone").broadcast).toBeNull();
+    expect(findMentionCandidates("@everyones").broadcast).toBeNull();
   });
 });

@@ -3,7 +3,8 @@ import type { MessageAttachmentInput } from "@opencord/shared/schemas";
 import type { MessageAttachment } from "@opencord/shared/types";
 import { eq, inArray } from "drizzle-orm";
 
-import { db, type Transaction } from "../../db/index.js";
+import type { Transaction } from "../../db/index.js";
+import { db } from "../../db/index.js";
 import { attachments } from "../../db/schema/index.js";
 import { signMediaUrl } from "../../lib/storage.js";
 import { requireOwnedUpload } from "../uploads/associate.js";

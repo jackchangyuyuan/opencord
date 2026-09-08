@@ -1,12 +1,16 @@
-const MENTION_PATTERN = /@([A-Za-z0-9_.-]+)/g;
-const CHANNEL_PATTERN = /#([a-z0-9-]+)/g;
+import {
+  type BroadcastToken,
+  CHANNEL_MENTION_PATTERN,
+  isBroadcastToken,
+  MENTION_PATTERN,
+} from "@opencord/shared/constants";
 
-const EVERYONE_TOKENS = new Set(["everyone", "here"]);
+export type { BroadcastToken };
 
 export interface MentionCandidates {
   names: string[];
   channels: string[];
-  everyone: boolean;
+  broadcast: BroadcastToken | null;
 }
 
 export interface MentionResolution {
@@ -21,13 +25,13 @@ function unique(values: string[]): string[] {
 
 export function findMentionCandidates(content: string): MentionCandidates {
   const names: string[] = [];
-  let everyone = false;
+  let broadcast: BroadcastToken | null = null;
 
   for (const match of content.matchAll(MENTION_PATTERN)) {
     const token = (match[1] ?? "").toLowerCase();
 
-    if (EVERYONE_TOKENS.has(token)) {
-      everyone = true;
+    if (isBroadcastToken(token)) {
+      broadcast = broadcast === "everyone" ? broadcast : token;
     } else {
       names.push(token);
     }
@@ -36,9 +40,11 @@ export function findMentionCandidates(content: string): MentionCandidates {
   return {
     names: unique(names),
     channels: unique(
-      [...content.matchAll(CHANNEL_PATTERN)].map((match) => match[1] ?? ""),
+      [...content.matchAll(CHANNEL_MENTION_PATTERN)].map(
+        (match) => match[1] ?? "",
+      ),
     ),
-    everyone,
+    broadcast,
   };
 }
 
@@ -50,7 +56,7 @@ export function applyMentions(
     .replaceAll(MENTION_PATTERN, (literal, raw: string) => {
       const token = raw.toLowerCase();
 
-      if (EVERYONE_TOKENS.has(token)) {
+      if (isBroadcastToken(token)) {
         return literal;
       }
 
@@ -64,13 +70,9 @@ export function applyMentions(
 
       return roleId === undefined ? literal : `<@&${roleId}>`;
     })
-    .replaceAll(CHANNEL_PATTERN, (literal, raw: string) => {
+    .replaceAll(CHANNEL_MENTION_PATTERN, (literal, raw: string) => {
       const channelId = resolution.channels.get(raw);
 
       return channelId === undefined ? literal : `<#${channelId}>`;
     });
-}
-
-export function mentionsEveryone(content: string): boolean {
-  return findMentionCandidates(content).everyone;
 }

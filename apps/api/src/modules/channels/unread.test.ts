@@ -134,6 +134,7 @@ describe("loadUnreadStates", () => {
       hasUnread: true,
       hasEveryone: false,
       mentionCount: 0,
+      unreadCount: 1,
     });
   });
 
@@ -149,6 +150,7 @@ describe("loadUnreadStates", () => {
       hasUnread: false,
       hasEveryone: false,
       mentionCount: 0,
+      unreadCount: 0,
     });
   });
 
@@ -213,6 +215,7 @@ describe("loadUnreadStates", () => {
       hasUnread: true,
       hasEveryone: true,
       mentionCount: 0,
+      unreadCount: 1,
     });
   });
 
