@@ -13,13 +13,11 @@ import {
   roles,
   serverMembers,
 } from "../../src/db/schema/index.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
 const CHECK_VIOLATION = "23514";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
 const channelBody = z.object({
   id: z.string(),
@@ -32,11 +30,6 @@ const channelBody = z.object({
   createdAt: z.string(),
 });
 const channelList = z.array(channelBody);
-
-interface Account {
-  id: string;
-  cookies: string[];
-}
 
 async function rejection(
   statement: () => Promise<unknown>,
@@ -55,24 +48,6 @@ async function rejection(
   }
 
   throw new Error("expected the statement to be rejected");
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
 }
 
 async function createServer(account: Account, name: string): Promise<string> {

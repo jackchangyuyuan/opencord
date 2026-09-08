@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   CHANNEL_TOPIC_MAX_LENGTH,
+  MAX_CHANNELS_PER_REORDER,
   NAME_MAX_LENGTH,
   NAME_MIN_LENGTH,
 } from "../constants/index.js";
@@ -38,6 +39,12 @@ export const updateChannelSchema = z
   );
 
 export type UpdateChannelInput = z.infer<typeof updateChannelSchema>;
+
+export const reorderChannelsSchema = z.object({
+  channelIds: z.array(z.uuid()).min(1).max(MAX_CHANNELS_PER_REORDER),
+});
+
+export type ReorderChannelsInput = z.infer<typeof reorderChannelsSchema>;
 
 export const overwriteSchema = z.object({
   allow: permissionMaskSchema.default(0),

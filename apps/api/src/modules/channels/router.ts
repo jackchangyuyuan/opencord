@@ -1,6 +1,7 @@
 import { Permissions } from "@opencord/shared/permissions";
 import {
   createChannelSchema,
+  reorderChannelsSchema,
   updateChannelSchema,
 } from "@opencord/shared/schemas";
 import { Router } from "express";
@@ -20,7 +21,12 @@ import { channelPinsRouter } from "../messages/pins/router.js";
 import { overwritesRouter } from "./overwrites/router.js";
 import { listServerChannels, serializeChannel } from "./queries.js";
 import { readRouter } from "./read-state/router.js";
-import { createChannel, deleteChannel, updateChannel } from "./service.js";
+import {
+  createChannel,
+  deleteChannel,
+  reorderChannels,
+  updateChannel,
+} from "./service.js";
 
 const serverParamsSchema = z.object({ serverId: z.uuid() });
 const channelParamsSchema = z.object({ channelId: z.uuid() });
@@ -51,6 +57,15 @@ serverChannelsRouter.post(
     res
       .status(201)
       .json(await createChannel(req.server, req.user.id, req.body));
+  },
+);
+
+serverChannelsRouter.patch(
+  "/positions",
+  validate({ params: serverParamsSchema, body: reorderChannelsSchema }),
+  requireServerPermission(Permissions.MANAGE_CHANNELS),
+  async (req, res) => {
+    res.json(await reorderChannels(req.server, req.user.id, req.body));
   },
 );
 

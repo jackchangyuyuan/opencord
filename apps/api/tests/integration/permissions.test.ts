@@ -10,12 +10,11 @@ import {
   memberRoles,
   roles,
   serverMembers,
+  users,
 } from "../../src/db/schema/index.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
 const memberPage = z.object({
   data: z.array(
@@ -28,29 +27,6 @@ const memberPage = z.object({
   ),
   nextCursor: z.string().nullable(),
 });
-
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
 
 async function createServer(account: Account, name: string): Promise<string> {
   const res = await request(app)
@@ -304,6 +280,83 @@ describe("GET /api/v1/servers/:serverId/members", () => {
     const res = await request(app)
       .get(`/api/v1/servers/${serverId}/members`)
       .set("Cookie", grace.cookies);
+
+    expect(res.status).toBe(403);
+  });
+
+  async function searchable() {
+    const ada = await signUp("ada");
+    const serverId = await createServer(ada, "Analytical Engine");
+
+    for (const [username, name] of [
+      ["grace", "Grace Hopper"],
+      ["jackyuan", "Jack"],
+      ["hopperfan", "Katherine Johnson"],
+      ["percent", "100%_sure"],
+    ]) {
+      const account = await signUp(username ?? "");
+
+      await join(serverId, account);
+      await db
+        .update(users)
+        .set({ name: name ?? "" })
+        .where(eq(users.id, account.id));
+    }
+
+    return { ada, serverId };
+  }
+
+  async function search(actor: Account, serverId: string, q: string) {
+    const res = await request(app)
+      .get(`/api/v1/servers/${serverId}/members`)
+      .query({ q })
+      .set("Cookie", actor.cookies);
+
+    expect(res.status).toBe(200);
+
+    return memberPage
+      .parse(res.body)
+      .data.map((entry) => entry.user.username)
+      .toSorted();
+  }
+
+  it("matches a term against the username and the display name alike", async () => {
+    const { ada, serverId } = await searchable();
+
+    expect(await search(ada, serverId, "hopper")).toEqual([
+      "grace",
+      "hopperfan",
+    ]);
+    expect(await search(ada, serverId, "jack")).toEqual(["jackyuan"]);
+  });
+
+  it("matches without regard to case", async () => {
+    const { ada, serverId } = await searchable();
+
+    expect(await search(ada, serverId, "GRACE")).toEqual(["grace"]);
+  });
+
+  it("treats LIKE metacharacters as text", async () => {
+    const { ada, serverId } = await searchable();
+
+    expect(await search(ada, serverId, "%")).toEqual(["percent"]);
+    expect(await search(ada, serverId, "0%_s")).toEqual(["percent"]);
+  });
+
+  it("returns nothing rather than everything for a term nobody matches", async () => {
+    const { ada, serverId } = await searchable();
+
+    expect(await search(ada, serverId, "zzzz")).toEqual([]);
+  });
+
+  it("still refuses a non-member who supplies a term", async () => {
+    const { serverId } = await searchable();
+    const outsider = await signUp("outsider");
+
+    const res = await request(app)
+      .get(`/api/v1/servers/${serverId}/members`)
+      .query({ q: "grace" })
+      .set("Cookie", outsider.cookies);
 
     expect(res.status).toBe(403);
   });

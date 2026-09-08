@@ -25,3 +25,19 @@ export const DM_PERMISSIONS: number =
   Permissions.SEND_MESSAGES |
   Permissions.ADD_REACTIONS |
   Permissions.MANAGE_MESSAGES;
+
+export const CHANNEL_PERMISSIONS: number =
+  Permissions.VIEW_CHANNEL |
+  Permissions.SEND_MESSAGES |
+  Permissions.ADD_REACTIONS |
+  Permissions.MENTION_EVERYONE |
+  Permissions.MANAGE_MESSAGES |
+  Permissions.MANAGE_CHANNELS |
+  Permissions.MANAGE_ROLES;
+
+export const SERVER_ONLY_PERMISSIONS: number =
+  ALL_PERMISSIONS & ~CHANNEL_PERMISSIONS;
+
+export function isChannelPermission(bit: number): boolean {
+  return (CHANNEL_PERMISSIONS & bit) === bit;
+}

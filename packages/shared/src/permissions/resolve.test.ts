@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { ALL_PERMISSIONS, Permissions } from "./bits.js";
+import {
+  ALL_PERMISSIONS,
+  CHANNEL_PERMISSIONS,
+  isChannelPermission,
+  Permissions,
+  SERVER_ONLY_PERMISSIONS,
+} from "./bits.js";
 import { resolve, type ResolveInput } from "./resolve.js";
 
 const OWNER = "user_owner";
@@ -38,6 +44,45 @@ describe("Permissions", () => {
     expect(bits).toStrictEqual([
       1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048,
     ]);
+  });
+});
+
+describe("the channel and server-only split", () => {
+  it("is true of exactly the bits an overwrite may carry", () => {
+    for (const bit of [
+      Permissions.VIEW_CHANNEL,
+      Permissions.SEND_MESSAGES,
+      Permissions.ADD_REACTIONS,
+      Permissions.MENTION_EVERYONE,
+      Permissions.MANAGE_MESSAGES,
+      Permissions.MANAGE_CHANNELS,
+      Permissions.MANAGE_ROLES,
+    ]) {
+      expect(isChannelPermission(bit)).toBe(true);
+    }
+  });
+
+  it("is false of every bit resolved at server scope", () => {
+    for (const bit of [
+      Permissions.MANAGE_SERVER,
+      Permissions.KICK_MEMBERS,
+      Permissions.BAN_MEMBERS,
+      Permissions.CREATE_INVITE,
+      Permissions.ADMINISTRATOR,
+    ]) {
+      expect(isChannelPermission(bit)).toBe(false);
+    }
+  });
+
+  it("is false of a mask mixing the two, rather than true of its channel half", () => {
+    expect(
+      isChannelPermission(Permissions.VIEW_CHANNEL | Permissions.BAN_MEMBERS),
+    ).toBe(false);
+  });
+
+  it("partitions every named bit between the two sets", () => {
+    expect(CHANNEL_PERMISSIONS & SERVER_ONLY_PERMISSIONS).toBe(0);
+    expect(CHANNEL_PERMISSIONS | SERVER_ONLY_PERMISSIONS).toBe(ALL_PERMISSIONS);
   });
 });
 

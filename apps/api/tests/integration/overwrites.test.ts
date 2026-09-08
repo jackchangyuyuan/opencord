@@ -15,13 +15,11 @@ import {
   roles,
   serverMembers,
 } from "../../src/db/schema/index.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
 const FOREIGN_KEY_VIOLATION = "23503";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
 const channelList = z.array(z.object({ id: z.string(), name: z.string() }));
 const overwritesBody = z.object({
@@ -32,11 +30,6 @@ const overwritesBody = z.object({
     z.object({ userId: z.string(), allow: z.number(), deny: z.number() }),
   ),
 });
-
-interface Account {
-  id: string;
-  cookies: string[];
-}
 
 interface Fixture {
   ada: Account;
@@ -63,24 +56,6 @@ async function rejection(
   }
 
   throw new Error("expected the statement to be rejected");
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
 }
 
 async function createServer(account: Account, name: string): Promise<string> {
@@ -319,6 +294,68 @@ describe("the overwrite routes", () => {
     expect(await db.select().from(channelRoleOverwrites)).toEqual([]);
   });
 
+  it("rejects a delete from a member without MANAGE_ROLES", async () => {
+    const fixture = await seed();
+
+    const created = await putRoleOverwrite(
+      fixture.ada,
+      fixture.channelId,
+      fixture.everyoneRoleId,
+      { deny: Permissions.SEND_MESSAGES },
+    );
+
+    expect(created.status).toBe(200);
+
+    const res = await request(app)
+      .delete(
+        `/api/v1/channels/${fixture.channelId}/overwrites/roles/${fixture.everyoneRoleId}`,
+      )
+      .set("Cookie", fixture.grace.cookies);
+
+    expect(res.status).toBe(403);
+    expect(await db.select().from(channelRoleOverwrites)).toHaveLength(1);
+  });
+
+  it("rejects a member overwrite delete from a member without MANAGE_ROLES", async () => {
+    const fixture = await seed();
+
+    const created = await putMemberOverwrite(
+      fixture.ada,
+      fixture.channelId,
+      fixture.grace.id,
+      { deny: Permissions.SEND_MESSAGES },
+    );
+
+    expect(created.status).toBe(200);
+
+    const res = await request(app)
+      .delete(
+        `/api/v1/channels/${fixture.channelId}/overwrites/members/${fixture.grace.id}`,
+      )
+      .set("Cookie", fixture.grace.cookies);
+
+    expect(res.status).toBe(403);
+    expect(await db.select().from(channelMemberOverwrites)).toHaveLength(1);
+  });
+
+  it("lets a member without MANAGE_ROLES read the overwrites", async () => {
+    const fixture = await seed();
+
+    await putRoleOverwrite(
+      fixture.ada,
+      fixture.channelId,
+      fixture.everyoneRoleId,
+      { deny: Permissions.SEND_MESSAGES },
+    );
+
+    const res = await request(app)
+      .get(`/api/v1/channels/${fixture.channelId}/overwrites`)
+      .set("Cookie", fixture.grace.cookies);
+
+    expect(res.status).toBe(200);
+    expect(overwritesBody.parse(res.body).roles).toHaveLength(1);
+  });
+
   it("refuses to grant a permission the caller does not itself hold", async () => {
     const fixture = await seed();
 
@@ -439,6 +476,87 @@ describe("the overwrite routes", () => {
     );
 
     expect(res.status).toBe(400);
+  });
+
+  it("refuses an overwrite naming a permission held server-wide", async () => {
+    const fixture = await seed();
+
+    for (const bit of [
+      Permissions.MANAGE_SERVER,
+      Permissions.KICK_MEMBERS,
+      Permissions.BAN_MEMBERS,
+      Permissions.CREATE_INVITE,
+      Permissions.ADMINISTRATOR,
+    ]) {
+      const denied = await putRoleOverwrite(
+        fixture.ada,
+        fixture.channelId,
+        fixture.everyoneRoleId,
+        { deny: bit },
+      );
+
+      expect(denied.status).toBe(400);
+      expect(denied.body).toMatchObject({
+        error: { code: "NOT_A_CHANNEL_PERMISSION" },
+      });
+
+      const allowed = await putMemberOverwrite(
+        fixture.ada,
+        fixture.channelId,
+        fixture.ada.id,
+        { allow: bit },
+      );
+
+      expect(allowed.status).toBe(400);
+      expect(allowed.body).toMatchObject({
+        error: { code: "NOT_A_CHANNEL_PERMISSION" },
+      });
+    }
+
+    expect(
+      await db.query.channelRoleOverwrites.findMany({
+        where: { channelId: fixture.channelId },
+      }),
+    ).toEqual([]);
+  });
+
+  it("accepts every channel-scoped bit", async () => {
+    const fixture = await seed();
+
+    const res = await putRoleOverwrite(
+      fixture.ada,
+      fixture.channelId,
+      fixture.everyoneRoleId,
+      {
+        allow: Permissions.VIEW_CHANNEL | Permissions.MANAGE_MESSAGES,
+        deny:
+          Permissions.SEND_MESSAGES |
+          Permissions.ADD_REACTIONS |
+          Permissions.MENTION_EVERYONE |
+          Permissions.MANAGE_CHANNELS |
+          Permissions.MANAGE_ROLES,
+      },
+    );
+
+    expect(res.status).toBe(200);
+  });
+
+  it("refuses a mixed mask rather than storing the legal half", async () => {
+    const fixture = await seed();
+
+    const res = await putRoleOverwrite(
+      fixture.ada,
+      fixture.channelId,
+      fixture.everyoneRoleId,
+      { deny: Permissions.SEND_MESSAGES | Permissions.BAN_MEMBERS },
+    );
+
+    expect(res.status).toBe(400);
+    expect(
+      await db.query.channelRoleOverwrites.findMany({
+        where: { channelId: fixture.channelId },
+      }),
+    ).toEqual([]);
   });
 });
 

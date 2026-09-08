@@ -4,41 +4,19 @@ import request from "supertest";
 import { beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { requireTestDatabase } from "../../../tests/setup.js";
-import { app } from "../../app.js";
-import { db } from "../../db/index.js";
-import { serverMembers } from "../../db/schema/index.js";
-import { loadUnreadStates } from "./read-state/unread.js";
+import { app } from "../../src/app.js";
+import { db } from "../../src/db/index.js";
+import { messages, serverMembers } from "../../src/db/schema/index.js";
+import {
+  loadUnreadStates,
+  UNREAD_COUNT_CAP,
+} from "../../src/modules/channels/read-state/unread.js";
+import { type Account, signUp } from "../helpers/accounts.js";
+import { requireTestDatabase } from "../setup.js";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
 const channelBody = z.object({ id: z.string() });
 const messageBody = z.object({ id: z.string() });
-
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
 
 interface Fixture {
   ada: Account;
@@ -138,6 +116,54 @@ describe("loadUnreadStates", () => {
     });
   });
 
+  it("counts unread messages by somebody else", async () => {
+    const fixture = await seed();
+
+    await send(fixture.grace, fixture.channelId, "mine, so read");
+    await send(fixture.ada, fixture.channelId, "one");
+    await send(fixture.ada, fixture.channelId, "two");
+
+    const states = await loadUnreadStates(fixture.grace.id, [
+      fixture.channelId,
+    ]);
+
+    expect(states.get(fixture.channelId)?.unreadCount).toBe(2);
+  });
+
+  it("stops counting at the watermark", async () => {
+    const fixture = await seed();
+
+    await send(fixture.ada, fixture.channelId, "before");
+    const read = await send(fixture.ada, fixture.channelId, "still before");
+
+    await markRead(fixture.grace, fixture.channelId, read);
+    await send(fixture.ada, fixture.channelId, "after");
+
+    const states = await loadUnreadStates(fixture.grace.id, [
+      fixture.channelId,
+    ]);
+
+    expect(states.get(fixture.channelId)?.unreadCount).toBe(1);
+  });
+
+  it("never counts past the cap", async () => {
+    const fixture = await seed();
+
+    await db.insert(messages).values(
+      Array.from({ length: UNREAD_COUNT_CAP + 3 }, (_unused, index) => ({
+        channelId: fixture.channelId,
+        authorId: fixture.ada.id,
+        content: `message ${String(index)}`,
+      })),
+    );
+
+    const states = await loadUnreadStates(fixture.grace.id, [
+      fixture.channelId,
+    ]);
+
+    expect(states.get(fixture.channelId)?.unreadCount).toBe(UNREAD_COUNT_CAP);
+  });
+
   it("reports an empty channel as read even with no read state", async () => {
     const fixture = await seed();
 
@@ -174,6 +200,33 @@ describe("loadUnreadStates", () => {
     const after = await loadUnreadStates(fixture.grace.id, [fixture.channelId]);
 
     expect(after.get(fixture.channelId)?.hasUnread).toBe(true);
+  });
+
+  it("leaves the sender's own channel read", async () => {
+    const fixture = await seed();
+
+    await send(fixture.ada, fixture.channelId, "hello");
+
+    const author = await loadUnreadStates(fixture.ada.id, [fixture.channelId]);
+
+    expect(author.get(fixture.channelId)?.hasUnread).toBe(false);
+
+    const reader = await loadUnreadStates(fixture.grace.id, [
+      fixture.channelId,
+    ]);
+
+    expect(reader.get(fixture.channelId)?.hasUnread).toBe(true);
+  });
+
+  it("marks the sender's channel unread again once somebody else writes", async () => {
+    const fixture = await seed();
+
+    await send(fixture.ada, fixture.channelId, "mine");
+    await send(fixture.grace, fixture.channelId, "theirs");
+
+    const states = await loadUnreadStates(fixture.ada.id, [fixture.channelId]);
+
+    expect(states.get(fixture.channelId)?.hasUnread).toBe(true);
   });
 
   it("counts only this reader's unread mentions", async () => {
@@ -217,6 +270,22 @@ describe("loadUnreadStates", () => {
       mentionCount: 0,
       unreadCount: 1,
     });
+  });
+
+  it("does not flag an @everyone against the person who sent it", async () => {
+    const fixture = await seed();
+
+    await send(fixture.ada, fixture.channelId, "@everyone listen");
+
+    const author = await loadUnreadStates(fixture.ada.id, [fixture.channelId]);
+
+    expect(author.get(fixture.channelId)?.hasEveryone).toBe(false);
+
+    const reader = await loadUnreadStates(fixture.grace.id, [
+      fixture.channelId,
+    ]);
+
+    expect(reader.get(fixture.channelId)?.hasEveryone).toBe(true);
   });
 
   it("clears @everyone once the watermark passes it", async () => {

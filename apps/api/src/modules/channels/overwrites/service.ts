@@ -1,3 +1,4 @@
+import { SERVER_ONLY_PERMISSIONS } from "@opencord/shared/permissions";
 import type { OverwriteInput } from "@opencord/shared/schemas";
 import { and, eq } from "drizzle-orm";
 
@@ -10,7 +11,7 @@ import {
   serverMembers,
 } from "../../../db/schema/index.js";
 import { writeAudit } from "../../../lib/audit.js";
-import { notFound } from "../../../lib/errors.js";
+import { AppError, notFound } from "../../../lib/errors.js";
 import {
   emitPermissionsChanged,
   rederiveRoomsFor,
@@ -22,6 +23,19 @@ import {
   requireHeldPermissions,
 } from "../../roles/service.js";
 import { type ChannelOverwrites, listChannelOverwrites } from "./queries.js";
+
+function requireChannelScopedBits(allow: number, deny: number): void {
+  const offending = (allow | deny) & SERVER_ONLY_PERMISSIONS;
+
+  if (offending !== 0) {
+    throw new AppError(
+      400,
+      "NOT_A_CHANNEL_PERMISSION",
+      "That permission is held server-wide and cannot be set per channel",
+      { permissions: offending },
+    );
+  }
+}
 
 async function announceOverwriteChange(serverId: string): Promise<void> {
   await rederiveRoomsFor(await serverMemberIds(serverId));
@@ -86,6 +100,7 @@ export async function putRoleOverwrite(
   input: OverwriteInput,
 ): Promise<ChannelOverwrites> {
   await requireEditableRole(context, actorId, roleId);
+  requireChannelScopedBits(input.allow, input.deny);
   requireHeldPermissions(context, input.allow | input.deny);
 
   await db.transaction(async (tx) => {
@@ -157,6 +172,7 @@ export async function putMemberOverwrite(
   input: OverwriteInput,
 ): Promise<ChannelOverwrites> {
   await requireEditableMember(context, actorId, userId);
+  requireChannelScopedBits(input.allow, input.deny);
   requireHeldPermissions(context, input.allow | input.deny);
 
   await db.transaction(async (tx) => {
