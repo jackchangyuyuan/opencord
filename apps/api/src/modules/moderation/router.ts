@@ -22,7 +22,7 @@ export const serverBansRouter = Router({ mergeParams: true });
 serverBansRouter.get(
   "/",
   validate({ params: serverParamsSchema }),
-  requireServerPermission(Permissions.BAN_MEMBERS),
+  requireServerPermission(),
   async (req, res) => {
     res.json(await listBans(req.server.server.id));
   },

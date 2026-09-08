@@ -135,7 +135,7 @@ describe("AuditEntry", () => {
   it("has copy for every action the API can emit", () => {
     const actions = Object.keys(ACTION_COPY) as AuditAction[];
 
-    expect(actions).toHaveLength(20);
+    expect(actions).toHaveLength(21);
 
     for (const action of actions) {
       expect(ACTION_COPY[action]).not.toBe("");

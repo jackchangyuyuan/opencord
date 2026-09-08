@@ -12,6 +12,7 @@ import {
   serverMembers,
   servers,
 } from "../../src/db/schema/index.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
 const state = vi.hoisted(() => ({ auditFails: false }));
@@ -29,9 +30,6 @@ vi.mock("../../src/lib/audit.js", async (importOriginal) => {
   };
 });
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
 const auditPage = z.object({
   data: z.array(
@@ -47,29 +45,6 @@ const auditPage = z.object({
   ),
   nextCursor: z.string().nullable(),
 });
-
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
 
 async function createServer(account: Account, name: string): Promise<string> {
   const res = await request(app)

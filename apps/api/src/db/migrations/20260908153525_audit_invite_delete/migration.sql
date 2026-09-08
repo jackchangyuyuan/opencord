@@ -1,0 +1,1 @@
+ALTER TYPE "audit_action" ADD VALUE 'invite_delete' BEFORE 'invite_redeem';

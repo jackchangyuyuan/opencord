@@ -5,6 +5,7 @@ export const ACTION_COPY: Record<AuditAction, string> = {
   member_ban: "banned a member",
   member_unban: "lifted a ban",
   invite_create: "created an invite",
+  invite_delete: "revoked an invite",
   invite_redeem: "joined with an invite",
   role_create: "created a role",
   role_update: "changed a role",

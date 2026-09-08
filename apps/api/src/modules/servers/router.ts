@@ -1,7 +1,7 @@
 import { Permissions } from "@opencord/shared/permissions";
 import {
+  auditLogPageSchema,
   createServerSchema,
-  paginationSchema,
   updateServerSchema,
 } from "@opencord/shared/schemas";
 import { Router } from "express";
@@ -10,12 +10,11 @@ import { z } from "zod";
 import { requireServerPermission } from "../../middleware/permissions.js";
 import { createResourceRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
-import { listAuditLog } from "./audit-log.js";
+import { listAuditLog, listAuditPeople } from "./audit-log.js";
 import { listServersForUser, serializeServerDetail } from "./queries.js";
 import {
   createServer,
   deleteServer,
-  leaveServer,
   transferOwnership,
   updateServer,
 } from "./service.js";
@@ -58,10 +57,19 @@ serversRouter.patch(
 
 serversRouter.get(
   "/:serverId/audit-log",
-  validate({ params: serverParamsSchema, query: paginationSchema }),
+  validate({ params: serverParamsSchema, query: auditLogPageSchema }),
   requireServerPermission(Permissions.MANAGE_SERVER),
   async (req, res) => {
     res.json(await listAuditLog(req.server.server.id, req.query));
+  },
+);
+
+serversRouter.get(
+  "/:serverId/audit-log/people",
+  validate({ params: serverParamsSchema }),
+  requireServerPermission(Permissions.MANAGE_SERVER),
+  async (req, res) => {
+    res.json(await listAuditPeople(req.server.server.id));
   },
 );
 
@@ -71,16 +79,6 @@ serversRouter.post(
   requireServerPermission(),
   async (req, res) => {
     res.json(await transferOwnership(req.server, req.user.id, req.body.userId));
-  },
-);
-
-serversRouter.delete(
-  "/:serverId/members/@me",
-  validate({ params: serverParamsSchema }),
-  requireServerPermission(),
-  async (req, res) => {
-    await leaveServer(req.server, req.user.id);
-    res.status(204).end();
   },
 );
 

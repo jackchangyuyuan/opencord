@@ -14,11 +14,9 @@ import {
   roles,
   serverMembers,
 } from "../../src/db/schema/index.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const idBody = z.object({ id: z.string() });
 const errorBody = z.object({ error: z.object({ code: z.string() }) });
 
@@ -42,33 +40,10 @@ const previewBody = z.object({
   memberCount: z.int(),
 });
 
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
 interface Fixture {
   ada: Account;
   grace: Account;
   serverId: string;
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
 }
 
 async function seed(): Promise<Fixture> {
@@ -110,6 +85,12 @@ function create(
 function list(account: Account, serverId: string) {
   return request(app)
     .get(`/api/v1/servers/${serverId}/invites`)
+    .set("Cookie", account.cookies);
+}
+
+function revoke(account: Account, serverId: string, code: string) {
+  return request(app)
+    .delete(`/api/v1/servers/${serverId}/invites/${code}`)
     .set("Cookie", account.cookies);
 }
 
@@ -345,6 +326,164 @@ describe("invites", () => {
       .where(eq(invites.serverId, fixture.serverId));
 
     expect(rows).toEqual([]);
+  });
+});
+
+describe("revoking an invite", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  it("deletes the code and stops it being redeemable", async () => {
+    const fixture = await seed();
+    const hopper = await signUp("revoke-hopper");
+
+    const created = await create(fixture.ada, fixture.serverId);
+    const { code } = inviteBody.parse(created.body);
+
+    expect((await revoke(fixture.ada, fixture.serverId, code)).status).toBe(
+      204,
+    );
+
+    expect(
+      await db.select().from(invites).where(eq(invites.code, code)),
+    ).toEqual([]);
+
+    const attempt = await redeem(hopper, code);
+
+    expect(attempt.status).toBe(404);
+    expect(errorBody.parse(attempt.body).error.code).toBe("INVITE_NOT_FOUND");
+    expect(await memberships(fixture.serverId, hopper.id)).toEqual([]);
+  });
+
+  it("leaves every other invite alone", async () => {
+    const fixture = await seed();
+
+    const first = inviteBody.parse(
+      (await create(fixture.ada, fixture.serverId)).body,
+    ).code;
+    const second = inviteBody.parse(
+      (await create(fixture.ada, fixture.serverId)).body,
+    ).code;
+
+    expect((await revoke(fixture.ada, fixture.serverId, first)).status).toBe(
+      204,
+    );
+
+    const remaining = z
+      .array(inviteBody)
+      .parse((await list(fixture.ada, fixture.serverId)).body);
+
+    expect(remaining.map((invite) => invite.code)).toEqual([second]);
+  });
+
+  it("audits the revocation against the code", async () => {
+    const fixture = await seed();
+
+    const { code } = inviteBody.parse(
+      (await create(fixture.ada, fixture.serverId)).body,
+    );
+
+    await revoke(fixture.ada, fixture.serverId, code);
+
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.serverId, fixture.serverId),
+          eq(auditLog.action, "invite_delete"),
+        ),
+      );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      actorId: fixture.ada.id,
+      targetId: code,
+      targetType: "invite",
+    });
+  });
+
+  it("lets somebody revoke an invite they created themselves", async () => {
+    const fixture = await seed();
+
+    await grantEveryone(
+      fixture.serverId,
+      Permissions.VIEW_CHANNEL | Permissions.CREATE_INVITE,
+    );
+
+    const { code } = inviteBody.parse(
+      (await create(fixture.grace, fixture.serverId)).body,
+    );
+
+    expect((await revoke(fixture.grace, fixture.serverId, code)).status).toBe(
+      204,
+    );
+  });
+
+  it("refuses somebody else's invite without MANAGE_SERVER", async () => {
+    const fixture = await seed();
+
+    await grantEveryone(
+      fixture.serverId,
+      Permissions.VIEW_CHANNEL | Permissions.CREATE_INVITE,
+    );
+
+    const { code } = inviteBody.parse(
+      (await create(fixture.ada, fixture.serverId)).body,
+    );
+
+    const res = await revoke(fixture.grace, fixture.serverId, code);
+
+    expect(res.status).toBe(403);
+    expect(errorBody.parse(res.body).error.code).toBe("NOT_THE_INVITER");
+    expect(
+      await db.select().from(invites).where(eq(invites.code, code)),
+    ).toHaveLength(1);
+  });
+
+  it("refuses a member without CREATE_INVITE at the route", async () => {
+    const fixture = await seed();
+
+    const { code } = inviteBody.parse(
+      (await create(fixture.ada, fixture.serverId)).body,
+    );
+
+    await grantEveryone(fixture.serverId, Permissions.VIEW_CHANNEL);
+
+    expect((await revoke(fixture.grace, fixture.serverId, code)).status).toBe(
+      403,
+    );
+  });
+
+  it("does not reach an invite belonging to another server", async () => {
+    const fixture = await seed();
+
+    const other = await request(app)
+      .post("/api/v1/servers")
+      .set("Cookie", fixture.ada.cookies)
+      .send({ name: "Somewhere else" });
+
+    const otherId = idBody.parse(other.body).id;
+    const { code } = inviteBody.parse(
+      (await create(fixture.ada, otherId)).body,
+    );
+
+    const res = await revoke(fixture.ada, fixture.serverId, code);
+
+    expect(res.status).toBe(404);
+    expect(errorBody.parse(res.body).error.code).toBe("INVITE_NOT_FOUND");
+    expect(
+      await db.select().from(invites).where(eq(invites.code, code)),
+    ).toHaveLength(1);
+  });
+
+  it("rejects a malformed code before it reaches the service", async () => {
+    const fixture = await seed();
+
+    expect((await revoke(fixture.ada, fixture.serverId, "short")).status).toBe(
+      400,
+    );
   });
 });
 

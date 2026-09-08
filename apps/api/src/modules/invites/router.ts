@@ -7,10 +7,19 @@ import { requireServerPermission } from "../../middleware/permissions.js";
 import { redeemInviteRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
 import { listServerInvites } from "./queries.js";
-import { createInvite, previewInvite, redeemInvite } from "./service.js";
+import {
+  createInvite,
+  previewInvite,
+  redeemInvite,
+  revokeInvite,
+} from "./service.js";
 
 const serverParamsSchema = z.object({ serverId: z.uuid() });
 const codeParamsSchema = z.object({ code: inviteCodeSchema });
+const serverCodeParamsSchema = z.object({
+  serverId: z.uuid(),
+  code: inviteCodeSchema,
+});
 
 export const serverInvitesRouter = Router({ mergeParams: true });
 
@@ -29,6 +38,16 @@ serverInvitesRouter.post(
   requireServerPermission(Permissions.CREATE_INVITE),
   async (req, res) => {
     res.status(201).json(await createInvite(req.server, req.user, req.body));
+  },
+);
+
+serverInvitesRouter.delete(
+  "/:code",
+  validate({ params: serverCodeParamsSchema }),
+  requireServerPermission(Permissions.CREATE_INVITE),
+  async (req, res) => {
+    await revokeInvite(req.server, req.user.id, req.params.code);
+    res.status(204).end();
   },
 );
 

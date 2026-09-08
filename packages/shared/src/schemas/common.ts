@@ -34,8 +34,6 @@ export const paginationSchema = z.object({
     .default(DEFAULT_PAGE_SIZE),
 });
 
-export type Pagination = z.infer<typeof paginationSchema>;
-
 export const messagePageSchema = z
   .object({
     before: z.string().min(1).optional(),

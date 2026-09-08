@@ -22,6 +22,7 @@ import {
   serverMembers,
 } from "../../src/db/schema/index.js";
 import { createSocketServer } from "../../src/socket/index.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -29,9 +30,6 @@ type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 const SETTLE_TIMEOUT_MS = 2000;
 const SETTLE_POLL_MS = 25;
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const idBody = z.object({ id: z.string() });
 const errorBody = z.object({ error: z.object({ code: z.string() }) });
 
@@ -44,11 +42,6 @@ const banList = z.array(
   }),
 );
 
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
 interface Fixture {
   ada: Account;
   grace: Account;
@@ -56,24 +49,6 @@ interface Fixture {
   serverId: string;
   channelId: string;
   everyoneRoleId: string;
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
 }
 
 async function seed(): Promise<Fixture> {
@@ -356,12 +331,57 @@ describe("moderation", () => {
     expect(errorBody.parse(res.body).error.code).toBe("BAN_NOT_FOUND");
   });
 
-  it("hides the ban list without BAN_MEMBERS", async () => {
+  it("shows the ban list to an ordinary member", async () => {
+    const fixture = await seed();
+
+    await ban(fixture.ada, fixture.serverId, fixture.hopper.id, {
+      reason: "spam",
+    });
+
+    const res = await listBanned(fixture.grace, fixture.serverId);
+
+    expect(res.status).toBe(200);
+    expect(banList.parse(res.body)).toEqual([
+      expect.objectContaining({ reason: "spam", bannedBy: fixture.ada.id }),
+    ]);
+  });
+
+  it("shows an ordinary member an empty list when nobody is banned", async () => {
     const fixture = await seed();
 
     const res = await listBanned(fixture.grace, fixture.serverId);
 
+    expect(res.status).toBe(200);
+    expect(banList.parse(res.body)).toEqual([]);
+  });
+
+  it("still refuses the ban list to somebody who is not a member", async () => {
+    const fixture = await seed();
+    const stranger = await signUp("ban-list-stranger");
+
+    const res = await listBanned(stranger, fixture.serverId);
+
     expect(res.status).toBe(403);
+  });
+
+  it("lets a member read the list and still refuses them the writes", async () => {
+    const fixture = await seed();
+
+    await ban(fixture.ada, fixture.serverId, fixture.hopper.id);
+
+    expect((await listBanned(fixture.grace, fixture.serverId)).status).toBe(
+      200,
+    );
+    expect(
+      (await ban(fixture.grace, fixture.serverId, fixture.hopper.id)).status,
+    ).toBe(403);
+    expect(
+      (await unban(fixture.grace, fixture.serverId, fixture.hopper.id)).status,
+    ).toBe(403);
+
+    expect(
+      banList.parse((await listBanned(fixture.ada, fixture.serverId)).body),
+    ).toHaveLength(1);
   });
 
   it("audits all three actions", async () => {

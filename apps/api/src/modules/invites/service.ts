@@ -1,8 +1,7 @@
-import {
-  type CreateInviteInput,
-  INVITE_CODE_LENGTH,
-} from "@opencord/shared/schemas";
-import { sql } from "drizzle-orm";
+import { Permissions } from "@opencord/shared/permissions";
+import type { CreateInviteInput } from "@opencord/shared/schemas";
+import { INVITE_CODE_LENGTH } from "@opencord/shared/schemas";
+import { and, eq, sql } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
 import postgres from "postgres";
 
@@ -11,7 +10,13 @@ import { db } from "../../db/index.js";
 import { invites, serverMembers } from "../../db/schema/index.js";
 import { lockMembershipPair } from "../../lib/advisory-locks.js";
 import { writeAudit } from "../../lib/audit.js";
-import { AppError, conflict, notFound, userBanned } from "../../lib/errors.js";
+import {
+  AppError,
+  conflict,
+  forbidden,
+  notFound,
+  userBanned,
+} from "../../lib/errors.js";
 import { consumeQuota, type QuotaSubject } from "../../lib/quota.js";
 import { emitMemberEvent, joinRedeemedServerRooms } from "../../socket/emit.js";
 import {
@@ -171,6 +176,46 @@ export async function redeemInvite(
   }
 
   return result;
+}
+
+export async function revokeInvite(
+  context: ServerContext,
+  actorId: string,
+  code: string,
+): Promise<void> {
+  const [invite] = await db
+    .select({ inviterId: invites.inviterId })
+    .from(invites)
+    .where(
+      and(eq(invites.code, code), eq(invites.serverId, context.server.id)),
+    );
+
+  if (invite === undefined) {
+    throw notFound("INVITE_NOT_FOUND", "That invite does not exist");
+  }
+
+  const mayManage =
+    (context.permissions & Permissions.MANAGE_SERVER) ===
+    Permissions.MANAGE_SERVER;
+
+  if (!mayManage && invite.inviterId !== actorId) {
+    throw forbidden(
+      "NOT_THE_INVITER",
+      "You can only revoke invites you created",
+    );
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.delete(invites).where(eq(invites.code, code));
+
+    await writeAudit(tx, {
+      serverId: context.server.id,
+      actorId,
+      action: "invite_delete",
+      targetType: "invite",
+      targetId: code,
+    });
+  });
 }
 
 export async function previewInvite(code: string): Promise<InvitePreview> {

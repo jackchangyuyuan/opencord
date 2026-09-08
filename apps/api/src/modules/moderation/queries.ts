@@ -2,7 +2,11 @@ import { and, desc, eq } from "drizzle-orm";
 
 import { db } from "../../db/index.js";
 import { bans, serverMembers, users } from "../../db/schema/index.js";
-import { type PublicUser, serializeUser } from "../users/queries.js";
+import {
+  profileSelection,
+  type PublicUser,
+  serializeUser,
+} from "../users/queries.js";
 
 export interface BanEntry {
   user: PublicUser;
@@ -31,11 +35,7 @@ export async function isMember(
 export async function listBans(serverId: string): Promise<BanEntry[]> {
   const rows = await db
     .select({
-      id: users.id,
-      username: users.username,
-      name: users.name,
-      image: users.image,
-      avatarObjectKey: users.avatarObjectKey,
+      ...profileSelection,
       reason: bans.reason,
       bannedBy: bans.bannedBy,
       createdAt: bans.createdAt,
