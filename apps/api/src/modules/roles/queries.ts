@@ -1,8 +1,8 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 
 import type { RoleRow, ServerContext } from "../../access/context.js";
 import { db } from "../../db/index.js";
-import { memberRoles, roles } from "../../db/schema/index.js";
+import { memberRoles, roles, serverMembers } from "../../db/schema/index.js";
 
 export interface PublicRole {
   id: string;
@@ -62,12 +62,35 @@ export async function findServerRole(
   return role;
 }
 
-export async function listServerRoles(serverId: string): Promise<PublicRole[]> {
-  const rows = await db
-    .select()
-    .from(roles)
-    .where(eq(roles.serverId, serverId))
-    .orderBy(asc(roles.position), asc(roles.id));
+export interface ServerRoleSummary extends PublicRole {
+  memberCount: number;
+}
 
-  return rows.map(serializeRole);
+export async function listServerRoles(
+  serverId: string,
+): Promise<ServerRoleSummary[]> {
+  const [rows, assigned, members] = await Promise.all([
+    db
+      .select()
+      .from(roles)
+      .where(eq(roles.serverId, serverId))
+      .orderBy(asc(roles.position), asc(roles.id)),
+    db
+      .select({ roleId: memberRoles.roleId, total: count() })
+      .from(memberRoles)
+      .where(eq(memberRoles.serverId, serverId))
+      .groupBy(memberRoles.roleId),
+    db
+      .select({ total: count() })
+      .from(serverMembers)
+      .where(eq(serverMembers.serverId, serverId)),
+  ]);
+
+  const byRole = new Map(assigned.map((row) => [row.roleId, row.total]));
+  const everyone = members[0]?.total ?? 0;
+
+  return rows.map((role) => ({
+    ...serializeRole(role),
+    memberCount: role.isDefault ? everyone : (byRole.get(role.id) ?? 0),
+  }));
 }

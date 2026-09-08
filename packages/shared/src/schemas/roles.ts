@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { NAME_MAX_LENGTH, NAME_MIN_LENGTH } from "../constants/index.js";
+import {
+  MAX_ROLES_PER_REORDER,
+  NAME_MAX_LENGTH,
+  NAME_MIN_LENGTH,
+} from "../constants/index.js";
 import { permissionMaskSchema } from "./common.js";
 
 export const roleNameSchema = z
@@ -17,7 +21,7 @@ export const createRoleSchema = z.object({
   name: roleNameSchema,
   color: roleColorSchema.nullable().optional(),
   permissions: permissionMaskSchema.default(0),
-  position: rolePositionSchema.default(1),
+  position: rolePositionSchema.optional(),
 });
 
 export type CreateRoleInput = z.infer<typeof createRoleSchema>;
@@ -35,3 +39,9 @@ export const updateRoleSchema = z
   );
 
 export type UpdateRoleInput = z.infer<typeof updateRoleSchema>;
+
+export const reorderRolesSchema = z.object({
+  roleIds: z.array(z.uuid()).min(1).max(MAX_ROLES_PER_REORDER),
+});
+
+export type ReorderRolesInput = z.infer<typeof reorderRolesSchema>;

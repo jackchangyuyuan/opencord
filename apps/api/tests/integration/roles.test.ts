@@ -12,11 +12,9 @@ import {
   roles,
   serverMembers,
 } from "../../src/db/schema/index.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
 const roleBody = z.object({
   id: z.string(),
@@ -27,29 +25,7 @@ const roleBody = z.object({
   isDefault: z.boolean(),
 });
 const roleList = z.array(roleBody);
-
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
+const reorderBody = z.object({ roles: roleList });
 
 async function createServer(account: Account, name: string): Promise<string> {
   const res = await request(app)
@@ -115,6 +91,23 @@ function patchRole(
     .send(body);
 }
 
+function reorderRoles(account: Account, serverId: string, roleIds: string[]) {
+  return request(app)
+    .patch(`/api/v1/servers/${serverId}/roles/positions`)
+    .set("Cookie", account.cookies)
+    .send({ roleIds });
+}
+
+function positionsOf(serverId: string) {
+  return db.query.roles
+    .findMany({
+      columns: { id: true, name: true, position: true },
+      where: { serverId },
+      orderBy: { position: "asc" },
+    })
+    .then((rows) => rows.map((row) => `${row.name}:${String(row.position)}`));
+}
+
 function deleteRole(account: Account, serverId: string, roleId: string) {
   return request(app)
     .delete(`/api/v1/servers/${serverId}/roles/${roleId}`)
@@ -165,6 +158,33 @@ describe("GET and POST /api/v1/servers/:serverId/roles", () => {
     expect(res.status).toBe(200);
     expect(roleList.parse(res.body)).toMatchObject([
       { name: "@everyone", position: 0, isDefault: true },
+    ]);
+  });
+
+  it("carries how many people wear each role", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+    const hopper = await signUp("hopper");
+    const serverId = await createServer(ada, "Analytical Engine");
+
+    await join(serverId, grace);
+    await join(serverId, hopper);
+
+    const moderators = await seedRole(serverId, "moderator", 0, 1);
+    const archivists = await seedRole(serverId, "archivist", 0, 2);
+
+    await assign(serverId, grace, moderators);
+    await assign(serverId, hopper, moderators);
+
+    const res = await request(app)
+      .get(`/api/v1/servers/${serverId}/roles`)
+      .set("Cookie", ada.cookies);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject([
+      { name: "@everyone", memberCount: 3 },
+      { id: moderators, memberCount: 2 },
+      { id: archivists, memberCount: 0 },
     ]);
   });
 
@@ -318,7 +338,7 @@ describe("the role hierarchy", () => {
     ).toBe(200);
   });
 
-  it("protects the @everyone role from edits, reorders and deletes", async () => {
+  it("protects the @everyone role's identity, reorder and delete", async () => {
     const ada = await signUp("ada");
     const serverId = await createServer(ada, "Analytical Engine");
     const everyone = await everyoneRoleId(serverId);
@@ -340,6 +360,101 @@ describe("the role hierarchy", () => {
     });
 
     expect(stored).toEqual({ name: "@everyone", position: 0 });
+  });
+
+  it("lets an authorized caller change what @everyone grants", async () => {
+    const ada = await signUp("everyone-perms-owner");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const everyone = await everyoneRoleId(serverId);
+
+    const next =
+      Permissions.VIEW_CHANNEL |
+      Permissions.SEND_MESSAGES |
+      Permissions.ADD_REACTIONS;
+
+    const res = await patchRole(ada, serverId, everyone, { permissions: next });
+
+    expect(res.status).toBe(200);
+    expect(roleBody.parse(res.body)).toMatchObject({
+      isDefault: true,
+      name: "@everyone",
+      permissions: next,
+      position: 0,
+    });
+
+    const stored = await db.query.roles.findFirst({
+      columns: { permissions: true },
+      where: { id: everyone },
+    });
+
+    expect(stored).toEqual({ permissions: next });
+  });
+
+  it("refuses a patch that changes @everyone's identity as well", async () => {
+    const ada = await signUp("everyone-perms-mixed");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const everyone = await everyoneRoleId(serverId);
+
+    const res = await patchRole(ada, serverId, everyone, {
+      color: 0x22c55e,
+      permissions: Permissions.VIEW_CHANNEL,
+    });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: { code: "ROLE_IS_DEFAULT" } });
+
+    const stored = await db.query.roles.findFirst({
+      columns: { color: true, permissions: true },
+      where: { id: everyone },
+    });
+
+    expect(stored?.color).toBeNull();
+    expect(stored?.permissions).not.toBe(Permissions.VIEW_CHANNEL);
+  });
+
+  it("refuses a member at the floor, even holding MANAGE_ROLES", async () => {
+    const ada = await signUp("everyone-perms-floor-owner");
+    const grace = await signUp("everyone-perms-floor");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const everyone = await everyoneRoleId(serverId);
+
+    await join(serverId, grace);
+    await db
+      .update(roles)
+      .set({ permissions: Permissions.VIEW_CHANNEL | Permissions.MANAGE_ROLES })
+      .where(eq(roles.id, everyone));
+
+    const res = await patchRole(grace, serverId, everyone, {
+      permissions: ALL_PERMISSIONS,
+    });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: { code: "ROLE_HIERARCHY" } });
+  });
+
+  it("refuses to grant @everyone a bit the caller lacks", async () => {
+    const ada = await signUp("everyone-perms-escalate-owner");
+    const grace = await signUp("everyone-perms-escalate");
+    const serverId = await createServer(ada, "Analytical Engine");
+    const everyone = await everyoneRoleId(serverId);
+
+    await join(serverId, grace);
+    const manager = await seedRole(
+      serverId,
+      "Manager",
+      Permissions.VIEW_CHANNEL | Permissions.MANAGE_ROLES,
+      5,
+    );
+    await assign(serverId, grace, manager);
+
+    const res = await patchRole(grace, serverId, everyone, {
+      permissions: Permissions.VIEW_CHANNEL | Permissions.BAN_MEMBERS,
+    });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({
+      error: { code: "PERMISSION_NOT_HELD" },
+    });
   });
 });
 
@@ -430,6 +545,193 @@ describe("PATCH and DELETE a role", () => {
     expect(
       (await patchRole(ada, serverId, roleId, { permissions: 1 << 20 })).status,
     ).toBe(400);
+  });
+});
+
+describe("PATCH /api/v1/servers/:serverId/roles/positions", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  it("renumbers the submitted order from one and audits it", async () => {
+    const ada = await signUp("reorder-owner");
+    const serverId = await createServer(ada, "Reordering");
+    const low = await seedRole(serverId, "low", 0, 1);
+    const middle = await seedRole(serverId, "middle", 0, 2);
+    const high = await seedRole(serverId, "high", 0, 3);
+
+    const res = await reorderRoles(ada, serverId, [high, low, middle]);
+
+    expect(res.status).toBe(200);
+    expect(reorderBody.parse(res.body).roles.map((role) => role.name)).toEqual([
+      "@everyone",
+      "high",
+      "low",
+      "middle",
+    ]);
+
+    expect(await positionsOf(serverId)).toEqual([
+      "@everyone:0",
+      "high:1",
+      "low:2",
+      "middle:3",
+    ]);
+
+    const [entry] = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.serverId, serverId));
+
+    expect(entry).toMatchObject({ action: "role_update" });
+  });
+
+  it("survives several consecutive moves", async () => {
+    const ada = await signUp("reorder-repeat");
+    const serverId = await createServer(ada, "Repeatedly");
+    const a = await seedRole(serverId, "a", 0, 1);
+    const b = await seedRole(serverId, "b", 0, 2);
+    const c = await seedRole(serverId, "c", 0, 3);
+
+    expect((await reorderRoles(ada, serverId, [b, a, c])).status).toBe(200);
+    expect((await reorderRoles(ada, serverId, [b, c, a])).status).toBe(200);
+    expect((await reorderRoles(ada, serverId, [c, b, a])).status).toBe(200);
+
+    expect(await positionsOf(serverId)).toEqual([
+      "@everyone:0",
+      "c:1",
+      "b:2",
+      "a:3",
+    ]);
+  });
+
+  it("refuses to rank the @everyone role", async () => {
+    const ada = await signUp("reorder-everyone");
+    const serverId = await createServer(ada, "Everyone");
+    const everyone = await everyoneRoleId(serverId);
+    const only = await seedRole(serverId, "only", 0, 1);
+
+    const res = await reorderRoles(ada, serverId, [everyone, only]);
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: { code: "ROLE_IS_DEFAULT" } });
+    expect(await positionsOf(serverId)).toEqual(["@everyone:0", "only:1"]);
+  });
+
+  it("rejects a repeated role", async () => {
+    const ada = await signUp("reorder-duplicate");
+    const serverId = await createServer(ada, "Duplicated");
+    const one = await seedRole(serverId, "one", 0, 1);
+
+    const res = await reorderRoles(ada, serverId, [one, one]);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: { code: "DUPLICATE_ROLE" } });
+  });
+
+  it("answers 404 for a role from another server", async () => {
+    const ada = await signUp("reorder-stranger");
+    const serverId = await createServer(ada, "Ours");
+    const elsewhere = await createServer(ada, "Theirs");
+    const mine = await seedRole(serverId, "mine", 0, 1);
+    const theirs = await seedRole(elsewhere, "theirs", 0, 1);
+
+    const res = await reorderRoles(ada, serverId, [mine, theirs]);
+
+    expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ error: { code: "ROLE_NOT_FOUND" } });
+  });
+
+  it("rejects a member without MANAGE_ROLES", async () => {
+    const ada = await signUp("reorder-owner-2");
+    const bob = await signUp("reorder-member");
+    const serverId = await createServer(ada, "Guarded");
+    await join(serverId, bob);
+    const a = await seedRole(serverId, "a", 0, 1);
+    const b = await seedRole(serverId, "b", 0, 2);
+
+    const res = await reorderRoles(bob, serverId, [b, a]);
+
+    expect(res.status).toBe(403);
+    expect(await positionsOf(serverId)).toEqual(["@everyone:0", "a:1", "b:2"]);
+  });
+
+  it("refuses a move that would carry a role over the caller's own", async () => {
+    const ada = await signUp("reorder-hierarchy-owner");
+    const bob = await signUp("reorder-hierarchy-manager");
+    const serverId = await createServer(ada, "Hierarchy");
+    await join(serverId, bob);
+
+    const junior = await seedRole(serverId, "junior", 0, 1);
+    const manager = await seedRole(
+      serverId,
+      "manager",
+      Permissions.MANAGE_ROLES,
+      2,
+    );
+    const senior = await seedRole(serverId, "senior", 0, 3);
+
+    await assign(serverId, bob, manager);
+
+    const up = await reorderRoles(bob, serverId, [senior, manager, junior]);
+
+    expect(up.status).toBe(403);
+    expect(up.body).toMatchObject({ error: { code: "ROLE_HIERARCHY" } });
+
+    const down = await reorderRoles(bob, serverId, [junior, senior, manager]);
+
+    expect(down.status).toBe(403);
+    expect(down.body).toMatchObject({ error: { code: "ROLE_HIERARCHY" } });
+
+    expect(await positionsOf(serverId)).toEqual([
+      "@everyone:0",
+      "junior:1",
+      "manager:2",
+      "senior:3",
+    ]);
+  });
+
+  it("lets a manager reorder only what sits under them", async () => {
+    const ada = await signUp("reorder-under-owner");
+    const bob = await signUp("reorder-under-manager");
+    const serverId = await createServer(ada, "Underneath");
+    await join(serverId, bob);
+
+    const first = await seedRole(serverId, "first", 0, 1);
+    const second = await seedRole(serverId, "second", 0, 2);
+    const manager = await seedRole(
+      serverId,
+      "manager",
+      Permissions.MANAGE_ROLES,
+      3,
+    );
+
+    await assign(serverId, bob, manager);
+
+    const res = await reorderRoles(bob, serverId, [second, first]);
+
+    expect(res.status).toBe(200);
+    expect(await positionsOf(serverId)).toEqual([
+      "@everyone:0",
+      "second:1",
+      "first:2",
+      "manager:3",
+    ]);
+  });
+
+  it("lets the owner move any role, whatever its position", async () => {
+    const ada = await signUp("reorder-owner-3");
+    const serverId = await createServer(ada, "Owned");
+    const low = await seedRole(serverId, "low", 0, 1);
+    const high = await seedRole(serverId, "high", ALL_PERMISSIONS, 2);
+
+    const res = await reorderRoles(ada, serverId, [high, low]);
+
+    expect(res.status).toBe(200);
+    expect(await positionsOf(serverId)).toEqual([
+      "@everyone:0",
+      "high:1",
+      "low:2",
+    ]);
   });
 });
 

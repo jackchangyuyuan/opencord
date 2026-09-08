@@ -5,6 +5,8 @@ export const CHANNEL_TOPIC_MAX_LENGTH = 1024;
 
 export const MAX_CHANNELS_PER_REORDER = 500;
 
+export const MAX_ROLES_PER_REORDER = 250;
+
 export const DESCRIPTION_MAX_LENGTH = 256;
 
 export const CUSTOM_STATUS_MAX_LENGTH = 128;

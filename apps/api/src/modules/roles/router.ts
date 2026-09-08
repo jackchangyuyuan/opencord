@@ -1,5 +1,9 @@
 import { Permissions } from "@opencord/shared/permissions";
-import { createRoleSchema, updateRoleSchema } from "@opencord/shared/schemas";
+import {
+  createRoleSchema,
+  reorderRolesSchema,
+  updateRoleSchema,
+} from "@opencord/shared/schemas";
 import { Router } from "express";
 import { z } from "zod";
 
@@ -7,7 +11,7 @@ import { requireServerPermission } from "../../middleware/permissions.js";
 import { createResourceRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
 import { listServerRoles } from "./queries.js";
-import { createRole, deleteRole, updateRole } from "./service.js";
+import { createRole, deleteRole, reorderRoles, updateRole } from "./service.js";
 
 const serverParamsSchema = z.object({ serverId: z.uuid() });
 const roleParamsSchema = z.object({ serverId: z.uuid(), roleId: z.uuid() });
@@ -30,6 +34,15 @@ serverRolesRouter.post(
   createResourceRateLimit,
   async (req, res) => {
     res.status(201).json(await createRole(req.server, req.user.id, req.body));
+  },
+);
+
+serverRolesRouter.patch(
+  "/positions",
+  validate({ params: serverParamsSchema, body: reorderRolesSchema }),
+  requireServerPermission(Permissions.MANAGE_ROLES),
+  async (req, res) => {
+    res.json(await reorderRoles(req.server, req.user.id, req.body));
   },
 );
 
