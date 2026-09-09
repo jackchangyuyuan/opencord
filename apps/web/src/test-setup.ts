@@ -1,11 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 
 import { cleanup } from "@testing-library/react";
-import { afterEach, vi } from "vitest";
+import { afterEach } from "vitest";
 
-vi.stubGlobal(
-  "matchMedia",
-  (query: string): MediaQueryList =>
+Object.defineProperty(window, "matchMedia", {
+  configurable: true,
+  writable: true,
+  value: (query: string): MediaQueryList =>
     ({
       matches: false,
       media: query,
@@ -16,7 +17,7 @@ vi.stubGlobal(
       removeListener: () => undefined,
       dispatchEvent: () => false,
     }) as MediaQueryList,
-);
+});
 
 afterEach(() => {
   cleanup();

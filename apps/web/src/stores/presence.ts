@@ -3,6 +3,13 @@ import { create } from "zustand";
 
 export type SelfStatus = Extract<PresenceStatus, "online" | "idle" | "dnd">;
 
+export const PRESENCE_LABEL: Record<PresenceStatus, string> = {
+  online: "Online",
+  idle: "Idle",
+  dnd: "Do not disturb",
+  offline: "Offline",
+};
+
 interface PresenceState {
   byUser: Record<string, PresenceStatus>;
   self: SelfStatus;

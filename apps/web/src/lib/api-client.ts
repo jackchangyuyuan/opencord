@@ -9,15 +9,32 @@ export class ApiError extends Error {
   readonly code: string;
   readonly details: unknown;
   readonly requestId: string | null;
+  readonly retryAfterSeconds: number | null;
 
-  constructor(status: number, body: ApiErrorBody, requestId: string | null) {
+  constructor(
+    status: number,
+    body: ApiErrorBody,
+    requestId: string | null,
+    retryAfterSeconds: number | null = null,
+  ) {
     super(body.message);
     this.name = "ApiError";
     this.status = status;
     this.code = body.code;
     this.details = body.details;
     this.requestId = requestId;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
+}
+
+function parseRetryAfter(header: string | null): number | null {
+  if (header === null) {
+    return null;
+  }
+
+  const seconds = Number(header);
+
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
 }
 
 const API_BASE = "/api/v1";
@@ -90,7 +107,12 @@ export async function api<T>(path: string, init: ApiRequest = {}): Promise<T> {
       onSessionExpired();
     }
 
-    throw new ApiError(response.status, parseErrorBody(payload), requestId);
+    throw new ApiError(
+      response.status,
+      parseErrorBody(payload),
+      requestId,
+      parseRetryAfter(response.headers.get("retry-after")),
+    );
   }
 
   if (payload === MALFORMED) {

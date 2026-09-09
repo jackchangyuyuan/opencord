@@ -1,4 +1,4 @@
-import { toast } from "@/components/ui/toast";
+import { createToastManager, toast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api-client";
 
 const COPY: Record<string, string> = {
@@ -28,5 +28,15 @@ export function describeError(error: unknown): string {
 }
 
 export function toastError(error: unknown): void {
-  toast.add({ type: "error", title: describeError(error) });
+  toastFailure(describeError(error));
+}
+
+export function toastFailure(title: string): void {
+  toast.add({ id: `failure:${title}`, type: "error", title });
+}
+
+export const chatAlerts = createToastManager();
+
+export function chatAlert(title: string): void {
+  chatAlerts.add({ id: `failure:${title}`, type: "error", title });
 }
