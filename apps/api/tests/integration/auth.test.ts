@@ -120,13 +120,94 @@ describe("the username column", () => {
     expect(await db.query.users.findMany({})).toHaveLength(1);
   });
 
-  it("is filled with a guest-shaped name when the creator supplies none", async () => {
+  it("refuses a reserved prefix through the update endpoint", async () => {
+    const created = await signUp();
+
+    expect(created.status).toBe(200);
+
+    for (const attempt of ["guest-deadbeefdeadbeef", "former-guest-x", "A B"]) {
+      const res = await request(app)
+        .post("/api/auth/update-user")
+        .set("Cookie", cookiesOf(created))
+        .send({ username: attempt });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code: "INVALID_USERNAME" });
+    }
+
+    const row = await db.query.users.findFirst({
+      columns: { username: true },
+    });
+
+    expect(row?.username).toBe(username);
+  });
+
+  it("still accepts a valid username through the update endpoint", async () => {
+    const created = await signUp();
+
+    const res = await request(app)
+      .post("/api/auth/update-user")
+      .set("Cookie", cookiesOf(created))
+      .send({ username: "ada-lovelace" });
+
+    expect(res.status).toBe(200);
+
+    const row = await db.query.users.findFirst({
+      columns: { username: true },
+    });
+
+    expect(row?.username).toBe("ada-lovelace");
+  });
+
+  // The shared schema trims and lowercases, so the spelling that reaches the
+  // column has to be the one it returns. Stored as it arrived, the unique index
+  // would be on a casing rather than on a name.
+  it("stores the canonical spelling a direct sign-up asked for", async () => {
+    const res = await signUp({ username: "  AdaLovelace  " });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ user: { username: "adalovelace" } });
+
+    const row = await db.query.users.findFirst({ columns: { username: true } });
+
+    expect(row?.username).toBe("adalovelace");
+  });
+
+  it("refuses a second account whose username differs only in casing", async () => {
+    expect((await signUp({ username: "ada" })).status).toBe(200);
+
+    const res = await signUp({
+      email: "grace@example.com",
+      username: "  ADA ",
+    });
+
+    expect(res.status).toBe(422);
+    expect(await db.query.users.findMany({})).toHaveLength(1);
+  });
+
+  it("canonicalises a username set through the update endpoint", async () => {
+    const created = await signUp();
+
+    const res = await request(app)
+      .post("/api/auth/update-user")
+      .set("Cookie", cookiesOf(created))
+      .send({ username: "  Ada.Lovelace " });
+
+    expect(res.status).toBe(200);
+
+    const row = await db.query.users.findFirst({ columns: { username: true } });
+
+    expect(row?.username).toBe("ada.lovelace");
+  });
+
+  it("is guest-shaped for an anonymous creator", async () => {
     const { internalAdapter } = await auth.$context;
 
     const user = await internalAdapter.createUser(
       {
         email: "anonymous@example.com",
         emailVerified: false,
+        isAnonymous: true,
         name: "Anonymous",
       },
       { method: "anonymous" },
@@ -134,6 +215,21 @@ describe("the username column", () => {
 
     expect(user["username"]).toMatch(/^guest-[0-9a-f]{16}$/);
     expect(user["username"]).toMatch(/^[a-z0-9_.-]{3,32}$/);
+  });
+
+  it("is derived from the profile for a social creator", async () => {
+    const { internalAdapter } = await auth.$context;
+
+    const user = await internalAdapter.createUser(
+      {
+        email: "hopper@example.com",
+        emailVerified: true,
+        name: "Grace Hopper",
+      },
+      { method: "oauth" },
+    );
+
+    expect(user["username"]).toBe("hopper");
   });
 });
 

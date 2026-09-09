@@ -10,6 +10,7 @@ import { requireAuth, revokeSignedOutSession } from "./middleware/auth.js";
 import { errorHandler } from "./middleware/error.js";
 import { httpLogger } from "./middleware/http-logger.js";
 import { authRateLimit, searchRateLimit } from "./middleware/rate-limit.js";
+import { authProvidersRouter } from "./modules/auth/router.js";
 import {
   channelsRouter,
   serverChannelsRouter,
@@ -74,6 +75,7 @@ app.all(
   toNodeHandler(auth),
 );
 
+app.use("/api/v1/auth", authProvidersRouter);
 app.use("/api/v1/demo", demoRouter);
 
 const apiRouter = express.Router();

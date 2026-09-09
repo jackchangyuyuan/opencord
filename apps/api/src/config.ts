@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+const optionalCredential = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.string().min(1).optional(),
+);
+
 const baseSchema = z.object({
   AMBIENT_ACTIVITY_INTERVAL_MS: z.coerce
     .number()
@@ -16,6 +21,10 @@ const baseSchema = z.object({
   AWS_SECRET_ACCESS_KEY: z.string().min(1),
   BETTER_AUTH_SECRET: z.string().min(32),
   DATABASE_URL: z.url(),
+  GITHUB_CLIENT_ID: optionalCredential,
+  GITHUB_CLIENT_SECRET: optionalCredential,
+  GOOGLE_CLIENT_ID: optionalCredential,
+  GOOGLE_CLIENT_SECRET: optionalCredential,
   GUEST_INVITE_CEILING: z.coerce.number().int().min(1).default(20),
   GUEST_MESSAGE_CEILING: z.coerce.number().int().min(1).default(200),
   GUEST_SERVER_CEILING: z.coerce.number().int().min(1).default(5),
@@ -75,10 +84,32 @@ const LOG_LEVEL_DEFAULT = {
   production: "info",
 } as const;
 
-const envSchema = baseSchema.transform((env) => ({
-  ...env,
-  LOG_LEVEL: env.LOG_LEVEL ?? LOG_LEVEL_DEFAULT[env.NODE_ENV],
-}));
+function completePair(
+  env: z.infer<typeof baseSchema>,
+  ctx: z.RefinementCtx,
+  id: "GITHUB_CLIENT_ID" | "GOOGLE_CLIENT_ID",
+  secret: "GITHUB_CLIENT_SECRET" | "GOOGLE_CLIENT_SECRET",
+): void {
+  if ((env[id] === undefined) === (env[secret] === undefined)) {
+    return;
+  }
+
+  ctx.addIssue({
+    code: "custom",
+    path: [env[id] === undefined ? id : secret],
+    message: `${id} and ${secret} must be set together`,
+  });
+}
+
+const envSchema = baseSchema
+  .superRefine((env, ctx) => {
+    completePair(env, ctx, "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET");
+    completePair(env, ctx, "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET");
+  })
+  .transform((env) => ({
+    ...env,
+    LOG_LEVEL: env.LOG_LEVEL ?? LOG_LEVEL_DEFAULT[env.NODE_ENV],
+  }));
 
 const parsed = envSchema.safeParse(process.env);
 
