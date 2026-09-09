@@ -16,11 +16,11 @@ export function UnreadBadge({
     return (
       <span
         className={cn(
-          "ml-auto flex min-w-5 shrink-0 items-center justify-center rounded-full bg-destructive px-1.5 py-0.5 text-[0.625rem] leading-none font-semibold text-white",
+          "ml-auto flex min-w-5 shrink-0 items-center justify-center rounded-full bg-destructive-solid px-1.5 py-0.5 text-micro leading-tight font-semibold text-white tabular-nums",
           className,
         )}
       >
-        <span aria-hidden="true">{count}</span>
+        <span aria-hidden="true">{count > 99 ? "99+" : count}</span>
         <span className="sr-only">
           {`${label}: ${String(count)} unread ${count === 1 ? "mention" : "mentions"}`}
         </span>
