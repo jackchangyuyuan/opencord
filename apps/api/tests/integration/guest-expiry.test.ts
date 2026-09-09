@@ -17,6 +17,7 @@ import {
   users,
 } from "../../src/db/schema/index.js";
 import { expireGuest, runGuestExpiry } from "../../src/jobs/guest-expiry.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
 const password = "correct horse battery staple";
@@ -25,31 +26,8 @@ const userBody = z.object({ user: z.object({ id: z.string() }) });
 const idBody = z.object({ id: z.string() });
 const channelList = z.array(z.object({ id: z.string() }));
 
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
 async function signInAnonymously(): Promise<Account> {
   const res = await request(app).post("/api/auth/sign-in/anonymous").send({});
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: userBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
 
   expect(res.status).toBe(200);
 

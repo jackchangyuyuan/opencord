@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 
-import { db, type Transaction } from "../../db/index.js";
+import type { Transaction } from "../../db/index.js";
+import { db } from "../../db/index.js";
 import {
   channelRoleOverwrites,
   channels,
@@ -106,24 +107,27 @@ export async function cloneSandbox(
     .where(eq(roles.serverId, templateId))
     .orderBy(roles.position);
 
-  const clonedRoles = await tx
-    .insert(roles)
-    .values(
-      templateRoles.map((role) => ({
+  const roleIds = new Map<string, string>();
+
+  for (const role of templateRoles) {
+    const [cloned] = await tx
+      .insert(roles)
+      .values({
         serverId: server.id,
         name: role.name,
         color: role.color,
         permissions: role.permissions,
         position: role.position,
         isDefault: role.isDefault,
-      })),
-    )
-    .returning({ id: roles.id, name: roles.name });
+      })
+      .returning({ id: roles.id });
 
-  const roleByName = new Map(clonedRoles.map((role) => [role.name, role.id]));
-  const templateRoleName = new Map(
-    templateRoles.map((role) => [role.id, role.name]),
-  );
+    if (cloned === undefined) {
+      throw new Error("cloning a sandbox role produced no row");
+    }
+
+    roleIds.set(role.id, cloned.id);
+  }
 
   const templateChannels = await tx
     .select()
@@ -131,51 +135,49 @@ export async function cloneSandbox(
     .where(eq(channels.serverId, templateId))
     .orderBy(channels.position, channels.id);
 
-  const clonedChannels = await tx
-    .insert(channels)
-    .values(
-      templateChannels.map((channel) => ({
+  const channelIds = new Map<string, string>();
+
+  for (const channel of templateChannels) {
+    const [cloned] = await tx
+      .insert(channels)
+      .values({
         serverId: server.id,
         type: channel.type,
         name: channel.name,
         topic: channel.topic,
         position: channel.position,
-      })),
-    )
-    .returning({ id: channels.id, name: channels.name });
+      })
+      .returning({ id: channels.id });
 
-  const channelByName = new Map(
-    clonedChannels.flatMap((channel) =>
-      channel.name === null ? [] : [[channel.name, channel.id] as const],
-    ),
-  );
+    if (cloned === undefined) {
+      throw new Error("cloning a sandbox channel produced no row");
+    }
+
+    channelIds.set(channel.id, cloned.id);
+  }
 
   const templateOverwrites = await tx
     .select()
     .from(channelRoleOverwrites)
     .where(eq(channelRoleOverwrites.serverId, templateId));
 
-  const overwriteValues = templateOverwrites.flatMap((overwrite) => {
-    const channelName =
-      templateChannels.find((channel) => channel.id === overwrite.channelId)
-        ?.name ?? null;
-    const roleName = templateRoleName.get(overwrite.roleId);
-    const channelId =
-      channelName === null ? undefined : channelByName.get(channelName);
-    const roleId =
-      roleName === undefined ? undefined : roleByName.get(roleName);
+  const overwriteValues = templateOverwrites.map((overwrite) => {
+    const channelId = channelIds.get(overwrite.channelId);
+    const roleId = roleIds.get(overwrite.roleId);
 
-    return channelId === undefined || roleId === undefined
-      ? []
-      : [
-          {
-            channelId,
-            serverId: server.id,
-            roleId,
-            allow: overwrite.allow,
-            deny: overwrite.deny,
-          },
-        ];
+    if (channelId === undefined || roleId === undefined) {
+      throw new Error(
+        "a template overwrite names a channel or role it does not own",
+      );
+    }
+
+    return {
+      channelId,
+      serverId: server.id,
+      roleId,
+      allow: overwrite.allow,
+      deny: overwrite.deny,
+    };
   });
 
   if (overwriteValues.length > 0) {
@@ -205,34 +207,31 @@ export async function cloneSandbox(
     .from(memberRoles)
     .where(eq(memberRoles.serverId, templateId));
 
-  const assignmentValues = templateAssignments.flatMap((assignment) => {
-    const roleName = templateRoleName.get(assignment.roleId);
-    const roleId =
-      roleName === undefined ? undefined : roleByName.get(roleName);
+  const assignmentValues = templateAssignments
+    .filter((assignment) => assignment.userId !== ownerId)
+    .map((assignment) => {
+      const roleId = roleIds.get(assignment.roleId);
 
-    return roleId === undefined || assignment.userId === ownerId
-      ? []
-      : [{ serverId: server.id, userId: assignment.userId, roleId }];
-  });
+      if (roleId === undefined) {
+        throw new Error(
+          "a template role assignment names a role it does not own",
+        );
+      }
+
+      return { serverId: server.id, userId: assignment.userId, roleId };
+    });
 
   if (assignmentValues.length > 0) {
     await tx.insert(memberRoles).values(assignmentValues);
   }
 
-  for (const channel of templateChannels) {
-    const target =
-      channel.name === null ? undefined : channelByName.get(channel.name);
-
-    if (target === undefined) {
-      continue;
-    }
-
+  for (const [templateChannelId, target] of channelIds) {
     await tx.execute(sql`
       insert into messages (id, channel_id, author_id, content, created_at)
       select uuidv7(m.created_at - clock_timestamp()), ${target}::uuid,
              m.author_id, m.content, m.created_at
         from messages m
-       where m.channel_id = ${channel.id}::uuid and m.deleted_at is null
+       where m.channel_id = ${templateChannelId}::uuid and m.deleted_at is null
        order by m.id
     `);
   }
@@ -250,8 +249,5 @@ export async function cloneSandbox(
      where n.channel_id = c.id and c.server_id = ${server.id}::uuid
   `);
 
-  return {
-    serverId: server.id,
-    channelIds: clonedChannels.map((channel) => channel.id),
-  };
+  return { serverId: server.id, channelIds: [...channelIds.values()] };
 }

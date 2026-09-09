@@ -11,13 +11,13 @@ const BATCH = 2000;
 
 export const DENSITY_SEED = 84117;
 
-const SPREAD = 400;
+const SPREAD = 600;
 
-const REACTED_SHARE = 0.22;
-const REPLY_SHARE = 0.14;
-const EDITED_SHARE = 0.07;
+const REACTED_SHARE = 0.38;
+const REPLY_SHARE = 0.22;
+const EDITED_SHARE = 0.11;
 
-const PINS_PER_CHANNEL = 6;
+const PINS_PER_CHANNEL = 10;
 
 const REPLY_REACH = 12;
 

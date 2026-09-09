@@ -7,13 +7,11 @@ import { z } from "zod";
 
 import { app } from "../../src/app.js";
 import { db } from "../../src/db/index.js";
-import { serverMembers, servers, users } from "../../src/db/schema/index.js";
+import { serverMembers, users } from "../../src/db/schema/index.js";
 import * as storage from "../../src/lib/storage.js";
+import { signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
 const userBody = z.object({
   id: z.string(),
@@ -25,29 +23,6 @@ const serverDetail = z.object({
   iconKey: z.string().nullable(),
   iconUrl: z.string().nullable(),
 });
-
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
 
 function stubStorage() {
   vi.spyOn(storage, "headObject").mockResolvedValue({
@@ -118,7 +93,7 @@ describe("avatars and icons", () => {
     );
   });
 
-  it("deletes the object an avatar replaced", async () => {
+  it("leaves the object an avatar replaced for the sweep", async () => {
     const ada = await signUp("ada");
 
     const deleted = stubStorage();
@@ -129,28 +104,6 @@ describe("avatars and icons", () => {
       .set("Cookie", ada.cookies)
       .send({ avatarObjectKey: first });
 
-    await request(app)
-      .patch("/api/v1/users/@me")
-      .set("Cookie", ada.cookies)
-      .send({ avatarObjectKey: avatarKey(ada.id) });
-
-    expect(deleted).toHaveBeenCalledExactlyOnceWith(first);
-  });
-
-  it("keeps the avatar when the delete of the old object fails", async () => {
-    const ada = await signUp("ada");
-
-    stubStorage();
-
-    await request(app)
-      .patch("/api/v1/users/@me")
-      .set("Cookie", ada.cookies)
-      .send({ avatarObjectKey: avatarKey(ada.id) });
-
-    vi.spyOn(storage, "deleteObject").mockRejectedValue(
-      new Error("storage is having a day"),
-    );
-
     const next = avatarKey(ada.id);
 
     const res = await request(app)
@@ -160,6 +113,7 @@ describe("avatars and icons", () => {
 
     expect(res.status).toBe(200);
     expect(userBody.parse(res.body).avatarUrl).toContain(next);
+    expect(deleted).not.toHaveBeenCalled();
   });
 
   it("refuses an avatar key uploaded by somebody else", async () => {
@@ -235,36 +189,33 @@ describe("avatars and icons", () => {
     expect(row?.iconKey).toBeNull();
   });
 
-  it("replaces a server icon and discards the old object", async () => {
+  it("replaces a server icon without deleting the old object", async () => {
     const ada = await signUp("ada");
-
     const deleted = stubStorage();
 
-    const created = await request(app)
-      .post("/api/v1/servers")
-      .set("Cookie", ada.cookies)
-      .send({ name: "Analytical Engine" });
-
-    const serverId = serverBody.parse(created.body).id;
-    const first = iconKey(ada.id);
-
-    await request(app)
-      .patch(`/api/v1/servers/${serverId}`)
-      .set("Cookie", ada.cookies)
-      .send({ iconObjectKey: first });
+    const serverId = serverBody.parse(
+      (
+        await request(app)
+          .post("/api/v1/servers")
+          .set("Cookie", ada.cookies)
+          .send({ name: "Analytical Engine" })
+      ).body,
+    ).id;
 
     await request(app)
       .patch(`/api/v1/servers/${serverId}`)
       .set("Cookie", ada.cookies)
       .send({ iconObjectKey: iconKey(ada.id) });
 
-    expect(deleted).toHaveBeenCalledExactlyOnceWith(first);
+    const next = iconKey(ada.id);
 
-    const row = await db
-      .select({ iconKey: servers.iconKey })
-      .from(servers)
-      .where(eq(servers.id, serverId));
+    const res = await request(app)
+      .patch(`/api/v1/servers/${serverId}`)
+      .set("Cookie", ada.cookies)
+      .send({ iconObjectKey: next });
 
-    expect(row[0]?.iconKey).not.toBe(first);
+    expect(res.status).toBe(200);
+    expect(serverDetail.parse(res.body).iconKey).toBe(next);
+    expect(deleted).not.toHaveBeenCalled();
   });
 });

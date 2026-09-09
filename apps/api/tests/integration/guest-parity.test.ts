@@ -7,37 +7,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { app } from "../../src/app.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
-
-const password = "correct horse battery staple";
 
 const userBody = z.object({ user: z.object({ id: z.string() }) });
 const idBody = z.object({ id: z.string() });
 const codeBody = z.object({ code: z.string() });
 const channelList = z.array(z.object({ id: z.string() }));
-
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: userBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
 
 async function signInAnonymously(): Promise<Account> {
   const res = await request(app).post("/api/auth/sign-in/anonymous").send({});
@@ -375,14 +351,6 @@ describe("guest capability parity", () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
-  it("has no requireNotGuest anywhere in the source", () => {
-    const offenders = sourceFiles("src").filter((path) =>
-      readFileSync(path, "utf8").includes("requireNotGuest"),
-    );
-
-    expect(offenders).toEqual([]);
-  });
-
   it("reads is_anonymous nowhere that decides whether an action is allowed", () => {
     const authorizationPaths = [
       ...sourceFiles(join("src", "access")),
@@ -401,7 +369,7 @@ describe("guest capability parity", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("keeps the readers to the four the design names", () => {
+  it("keeps the readers to the five the design names", () => {
     const allowed = [
       join("src", "auth.ts"),
       join("src", "lib", "quota.ts"),

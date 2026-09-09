@@ -2,6 +2,8 @@ import request from "supertest";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { type Account, signUp } from "../helpers/accounts.js";
+
 const namespace = vi.hoisted(() => {
   const value = `rl-create-${Math.random().toString(36).slice(2)}`;
 
@@ -16,33 +18,7 @@ const { app } = await import("../../src/app.js");
 const { redis } = await import("../../src/redis.js");
 const { requireTestDatabase } = await import("../setup.js");
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
-
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
 
 function createServer(account: Account, name: string) {
   return request(app)

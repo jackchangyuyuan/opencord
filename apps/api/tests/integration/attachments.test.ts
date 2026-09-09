@@ -13,11 +13,9 @@ import {
   serverMembers,
 } from "../../src/db/schema/index.js";
 import * as storage from "../../src/lib/storage.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
 const channelList = z.array(z.object({ id: z.string() }));
 const messageBody = z.object({
@@ -34,29 +32,6 @@ const messageBody = z.object({
     }),
   ),
 });
-
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
 
 interface Fixture {
   ada: Account;
@@ -208,7 +183,7 @@ describe("message attachments", () => {
     expect(res.body).toMatchObject({ error: { code: "UPLOAD_NOT_FOUND" } });
   });
 
-  it("deletes and rejects an object left past the association window", async () => {
+  it("rejects an object left past the association window without deleting it", async () => {
     const { ada, channelId } = await seed();
 
     vi.spyOn(storage, "headObject").mockResolvedValue({
@@ -226,7 +201,8 @@ describe("message attachments", () => {
     });
 
     expect(res.status).toBe(400);
-    expect(deleted).toHaveBeenCalledTimes(1);
+    expect(res.body).toMatchObject({ error: { code: "UPLOAD_REJECTED" } });
+    expect(deleted).not.toHaveBeenCalled();
   });
 
   it("requires a filename and writes no partial row", async () => {

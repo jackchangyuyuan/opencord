@@ -8,10 +8,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { users } from "../../db/schema/index.js";
 import { emitUserUpdate } from "../../socket/emit.js";
-import {
-  discardReplacedUpload,
-  requireOwnedUpload,
-} from "../uploads/associate.js";
+import { requireOwnedUpload } from "../uploads/associate.js";
 import { profileSelection, type PublicUser, serializeUser } from "./queries.js";
 
 function writableColumns(input: UpdateProfileInput) {
@@ -34,18 +31,8 @@ export async function updateProfile(
   userId: string,
   input: UpdateProfileInput,
 ): Promise<PublicUser> {
-  const nextKey = input.avatarObjectKey;
-  let replacedKey: string | null = null;
-
-  if (nextKey !== undefined) {
-    await requireOwnedUpload("avatar", userId, nextKey);
-
-    const current = await db.query.users.findFirst({
-      columns: { avatarObjectKey: true },
-      where: { id: userId },
-    });
-
-    replacedKey = current?.avatarObjectKey ?? null;
+  if (input.avatarObjectKey !== undefined) {
+    await requireOwnedUpload("avatar", userId, input.avatarObjectKey);
   }
 
   const [row] = await db
@@ -56,10 +43,6 @@ export async function updateProfile(
 
   if (row === undefined) {
     throw new Error("The profile update returned no row");
-  }
-
-  if (nextKey !== undefined) {
-    await discardReplacedUpload(replacedKey, nextKey);
   }
 
   await emitUserUpdate(userId);

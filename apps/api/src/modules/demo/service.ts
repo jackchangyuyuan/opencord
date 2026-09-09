@@ -1,18 +1,29 @@
 import type { ClaimAccountInput } from "@opencord/shared/schemas";
-import { and, eq } from "drizzle-orm";
-import postgres from "postgres";
+import { APIError } from "better-auth/api";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { auth } from "../../auth.js";
 import { db } from "../../db/index.js";
-import { guestQuotas, serverMembers, users } from "../../db/schema/index.js";
+import {
+  accounts,
+  guestQuotas,
+  serverMembers,
+  users,
+} from "../../db/schema/index.js";
 import {
   alreadyClaimed,
   emailTaken,
   notAGuest,
+  unauthorized,
   usernameTaken,
 } from "../../lib/errors.js";
 import { logger } from "../../lib/logger.js";
+import {
+  UNIQUE_VIOLATION,
+  violatedConstraint,
+} from "../../lib/postgres-errors.js";
 import { joinCreatedServerRooms } from "../../socket/emit.js";
+import { openDemoDms } from "./dms.js";
 import { refreshDemoPresence } from "./presence.js";
 import {
   cloneSandbox,
@@ -30,6 +41,7 @@ export interface GuestSession {
 export interface DemoScenario {
   userId: string;
   serverCount: number;
+  dmCount: number;
   sandboxId: string;
   landingChannelId: string | null;
 }
@@ -72,9 +84,11 @@ export async function provisionDemoScenario(
 
     const sandbox = await cloneSandbox(tx, templateId, userId);
 
+    const dmCount = await openDemoDms(tx, userId);
+
     await tx.insert(guestQuotas).values({ userId }).onConflictDoNothing();
 
-    return sandbox;
+    return { ...sandbox, dmCount };
   });
 
   for (const shape of shapes) {
@@ -83,61 +97,24 @@ export async function provisionDemoScenario(
 
   joinCreatedServerRooms(userId, scenario.serverId, scenario.channelIds);
 
-  await refreshDemoPresence();
+  try {
+    await refreshDemoPresence();
+  } catch (error) {
+    logger.error({ err: error, userId }, "Refreshing demo presence failed");
+  }
 
   logger.info(
-    { userId, servers: shapes.length + 1 },
+    { userId, servers: shapes.length + 1, dms: scenario.dmCount },
     "Provisioned a demo scenario",
   );
 
   return {
     userId,
     serverCount: shapes.length + 1,
+    dmCount: scenario.dmCount,
     sandboxId: scenario.serverId,
     landingChannelId: shapes[0]?.channelIds[0] ?? null,
   };
-}
-
-export async function sharesAServer(
-  left: string,
-  right: string,
-): Promise<boolean> {
-  const rows = await db
-    .select({ serverId: serverMembers.serverId })
-    .from(serverMembers)
-    .where(eq(serverMembers.userId, left));
-
-  if (rows.length === 0) {
-    return false;
-  }
-
-  const theirs = await db
-    .select({ serverId: serverMembers.serverId })
-    .from(serverMembers)
-    .where(eq(serverMembers.userId, right));
-
-  const mine = new Set(rows.map((row) => row.serverId));
-
-  return theirs.some((row) => mine.has(row.serverId));
-}
-
-const UNIQUE_VIOLATION = "23505";
-
-interface ConstraintViolation {
-  constraint: string;
-}
-
-function violatedConstraint(error: unknown): string | null {
-  const cause = error instanceof Error ? error.cause : error;
-
-  if (
-    !(cause instanceof postgres.PostgresError) ||
-    cause.code !== UNIQUE_VIOLATION
-  ) {
-    return null;
-  }
-
-  return (cause as unknown as ConstraintViolation).constraint;
 }
 
 async function requireAvailable(
@@ -170,6 +147,40 @@ export interface ClaimedAccount {
   name: string;
 }
 
+async function ensureCredential(
+  userId: string,
+  headers: Headers,
+  password: string,
+): Promise<string> {
+  const existing = await db.query.accounts.findFirst({
+    columns: { id: true },
+    where: { userId, providerId: "credential" },
+  });
+
+  if (existing !== undefined) {
+    return existing.id;
+  }
+
+  try {
+    await auth.api.setPassword({ headers, body: { newPassword: password } });
+  } catch (error) {
+    if (!(error instanceof APIError)) {
+      throw error;
+    }
+  }
+
+  const created = await db.query.accounts.findFirst({
+    columns: { id: true },
+    where: { userId, providerId: "credential" },
+  });
+
+  if (created === undefined) {
+    throw new Error("setting the guest's password produced no credential");
+  }
+
+  return created.id;
+}
+
 export async function claimAccount(
   user: { id: string; isAnonymous?: boolean | null | undefined },
   headers: Headers,
@@ -181,17 +192,9 @@ export async function claimAccount(
 
   await requireAvailable(user.id, input);
 
-  const credential = await db.query.accounts.findFirst({
-    columns: { id: true },
-    where: { userId: user.id, providerId: "credential" },
-  });
+  const credentialId = await ensureCredential(user.id, headers, input.password);
 
-  if (credential === undefined) {
-    await auth.api.setPassword({
-      headers,
-      body: { newPassword: input.password },
-    });
-  }
+  const hashed = await (await auth.$context).password.hash(input.password);
 
   try {
     return await db.transaction(async (tx) => {
@@ -205,7 +208,13 @@ export async function claimAccount(
           isAnonymous: false,
           guestExpiresAt: null,
         })
-        .where(and(eq(users.id, user.id), eq(users.isAnonymous, true)))
+        .where(
+          and(
+            eq(users.id, user.id),
+            eq(users.isAnonymous, true),
+            isNull(users.deactivatedAt),
+          ),
+        )
         .returning({
           id: users.id,
           email: users.email,
@@ -214,15 +223,29 @@ export async function claimAccount(
         });
 
       if (row === undefined) {
+        const subject = await tx.query.users.findFirst({
+          columns: { deactivatedAt: true },
+          where: { id: user.id },
+        });
+
+        if (subject?.deactivatedAt != null) {
+          throw unauthorized("SESSION_EXPIRED", "Session expired");
+        }
+
         throw alreadyClaimed();
       }
+
+      await tx
+        .update(accounts)
+        .set({ password: hashed })
+        .where(eq(accounts.id, credentialId));
 
       await tx.delete(guestQuotas).where(eq(guestQuotas.userId, user.id));
 
       return row;
     });
   } catch (error) {
-    const constraint = violatedConstraint(error);
+    const constraint = violatedConstraint(error, UNIQUE_VIOLATION);
 
     if (constraint === "users_email_key") {
       throw emailTaken();

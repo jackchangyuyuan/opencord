@@ -30,6 +30,9 @@ function people(count: number): SeededUser[] {
     username: `seed-person-${String(index)}`,
     email: `seed-person-${String(index)}@seed.invalid`,
     image: `https://seed.invalid/${String(index)}.jpg`,
+    description: null,
+    customStatus: null,
+    customStatusEmoji: null,
   }));
 }
 

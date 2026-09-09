@@ -17,9 +17,8 @@ import {
 import { runGuestAnonymize } from "../../src/jobs/guest-anonymize.js";
 import { runGuestExpiry } from "../../src/jobs/guest-expiry.js";
 import * as storage from "../../src/lib/storage.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
-
-const password = "correct horse battery staple";
 
 const userBody = z.object({ user: z.object({ id: z.string() }) });
 const idBody = z.object({ id: z.string() });
@@ -33,31 +32,8 @@ const unreadList = z.array(
   }),
 );
 
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
 async function signInAnonymously(): Promise<Account> {
   const res = await request(app).post("/api/auth/sign-in/anonymous").send({});
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: userBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
 
   expect(res.status).toBe(200);
 
@@ -156,7 +132,7 @@ describe("guest anonymization", () => {
     const result = await runGuestAnonymize();
 
     expect(result.anonymized).toBe(1);
-    expect(result.messagesRedacted).toBe(1);
+    expect(result.messagesHidden).toBe(1);
 
     const identity = await db.query.users.findFirst({
       columns: {
@@ -253,6 +229,66 @@ describe("guest anonymization", () => {
     });
 
     expect(identity?.username).toBe(`former-guest-${world.guest.id}`);
+  });
+
+  it("clears the description and the custom status too", async () => {
+    const world = await seedWorld();
+
+    await send(world.guest, world.channelId, "hello");
+
+    const described = await request(app)
+      .patch("/api/v1/users/@me")
+      .set("Cookie", world.guest.cookies)
+      .send({
+        description: "Computer Science @ Waterloo",
+        customStatus: "shipping bugs",
+        customStatusEmoji: "🐛",
+      });
+
+    expect(described.status).toBe(200);
+
+    await expireAndSweep(world.guest.id);
+    await runGuestAnonymize();
+
+    const identity = await db.query.users.findFirst({
+      columns: {
+        name: true,
+        description: true,
+        customStatus: true,
+        customStatusEmoji: true,
+      },
+      where: { id: world.guest.id },
+    });
+
+    expect(identity).toMatchObject({
+      name: "Former guest",
+      description: null,
+      customStatus: null,
+      customStatusEmoji: null,
+    });
+  });
+
+  it("tries the hard delete again on a later pass", async () => {
+    const world = await seedWorld();
+
+    await expireAndSweep(world.guest.id);
+
+    const failing = vi.spyOn(db, "delete").mockImplementationOnce(() => {
+      throw new Error("the connection went away");
+    });
+
+    await expect(runGuestAnonymize()).rejects.toThrow("the connection");
+
+    failing.mockRestore();
+
+    expect((await runGuestAnonymize()).deleted).toBe(1);
+
+    await expect(
+      db.query.users.findFirst({
+        columns: { id: true },
+        where: { id: world.guest.id },
+      }),
+    ).resolves.toBeUndefined();
   });
 
   it("retains a guest who posted and deletes one who only looked", async () => {

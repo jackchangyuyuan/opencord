@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { Permissions } from "@opencord/shared/permissions";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 import { db } from "../index.js";
 import {
@@ -37,6 +37,100 @@ export const COMMUNITY_SERVER_NAMES = ["OpenCord HQ", "The Lounge"] as const;
 export const MEMBER_COUNT = 120;
 
 const MODERATOR_COUNT = 4;
+
+interface Holders {
+  start: number;
+  end: number;
+  every: number;
+}
+
+interface RolePlan {
+  name: string;
+  color: number | null;
+  permissions: number;
+  holders: Holders;
+}
+
+const HQ_ROLES: RolePlan[] = [
+  {
+    name: "Contributor",
+    color: null,
+    permissions: EVERYONE_PERMISSIONS,
+    holders: { start: 20, end: 100, every: 4 },
+  },
+  {
+    name: "Designer",
+    color: 0xec4899,
+    permissions: EVERYONE_PERMISSIONS,
+    holders: { start: 10, end: 70, every: 5 },
+  },
+  {
+    name: "Developer",
+    color: 0x3b82f6,
+    permissions: EVERYONE_PERMISSIONS | Permissions.MENTION_EVERYONE,
+    holders: { start: 8, end: 60, every: 3 },
+  },
+  {
+    name: "Release Crew",
+    color: 0xf59e0b,
+    permissions: EVERYONE_PERMISSIONS | Permissions.MANAGE_MESSAGES,
+    holders: { start: 2, end: 12, every: 3 },
+  },
+  {
+    name: "Core",
+    color: 0xe67e22,
+    permissions: EVERYONE_PERMISSIONS,
+    holders: { start: 0, end: 8, every: 1 },
+  },
+  {
+    name: "Moderator",
+    color: 0x5865f2,
+    permissions: MODERATOR_PERMISSIONS,
+    holders: { start: 0, end: MODERATOR_COUNT, every: 1 },
+  },
+];
+
+const LOUNGE_ROLES: RolePlan[] = [
+  {
+    name: "Regular",
+    color: null,
+    permissions: EVERYONE_PERMISSIONS,
+    holders: { start: 0, end: MEMBER_COUNT, every: 6 },
+  },
+  {
+    name: "Event Host",
+    color: 0x14b8a6,
+    permissions: EVERYONE_PERMISSIONS | Permissions.MENTION_EVERYONE,
+    holders: { start: 4, end: 10, every: 2 },
+  },
+  {
+    name: "Moderator",
+    color: 0x8b5cf6,
+    permissions: MODERATOR_PERMISSIONS,
+    holders: { start: 0, end: 2, every: 1 },
+  },
+];
+
+function holdersOf(
+  plan: RolePlan,
+  people: readonly SeededUser[],
+): SeededUser[] {
+  const held: SeededUser[] = [];
+
+  for (
+    let index = plan.holders.start;
+    index < Math.min(plan.holders.end, people.length);
+    index += plan.holders.every
+  ) {
+    const person = people[index];
+
+    if (person !== undefined) {
+      held.push(person);
+    }
+  }
+
+  return held;
+}
 
 interface ChannelPlan {
   name: string;
@@ -78,6 +172,9 @@ export async function createPersonaUsers(count: number): Promise<SeededUser[]> {
         emailVerified: true,
         username: persona.username,
         image: persona.image,
+        description: persona.description,
+        customStatus: persona.customStatus,
+        customStatusEmoji: persona.customStatusEmoji,
       })),
     );
   }
@@ -142,6 +239,8 @@ interface SeededServer {
   id: string;
   everyoneRoleId: string;
   moderatorRoleId: string;
+  roleIds: Map<string, string>;
+  rolePlan: RolePlan[];
   channelIds: Map<string, string>;
 }
 
@@ -149,6 +248,7 @@ async function createServer(
   name: string,
   owner: SeededUser,
   plan: ChannelPlan[],
+  rolePlan: RolePlan[],
 ): Promise<SeededServer> {
   const [server] = await db
     .insert(servers)
@@ -168,22 +268,14 @@ async function createServer(
       position: 0,
       isDefault: true,
     },
-    {
+    ...rolePlan.map((entry, index) => ({
       serverId: server.id,
-      name: "Moderator",
-      color: 0x5865f2,
-      permissions: MODERATOR_PERMISSIONS,
-      position: 1,
+      name: entry.name,
+      color: entry.color,
+      permissions: entry.permissions,
+      position: index + 1,
       isDefault: false,
-    },
-    {
-      serverId: server.id,
-      name: "Core",
-      color: 0xe67e22,
-      permissions: EVERYONE_PERMISSIONS,
-      position: 2,
-      isDefault: false,
-    },
+    })),
   ];
 
   const inserted = await db
@@ -249,6 +341,8 @@ async function createServer(
     id: server.id,
     everyoneRoleId: roleId("@everyone"),
     moderatorRoleId: roleId("Moderator"),
+    roleIds: new Map(rolePlan.map((entry) => [entry.name, roleId(entry.name)])),
+    rolePlan,
     channelIds,
   };
 }
@@ -256,7 +350,6 @@ async function createServer(
 async function joinEveryone(
   server: SeededServer,
   people: SeededUser[],
-  coreRoleId: string,
 ): Promise<void> {
   for (let index = 0; index < people.length; index += BATCH) {
     await db
@@ -269,21 +362,24 @@ async function joinEveryone(
       .onConflictDoNothing();
   }
 
-  const moderators = people.slice(0, MODERATOR_COUNT);
-  const core = people.slice(0, 8);
+  const assignments = server.rolePlan.flatMap((entry) => {
+    const roleId = server.roleIds.get(entry.name);
 
-  await db.insert(memberRoles).values([
-    ...moderators.map((person) => ({
-      serverId: server.id,
-      userId: person.id,
-      roleId: server.moderatorRoleId,
-    })),
-    ...core.map((person) => ({
-      serverId: server.id,
-      userId: person.id,
-      roleId: coreRoleId,
-    })),
-  ]);
+    return roleId === undefined
+      ? []
+      : holdersOf(entry, people).map((person) => ({
+          serverId: server.id,
+          userId: person.id,
+          roleId,
+        }));
+  });
+
+  for (let index = 0; index < assignments.length; index += BATCH) {
+    await db
+      .insert(memberRoles)
+      .values(assignments.slice(index, index + BATCH))
+      .onConflictDoNothing();
+  }
 }
 
 async function writeAuditTrail(
@@ -349,22 +445,21 @@ export async function seedCommunity(
     throw new Error("the persona list is empty");
   }
 
-  const hq = await createServer(COMMUNITY_SERVER_NAMES[0], owner, HQ_CHANNELS);
+  const hq = await createServer(
+    COMMUNITY_SERVER_NAMES[0],
+    owner,
+    HQ_CHANNELS,
+    HQ_ROLES,
+  );
   const lounge = await createServer(
     COMMUNITY_SERVER_NAMES[1],
     owner,
     LOUNGE_CHANNELS,
+    LOUNGE_ROLES,
   );
 
-  const coreRoles = await db
-    .select({ id: roles.id, serverId: roles.serverId })
-    .from(roles)
-    .where(eq(roles.name, "Core"));
-
   for (const server of [hq, lounge]) {
-    const core = coreRoles.find((role) => role.serverId === server.id);
-
-    await joinEveryone(server, people, core?.id ?? server.moderatorRoleId);
+    await joinEveryone(server, people);
     await writeAuditTrail(server, people);
   }
 

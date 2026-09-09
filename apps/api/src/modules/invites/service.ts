@@ -3,7 +3,6 @@ import type { CreateInviteInput } from "@opencord/shared/schemas";
 import { INVITE_CODE_LENGTH } from "@opencord/shared/schemas";
 import { and, eq, sql } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
-import postgres from "postgres";
 
 import type { ServerContext } from "../../access/context.js";
 import { db } from "../../db/index.js";
@@ -17,6 +16,10 @@ import {
   notFound,
   userBanned,
 } from "../../lib/errors.js";
+import {
+  UNIQUE_VIOLATION,
+  violatedConstraint,
+} from "../../lib/postgres-errors.js";
 import { consumeQuota, type QuotaSubject } from "../../lib/quota.js";
 import { emitMemberEvent, joinRedeemedServerRooms } from "../../socket/emit.js";
 import {
@@ -32,22 +35,14 @@ export interface RedeemedInvite {
   alreadyMember: boolean;
 }
 
-const UNIQUE_VIOLATION = "23505";
-
 const CODE_ATTEMPTS = 3;
+
+const INVITE_CODE_CONSTRAINT = "invites_pkey";
 
 const newCode = customAlphabet(
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
   INVITE_CODE_LENGTH,
 );
-
-function isUniqueViolation(error: unknown): boolean {
-  const cause = (error as { cause?: unknown }).cause ?? error;
-
-  return (
-    cause instanceof postgres.PostgresError && cause.code === UNIQUE_VIOLATION
-  );
-}
 
 function expiry(hours: number | null): Date | null {
   return hours === null ? null : new Date(Date.now() + hours * 3_600_000);
@@ -92,7 +87,9 @@ export async function createInvite(
         return serializeInvite(row);
       });
     } catch (error) {
-      if (!isUniqueViolation(error)) {
+      if (
+        violatedConstraint(error, UNIQUE_VIOLATION) !== INVITE_CODE_CONSTRAINT
+      ) {
         throw error;
       }
     }

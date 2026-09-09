@@ -4,6 +4,8 @@ import request from "supertest";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { type Account, signUp } from "../helpers/accounts.js";
+
 const namespace = vi.hoisted(() => {
   const value = `rl-message-${Math.random().toString(36).slice(2)}`;
 
@@ -17,36 +19,12 @@ const { app } = await import("../../src/app.js");
 const { db } = await import("../../src/db/index.js");
 const { redis } = await import("../../src/redis.js");
 const { serverMembers } = await import("../../src/db/schema/index.js");
+const { MESSAGE_WINDOW_SECONDS } =
+  await import("../../src/middleware/rate-limit.js");
 const { requireTestDatabase } = await import("../setup.js");
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const serverBody = z.object({ id: z.string() });
 const channelList = z.array(z.object({ id: z.string(), name: z.string() }));
-
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
 
 async function seed(): Promise<{
   ada: Account;
@@ -115,6 +93,29 @@ describe("the message-send bucket", () => {
     });
     expect(rejected.get("retry-after")).toBe("5");
     expect(await counterFor(fixture.ada.id)).toBe("6");
+  });
+
+  it("counts down retry-after as the window runs out", async () => {
+    const fixture = await seed();
+
+    for (let index = 0; index < 6; index += 1) {
+      await send(fixture.ada, fixture.channelId, `m ${String(index)}`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+
+    const rejected = await send(
+      fixture.ada,
+      fixture.channelId,
+      "still limited",
+    );
+
+    expect(rejected.status).toBe(429);
+
+    const retryAfter = Number(rejected.get("retry-after"));
+
+    expect(retryAfter).toBeGreaterThan(0);
+    expect(retryAfter).toBeLessThan(MESSAGE_WINDOW_SECONDS);
   });
 
   it("meters each user separately", async () => {

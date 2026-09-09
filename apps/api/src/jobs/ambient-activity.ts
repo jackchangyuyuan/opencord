@@ -15,7 +15,7 @@ import {
 } from "drizzle-orm";
 
 import { config } from "../config.js";
-import { db } from "../db/index.js";
+import { db, type Transaction } from "../db/index.js";
 import {
   channels,
   messages,
@@ -26,9 +26,13 @@ import {
 import type { Random } from "../db/seed/corpus.js";
 import { createRandom, messageBody, topicFor } from "../db/seed/corpus.js";
 import { SEED_USERNAME_PREFIX } from "../db/seed/personas.js";
+import { tryLockAmbientActivity } from "../lib/advisory-locks.js";
 import { logger } from "../lib/logger.js";
 import { refreshDemoPresence } from "../modules/demo/presence.js";
-import { messageColumns } from "../modules/messages/queries.js";
+import {
+  messageColumns,
+  type MessageRow,
+} from "../modules/messages/queries.js";
 import { serializeOneMessage } from "../modules/messages/serialize.js";
 import {
   emitMessageCreate,
@@ -69,6 +73,19 @@ const IDLE: AmbientResult = {
 interface AmbientChannel {
   channelId: string;
   name: string;
+}
+
+interface ReactionEvent {
+  channelId: string;
+  messageId: string;
+  userId: string;
+  emoji: string;
+}
+
+interface AmbientPass {
+  posted: { row: MessageRow; authorId: string }[];
+  reacted: ReactionEvent[];
+  typists: { channelId: string; userId: string }[];
 }
 
 async function anyGuestOnline(): Promise<boolean> {
@@ -113,9 +130,10 @@ async function findAmbientChannels(): Promise<AmbientChannel[]> {
 }
 
 async function findPersonas(
+  tx: Transaction,
   channelId: string,
 ): Promise<{ id: string; username: string }[]> {
-  return db
+  return tx
     .selectDistinct({ id: users.id, username: users.username })
     .from(messages)
     .innerJoin(users, eq(users.id, messages.authorId))
@@ -128,11 +146,16 @@ async function findPersonas(
     .limit(20);
 }
 
+// A timestamp check, not a counter: nothing in the runner guarantees a tick
+// happens exactly once, so two runs inside one window must write once. Read
+// under the pass's advisory lock, which is what makes that true of two workers
+// rather than only of two ticks in one process.
 async function postedRecently(
+  tx: Transaction,
   channelIds: readonly string[],
   now: Date,
 ): Promise<boolean> {
-  const [latest] = await db
+  const [latest] = await tx
     .select({ createdAt: messages.createdAt })
     .from(messages)
     .where(and(inArray(messages.channelId, [...channelIds]), writtenByTheJob))
@@ -150,11 +173,12 @@ async function postedRecently(
 }
 
 async function postOne(
+  tx: Transaction,
   target: AmbientChannel,
   authorId: string,
   random: Random,
-): Promise<boolean> {
-  const [inserted] = await db
+): Promise<MessageRow | null> {
+  const [inserted] = await tx
     .insert(messages)
     .values({
       channelId: target.channelId,
@@ -165,34 +189,35 @@ async function postOne(
     .returning(messageColumns);
 
   if (inserted === undefined) {
-    return false;
+    return null;
   }
 
-  await db
+  await tx
     .update(channels)
     .set({
       lastMessageId: sql`greatest(${channels.lastMessageId}, ${inserted.id}::uuid)`,
     })
     .where(eq(channels.id, target.channelId));
 
-  emitMessageCreate(await serializeOneMessage(inserted, authorId));
-
-  return true;
+  return inserted;
 }
 
 const REACT_CHANCE = 0.4;
 const REACT_WINDOW = 15;
 
+const TYPISTS_PER_CHANNEL = 3;
+
 async function react(
+  tx: Transaction,
   target: AmbientChannel,
   userId: string,
   random: Random,
-): Promise<number> {
+): Promise<ReactionEvent | null> {
   if (random.next() >= REACT_CHANCE) {
-    return 0;
+    return null;
   }
 
-  const candidates = await db
+  const candidates = await tx
     .select({ id: messages.id })
     .from(messages)
     .where(
@@ -208,29 +233,22 @@ async function react(
   const recent = candidates[random.int(candidates.length)];
 
   if (recent === undefined) {
-    return 0;
+    return null;
   }
 
   const emoji = random.pick(REACTION_EMOJI);
 
-  const inserted = await db
+  const inserted = await tx
     .insert(reactions)
     .values({ messageId: recent.id, userId, emoji })
     .onConflictDoNothing()
     .returning({ emoji: reactions.emoji });
 
   if (inserted.length === 0) {
-    return 0;
+    return null;
   }
 
-  emitReaction("reaction:add", {
-    channelId: target.channelId,
-    messageId: recent.id,
-    userId,
-    emoji,
-  });
-
-  return 1;
+  return { channelId: target.channelId, messageId: recent.id, userId, emoji };
 }
 
 async function prune(
@@ -272,48 +290,89 @@ export async function runAmbientActivity(
   const channelIds = targets.map((target) => target.channelId);
   const pruned = await prune(channelIds, now);
 
-  if (await postedRecently(channelIds, now)) {
+  const written = await db.transaction(async (tx) => {
+    if (!(await tryLockAmbientActivity(tx))) {
+      return null;
+    }
+
+    if (await postedRecently(tx, channelIds, now)) {
+      return null;
+    }
+
+    const random = createRandom(now.getTime());
+    const pass: AmbientPass = { posted: [], reacted: [], typists: [] };
+
+    for (const target of targets) {
+      const personas = await findPersonas(tx, target.channelId);
+      const speaker = personas[random.int(personas.length)];
+
+      if (speaker === undefined) {
+        continue;
+      }
+
+      const posted = await postOne(tx, target, speaker.id, random);
+
+      if (posted !== null) {
+        pass.posted.push({ row: posted, authorId: speaker.id });
+      }
+
+      const reactor = personas[random.int(personas.length)];
+      const reacted =
+        reactor === undefined
+          ? null
+          : await react(tx, target, reactor.id, random);
+
+      if (reacted !== null) {
+        pass.reacted.push(reacted);
+      }
+
+      const speakers = new Set<string>();
+      const wanted = Math.min(
+        1 + random.int(TYPISTS_PER_CHANNEL),
+        personas.length,
+      );
+
+      while (speakers.size < wanted) {
+        const candidate = personas[random.int(personas.length)];
+
+        if (candidate === undefined) {
+          break;
+        }
+
+        speakers.add(candidate.id);
+      }
+
+      for (const userId of speakers) {
+        pass.typists.push({ channelId: target.channelId, userId });
+      }
+    }
+
+    return pass;
+  });
+
+  if (written === null) {
     return { ...IDLE, pruned, present };
   }
 
-  const random = createRandom(now.getTime());
+  for (const message of written.posted) {
+    emitMessageCreate(await serializeOneMessage(message.row, message.authorId));
+  }
+
+  for (const reaction of written.reacted) {
+    emitReaction("reaction:add", reaction);
+  }
+
+  for (const typist of written.typists) {
+    emitTypingStart(typist);
+  }
 
   const result: AmbientResult = {
-    posted: 0,
-    reacted: 0,
-    typed: 0,
+    posted: written.posted.length,
+    reacted: written.reacted.length,
+    typed: written.typists.length,
     pruned,
     present,
   };
-
-  for (const target of targets) {
-    const personas = await findPersonas(target.channelId);
-    const speaker = personas[random.int(personas.length)];
-
-    if (speaker === undefined) {
-      continue;
-    }
-
-    if (await postOne(target, speaker.id, random)) {
-      result.posted += 1;
-    }
-
-    const reactor = personas[random.int(personas.length)];
-
-    if (reactor !== undefined) {
-      result.reacted += await react(target, reactor.id, random);
-    }
-
-    const nextSpeaker = personas[random.int(personas.length)];
-
-    if (nextSpeaker !== undefined) {
-      emitTypingStart({
-        channelId: target.channelId,
-        userId: nextSpeaker.id,
-      });
-      result.typed += 1;
-    }
-  }
 
   logger.debug(result, "Ambient activity finished");
 

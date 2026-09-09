@@ -5,6 +5,8 @@ import request from "supertest";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { type Account, signUp } from "../helpers/accounts.js";
+
 vi.hoisted(() => {
   process.env["GUEST_MESSAGE_CEILING"] = "2";
   process.env["GUEST_SERVER_CEILING"] = "2";
@@ -17,37 +19,12 @@ const { guestQuotas, messages, servers } =
   await import("../../src/db/schema/index.js");
 const { requireTestDatabase } = await import("../setup.js");
 
-const password = "correct horse battery staple";
-
 const idBody = z.object({ id: z.string() });
 const userBody = z.object({ user: z.object({ id: z.string() }) });
 const channelList = z.array(z.object({ id: z.string() }));
 
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
 async function signInAnonymously(): Promise<Account> {
   const res = await request(app).post("/api/auth/sign-in/anonymous").send({});
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: userBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
 
   expect(res.status).toBe(200);
 

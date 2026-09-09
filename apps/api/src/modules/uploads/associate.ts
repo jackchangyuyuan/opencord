@@ -10,12 +10,7 @@ import {
   uploadKeyForbidden,
   uploadNotFound,
 } from "../../lib/errors.js";
-import { logger } from "../../lib/logger.js";
-import {
-  deleteObject,
-  headObject,
-  type StoredObject,
-} from "../../lib/storage.js";
+import { headObject, type StoredObject } from "../../lib/storage.js";
 
 export async function requireOwnedUpload(
   kind: UploadKind,
@@ -39,8 +34,6 @@ export async function requireOwnedUpload(
     expired ||
     !(UPLOAD_CONTENT_TYPES as readonly string[]).includes(stored.contentType)
   ) {
-    await deleteObject(objectKey);
-
     throw new AppError(
       400,
       "UPLOAD_REJECTED",
@@ -51,19 +44,4 @@ export async function requireOwnedUpload(
   }
 
   return stored;
-}
-
-export async function discardReplacedUpload(
-  objectKey: string | null,
-  replacedBy: string,
-): Promise<void> {
-  if (objectKey === null || objectKey === replacedBy) {
-    return;
-  }
-
-  try {
-    await deleteObject(objectKey);
-  } catch (error) {
-    logger.error({ err: error, objectKey }, "Replaced upload was not deleted");
-  }
 }

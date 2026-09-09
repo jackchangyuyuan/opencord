@@ -11,41 +11,16 @@ import { z } from "zod";
 import { app } from "../../src/app.js";
 import { config } from "../../src/config.js";
 import { s3 } from "../../src/lib/storage.js";
+import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
-const password = "correct horse battery staple";
-
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
 const grantBody = z.object({
   objectKey: z.string(),
   upload: z.object({ url: z.url(), fields: z.record(z.string(), z.string()) }),
   expiresIn: z.number(),
 });
 
-interface Account {
-  id: string;
-  cookies: string[];
-}
-
 const posted: string[] = [];
-
-async function signUp(username: string): Promise<Account> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-
-  return {
-    id: signUpBody.parse(res.body).user.id,
-    cookies: res.get("Set-Cookie") ?? [],
-  };
-}
 
 function authorize(account: Account, body: Record<string, unknown>) {
   return request(app)

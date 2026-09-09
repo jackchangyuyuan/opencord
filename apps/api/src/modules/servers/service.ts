@@ -26,10 +26,7 @@ import {
 } from "../../socket/emit.js";
 import { createDefaultChannels } from "../channels/service.js";
 import { isServerMember, lockedServerOwner } from "../members/queries.js";
-import {
-  discardReplacedUpload,
-  requireOwnedUpload,
-} from "../uploads/associate.js";
+import { requireOwnedUpload } from "../uploads/associate.js";
 import {
   serializeServer,
   serializeServerDetail,
@@ -122,10 +119,6 @@ export async function updateServer(
 
     return serializeServerDetail({ ...context, server });
   });
-
-  if (iconObjectKey !== undefined) {
-    await discardReplacedUpload(context.server.iconKey, iconObjectKey);
-  }
 
   emitServerEvent("server:update", context.server.id);
 

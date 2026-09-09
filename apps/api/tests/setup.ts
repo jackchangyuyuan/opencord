@@ -7,6 +7,8 @@ import { afterAll, beforeAll, beforeEach } from "vitest";
 
 const DUPLICATE_DATABASE = "42P04";
 
+const QUIET = { max: 1, onnotice: () => undefined } as const;
+
 const poolId = process.env["VITEST_POOL_ID"] ?? "1";
 const maintenanceUrl = process.env["TEST_DATABASE_URL"];
 const migrationsFolder = join(import.meta.dirname, "../src/db/migrations");
@@ -32,7 +34,7 @@ if (maintenanceUrl !== undefined) {
 }
 
 async function createTestDatabase(base: string): Promise<void> {
-  const maintenance = postgres(base, { max: 1 });
+  const maintenance = postgres(base, QUIET);
 
   try {
     await maintenance.unsafe(
@@ -60,7 +62,7 @@ beforeAll(async () => {
 
   await createTestDatabase(maintenanceUrl);
 
-  client = postgres(testDatabaseUrl(maintenanceUrl), { max: 1 });
+  client = postgres(testDatabaseUrl(maintenanceUrl), QUIET);
 
   await migrate(drizzle({ client }), { migrationsFolder });
 

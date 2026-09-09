@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { count, eq } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
 import request from "supertest";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -122,10 +122,15 @@ describe("claiming a guest account", () => {
 
     expect(invited.status).toBe(201);
 
-    const peer = await db.query.users.findFirst({
-      columns: { id: true },
-      where: { username: { like: "seed-%" } },
-    });
+    const [peer] = await db.execute<{ id: string }>(sql`
+      select u.id from users u
+       where u.username like 'seed-%'
+         and not exists (
+           select 1 from channel_members cm where cm.user_id = u.id
+         )
+       order by u.id
+       limit 1
+    `);
 
     expect(
       (
@@ -135,6 +140,13 @@ describe("claiming a guest account", () => {
           .send({ recipientId: peer?.id ?? "" })
       ).status,
     ).toBe(201);
+
+    const authoredBefore = await db
+      .select({ value: count() })
+      .from(messages)
+      .where(eq(messages.authorId, guest.id));
+
+    expect(authoredBefore[0]?.value).toBeGreaterThan(1);
 
     const claimed = await claim(guest, details);
 
@@ -185,7 +197,7 @@ describe("claiming a guest account", () => {
       .where(eq(invites.inviterId, guest.id));
 
     expect(owned[0]?.value).toBe(1);
-    expect(authored[0]?.value).toBe(1);
+    expect(authored[0]?.value).toBe(authoredBefore[0]?.value);
     expect(audited[0]?.value).toBeGreaterThan(0);
     expect(invitesMade[0]?.value).toBe(1);
 
@@ -244,6 +256,91 @@ describe("claiming a guest account", () => {
       .where(eq(accounts.userId, guest.id));
 
     expect(credentials[0]?.value).toBe(1);
+  });
+
+  it("honours the password of the request that succeeds", async () => {
+    await seedWorld();
+
+    const { account: guest } = await enterDemo();
+
+    const transaction = vi
+      .spyOn(db, "transaction")
+      .mockRejectedValueOnce(new Error("the identity write failed"));
+
+    expect(
+      (await claim(guest, { ...details, password: "first attempt password" }))
+        .status,
+    ).toBe(500);
+
+    transaction.mockRestore();
+
+    const second = "second attempt password";
+
+    expect((await claim(guest, { ...details, password: second })).status).toBe(
+      200,
+    );
+
+    const signedIn = await request(app)
+      .post("/api/auth/sign-in/email")
+      .send({ email: details.email, password: second });
+
+    expect(signedIn.status).toBe(200);
+
+    const stale = await request(app)
+      .post("/api/auth/sign-in/email")
+      .send({ email: details.email, password: "first attempt password" });
+
+    expect(stale.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it("leaves the losing request's password nowhere near the account", async () => {
+    await seedWorld();
+
+    const { account: guest } = await enterDemo();
+
+    const winner = "the password that was accepted";
+    const loser = "the password that was refused";
+
+    const answers = await Promise.all([
+      claim(guest, { ...details, password: winner }),
+      claim(guest, {
+        ...details,
+        email: "second@example.com",
+        username: "second",
+        password: loser,
+      }),
+    ]);
+
+    const accepted = answers.filter((res) => res.status === 200);
+
+    expect(accepted).toHaveLength(1);
+
+    const claimed = await db.query.users.findFirst({
+      columns: { email: true, isAnonymous: true },
+      where: { id: guest.id },
+    });
+
+    expect(claimed?.isAnonymous).toBe(false);
+
+    const email = claimed?.email ?? "";
+    const survived = email === details.email ? winner : loser;
+    const rejected = survived === winner ? loser : winner;
+
+    expect(
+      (
+        await request(app)
+          .post("/api/auth/sign-in/email")
+          .send({ email, password: survived })
+      ).status,
+    ).toBe(200);
+
+    expect(
+      (
+        await request(app)
+          .post("/api/auth/sign-in/email")
+          .send({ email, password: rejected })
+      ).status,
+    ).toBeGreaterThanOrEqual(400);
   });
 
   it("refuses a session that is not a guest", async () => {

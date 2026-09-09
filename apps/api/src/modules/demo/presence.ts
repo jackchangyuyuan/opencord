@@ -17,11 +17,31 @@ const CAST: { status: PresenceStatus; idle: boolean }[] = [
   { status: "online", idle: false },
   { status: "idle", idle: true },
   { status: "online", idle: false },
+  { status: "dnd", idle: false },
+  { status: "online", idle: false },
+  { status: "idle", idle: true },
+  { status: "online", idle: false },
+  { status: "online", idle: false },
+  { status: "idle", idle: true },
+  { status: "dnd", idle: false },
+  { status: "online", idle: false },
+  { status: "online", idle: false },
+  { status: "idle", idle: true },
+  { status: "online", idle: false },
+  { status: "dnd", idle: false },
+  { status: "idle", idle: true },
+  { status: "online", idle: false },
 ];
 
-const STRIDE = 6;
+const STRIDE = 2;
 
-export const DEMO_PRESENCE_SIZE = CAST.length;
+export function demoPresenceStatusAt(offset: number): PresenceStatus {
+  if (offset % STRIDE !== 0) {
+    return "offline";
+  }
+
+  return CAST[offset / STRIDE]?.status ?? "offline";
+}
 
 async function castMembers(): Promise<string[]> {
   const rows = await db
