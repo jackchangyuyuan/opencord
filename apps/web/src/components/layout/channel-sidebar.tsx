@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Settings } from "lucide-react";
 import { useMatch } from "react-router";
 
+import { UserBar } from "@/components/layout/user-bar";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -56,6 +57,7 @@ export function ChannelSidebar() {
         <ScrollArea className="flex-1">
           <DmList />
         </ScrollArea>
+        <UserBar />
       </div>
     );
   }
@@ -89,6 +91,7 @@ export function ChannelSidebar() {
       <ScrollArea className="flex-1">
         <ChannelList serverId={activeServerId} />
       </ScrollArea>
+      <UserBar />
       {activeChannelId === undefined ? null : (
         <ChannelSettingsDialog channelId={activeChannelId} />
       )}

@@ -1,6 +1,6 @@
 import { REACTION_EMOJI } from "@opencord/shared/constants";
 import { SmilePlus } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -8,31 +8,50 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-
-export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
+export function EmojiPicker({
+  onPick,
+  onClear,
+  triggerLabel = "Add reaction",
+  itemLabel = (emoji: string) => `React with ${emoji}`,
+  trigger,
+  tabbable = false,
+}: {
+  onPick: (emoji: string) => void;
+  onClear?: (() => void) | undefined;
+  triggerLabel?: string;
+  itemLabel?: (emoji: string) => string;
+  trigger?: ReactNode;
+  tabbable?: boolean;
+}) {
   const [open, setOpen] = useState(false);
 
   return (
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger
         render={
-          <Button aria-label="Add reaction" size="icon-xs" variant="ghost" />
+          <Button
+            aria-label={triggerLabel}
+            size="icon-xs"
+            variant="ghost"
+            type="button"
+          />
         }
-        tabIndex={-1}
+        {...(tabbable ? {} : { tabIndex: -1 })}
       >
-        <SmilePlus />
+        {trigger ?? <SmilePlus />}
       </PopoverTrigger>
-      <PopoverContent className="w-64">
+      <PopoverContent align="start" className="w-64">
         <ul className="grid grid-cols-8 gap-0.5">
           {REACTION_EMOJI.map((emoji) => (
             <li key={emoji}>
               <Button
-                aria-label={`React with ${emoji}`}
+                aria-label={itemLabel(emoji)}
                 onClick={() => {
                   onPick(emoji);
                   setOpen(false);
                 }}
                 size="icon-xs"
+                type="button"
                 variant="ghost"
               >
                 {emoji}
@@ -40,6 +59,21 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
             </li>
           ))}
         </ul>
+
+        {onClear === undefined ? null : (
+          <Button
+            className="mt-1 w-full"
+            onClick={() => {
+              onClear();
+              setOpen(false);
+            }}
+            size="xs"
+            type="button"
+            variant="ghost"
+          >
+            Remove emoji
+          </Button>
+        )}
       </PopoverContent>
     </Popover>
   );

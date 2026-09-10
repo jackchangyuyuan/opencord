@@ -51,8 +51,11 @@ test("enters the demo, sends, claims and signs back in (flow 1)", async ({
 
   const channel = new URL(page.url()).pathname;
 
-  await page.getByRole("button", { name: "Your profile" }).click();
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await page
+    .getByRole("navigation", { name: "Servers and channels" })
+    .getByRole("button", { name: "Settings", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
 
   await expect(page).toHaveURL(`/?from=${encodeURIComponent(channel)}`);
 

@@ -80,11 +80,12 @@ async function closesBackToTrigger(
   page: Page,
   trigger: Locator,
   overlay: Locator,
+  returnsTo: Locator = trigger,
 ): Promise<void> {
   await page.keyboard.press("Escape");
 
   await expect(overlay).toBeHidden();
-  await expect(trigger).toBeFocused();
+  await expect(returnsTo).toBeFocused();
 }
 
 test.describe("overlay focus trapping", { tag: "@a11y" }, () => {
@@ -94,7 +95,11 @@ test.describe("overlay focus trapping", { tag: "@a11y" }, () => {
   }) => {
     await enterDemo("light");
 
-    const trigger = page.getByRole("button", { name: "Your profile" });
+    await page.getByRole("button", { name: "Your profile" }).click();
+
+    const trigger = page
+      .locator('[data-slot="popover-content"]')
+      .getByRole("button", { name: "Edit profile" });
 
     await trigger.click();
 
@@ -104,7 +109,12 @@ test.describe("overlay focus trapping", { tag: "@a11y" }, () => {
     await expectFocusInside(page, '[role="dialog"]');
     expect(await escapees(page, '[role="dialog"]')).toEqual([]);
 
-    await closesBackToTrigger(page, trigger, dialog);
+    await closesBackToTrigger(
+      page,
+      trigger,
+      dialog,
+      page.getByRole("button", { name: "Your profile" }),
+    );
   });
 
   test("moves focus into a popover and releases it to its trigger", async ({
@@ -136,10 +146,25 @@ test.describe("overlay focus trapping", { tag: "@a11y" }, () => {
       .getByRole("button", { name: /^Your sandbox/ })
       .click();
 
-    const trigger = page
-      .getByRole("complementary", { name: "Members" })
-      .getByRole("button", { name: /^Member actions for / })
+    await expect(
+      page.getByRole("heading", { name: "Your sandbox", level: 2 }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    const members = page.getByRole("complementary", { name: "Members" });
+
+    const row = members
+      .getByRole("button", { name: /'s profile$/ })
+      .filter({ hasNotText: "Guest " })
       .first();
+
+    await expect(row).toBeEnabled({ timeout: 15_000 });
+    await row.click();
+
+    const card = page.locator('[data-slot="popover-content"]');
+
+    await expect(card).toBeVisible();
+
+    const trigger = card.getByRole("button", { name: /^Manage / });
 
     await expect(trigger).toBeEnabled({ timeout: 15_000 });
     await trigger.click();

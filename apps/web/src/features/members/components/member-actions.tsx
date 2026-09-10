@@ -1,5 +1,5 @@
 import { Permissions } from "@opencord/shared/permissions";
-import { MoreHorizontal } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -35,13 +35,11 @@ import type { PublicRole } from "@/features/roles/api/queries";
 type Confirming = "kick" | "ban" | null;
 
 export function MemberActions({
-  canAct,
   member,
   permissions,
   roles,
   serverId,
 }: {
-  canAct: boolean;
   member: ServerMemberEntry;
   permissions: number;
   roles: readonly PublicRole[];
@@ -54,32 +52,39 @@ export function MemberActions({
 
   const name = displayName(member);
 
-  const mayManageRoles = canAct && has(permissions, Permissions.MANAGE_ROLES);
-  const mayKick = canAct && has(permissions, Permissions.KICK_MEMBERS);
-  const mayBan = canAct && has(permissions, Permissions.BAN_MEMBERS);
+  const mayManageRoles = has(permissions, Permissions.MANAGE_ROLES);
+  const mayKick = has(permissions, Permissions.KICK_MEMBERS);
+  const mayBan = has(permissions, Permissions.BAN_MEMBERS);
+
+  const assignable = mayManageRoles
+    ? roles.filter((role) => !role.isDefault)
+    : [];
+
+  if (assignable.length === 0 && !mayKick && !mayBan) {
+    return null;
+  }
 
   return (
     <>
       <DropdownMenu>
         <DropdownMenuTrigger
-          aria-label={`Member actions for ${name}`}
-          disabled={!canAct}
-          render={<Button size="icon-xs" variant="ghost" />}
+          aria-label={`Manage ${name}`}
+          render={<Button size="sm" variant="outline" />}
         >
-          <MoreHorizontal />
+          Manage
+          <ChevronDown data-icon="inline-end" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuGroup>
-            <DropdownMenuLabel>Roles</DropdownMenuLabel>
-            {roles
-              .filter((role) => !role.isDefault)
-              .map((role) => {
+        <DropdownMenuContent align="end" className="w-auto min-w-48">
+          {assignable.length > 0 ? (
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Roles</DropdownMenuLabel>
+              {assignable.map((role) => {
                 const held = member.roleIds.includes(role.id);
 
                 return (
                   <DropdownMenuCheckboxItem
                     checked={held}
-                    disabled={!mayManageRoles}
+                    closeOnClick={false}
                     key={role.id}
                     onCheckedChange={() => {
                       const input = { userId: member.user.id, roleId: role.id };
@@ -95,26 +100,32 @@ export function MemberActions({
                   </DropdownMenuCheckboxItem>
                 );
               })}
-          </DropdownMenuGroup>
+            </DropdownMenuGroup>
+          ) : null}
 
-          <DropdownMenuSeparator />
+          {assignable.length > 0 && (mayKick || mayBan) ? (
+            <DropdownMenuSeparator />
+          ) : null}
 
-          <DropdownMenuItem
-            disabled={!mayKick}
-            onClick={() => {
-              setConfirming("kick");
-            }}
-          >
-            Kick
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={!mayBan}
-            onClick={() => {
-              setConfirming("ban");
-            }}
-          >
-            Ban
-          </DropdownMenuItem>
+          {mayKick ? (
+            <DropdownMenuItem
+              onClick={() => {
+                setConfirming("kick");
+              }}
+            >
+              Kick {name}
+            </DropdownMenuItem>
+          ) : null}
+          {mayBan ? (
+            <DropdownMenuItem
+              onClick={() => {
+                setConfirming("ban");
+              }}
+              variant="destructive"
+            >
+              Ban {name}
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -157,9 +168,7 @@ export function MemberActions({
           )}
 
           <AlertDialogFooter>
-            <AlertDialogCancel render={<Button variant="ghost" />}>
-              Cancel
-            </AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (confirming === "ban") {
@@ -171,7 +180,7 @@ export function MemberActions({
                 setConfirming(null);
                 setReason("");
               }}
-              render={<Button variant="destructive" />}
+              variant="destructive"
             >
               {confirming === "ban" ? "Ban" : "Kick"}
             </AlertDialogAction>

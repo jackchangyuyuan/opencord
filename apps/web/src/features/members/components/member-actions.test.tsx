@@ -59,11 +59,9 @@ function member(overrides: Partial<ServerMemberEntry> = {}): ServerMemberEntry {
 }
 
 function renderActions({
-  canAct = true,
   permissions = ALL_MODERATION,
   entry = member(),
 }: {
-  canAct?: boolean;
   permissions?: number;
   entry?: ServerMemberEntry;
 } = {}) {
@@ -74,7 +72,6 @@ function renderActions({
   return render(
     <QueryClientProvider client={client}>
       <MemberActions
-        canAct={canAct}
         member={entry}
         permissions={permissions}
         roles={ROLES}
@@ -106,30 +103,40 @@ afterEach(() => {
 });
 
 describe("MemberActions", () => {
-  it("disables the menu entirely for a peer", () => {
-    renderActions({ canAct: false });
+  it("names itself Manage rather than drawing three dots", () => {
+    renderActions();
 
     expect(
-      screen.getByRole("button", { name: "Member actions for Grace" }),
-    ).toBeDisabled();
+      screen.getByRole("button", { name: "Manage Grace" }),
+    ).toHaveTextContent("Manage");
   });
 
-  it("offers no destructive action on someone the caller cannot outrank", async () => {
+  it("renders nothing at all for a caller who may do none of it", () => {
+    const { container } = renderActions({
+      permissions: Permissions.VIEW_CHANNEL,
+    });
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("offers only the actions the caller actually holds", async () => {
     const user = userEvent.setup();
 
-    renderActions({ permissions: Permissions.VIEW_CHANNEL });
+    renderActions({
+      permissions: Permissions.VIEW_CHANNEL | Permissions.KICK_MEMBERS,
+    });
 
-    await user.click(
-      screen.getByRole("button", { name: "Member actions for Grace" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Manage Grace" }));
 
     expect(
-      await screen.findByRole("menuitem", { name: "Kick" }),
-    ).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByRole("menuitem", { name: "Ban" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
+      await screen.findByRole("menuitem", { name: "Kick Grace" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: "Ban Grace" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitemcheckbox", { name: "Moderators" }),
+    ).not.toBeInTheDocument();
   });
 
   it("assigns a role", async () => {
@@ -137,9 +144,7 @@ describe("MemberActions", () => {
 
     renderActions();
 
-    await user.click(
-      screen.getByRole("button", { name: "Member actions for Grace" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Manage Grace" }));
     await user.click(
       await screen.findByRole("menuitemcheckbox", { name: "Moderators" }),
     );
@@ -153,14 +158,55 @@ describe("MemberActions", () => {
     ]);
   });
 
+  it("stays open across several role changes", async () => {
+    const user = userEvent.setup();
+
+    renderActions({
+      entry: member({ roleIds: [MOD_ROLE] }),
+    });
+
+    await user.click(screen.getByRole("button", { name: "Manage Grace" }));
+
+    const moderators = await screen.findByRole("menuitemcheckbox", {
+      name: "Moderators",
+    });
+
+    await user.click(moderators);
+
+    expect(screen.getByRole("menu", { name: "Manage Grace" })).toBeVisible();
+    expect(
+      screen.getByRole("menuitemcheckbox", { name: "Moderators" }),
+    ).toBeVisible();
+
+    await user.click(
+      screen.getByRole("menuitemcheckbox", { name: "Moderators" }),
+    );
+
+    expect(screen.getByRole("menu", { name: "Manage Grace" })).toBeVisible();
+    expect(requests).toHaveLength(2);
+  });
+
+  it("closes on Escape", async () => {
+    const user = userEvent.setup();
+
+    renderActions();
+
+    await user.click(screen.getByRole("button", { name: "Manage Grace" }));
+    await screen.findByRole("menuitemcheckbox", { name: "Moderators" });
+
+    await user.keyboard("{Escape}");
+
+    expect(
+      screen.queryByRole("menu", { name: "Manage Grace" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("unassigns a role the member already holds", async () => {
     const user = userEvent.setup();
 
     renderActions({ entry: member({ roleIds: [MOD_ROLE] }) });
 
-    await user.click(
-      screen.getByRole("button", { name: "Member actions for Grace" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Manage Grace" }));
     await user.click(
       await screen.findByRole("menuitemcheckbox", { name: "Moderators" }),
     );
@@ -173,10 +219,10 @@ describe("MemberActions", () => {
 
     renderActions();
 
+    await user.click(screen.getByRole("button", { name: "Manage Grace" }));
     await user.click(
-      screen.getByRole("button", { name: "Member actions for Grace" }),
+      await screen.findByRole("menuitem", { name: "Kick Grace" }),
     );
-    await user.click(await screen.findByRole("menuitem", { name: "Kick" }));
 
     expect(await screen.findByText("Kick Grace?")).toBeInTheDocument();
 
@@ -196,10 +242,10 @@ describe("MemberActions", () => {
 
     renderActions();
 
+    await user.click(screen.getByRole("button", { name: "Manage Grace" }));
     await user.click(
-      screen.getByRole("button", { name: "Member actions for Grace" }),
+      await screen.findByRole("menuitem", { name: "Ban Grace" }),
     );
-    await user.click(await screen.findByRole("menuitem", { name: "Ban" }));
 
     await user.type(
       await screen.findByRole("textbox", { name: "Reason" }),
@@ -221,10 +267,10 @@ describe("MemberActions", () => {
 
     renderActions();
 
+    await user.click(screen.getByRole("button", { name: "Manage Grace" }));
     await user.click(
-      screen.getByRole("button", { name: "Member actions for Grace" }),
+      await screen.findByRole("menuitem", { name: "Kick Grace" }),
     );
-    await user.click(await screen.findByRole("menuitem", { name: "Kick" }));
     await screen.findByText("Kick Grace?");
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));
@@ -253,17 +299,17 @@ describe("the API is the authority", () => {
 
     renderActions();
 
+    await user.click(screen.getByRole("button", { name: "Manage Grace" }));
     await user.click(
-      screen.getByRole("button", { name: "Member actions for Grace" }),
+      await screen.findByRole("menuitem", { name: "Kick Grace" }),
     );
-    await user.click(await screen.findByRole("menuitem", { name: "Kick" }));
     await screen.findByText("Kick Grace?");
     await user.click(screen.getByRole("button", { name: "Kick" }));
 
+    await user.click(screen.getByRole("button", { name: "Manage Grace" }));
     await user.click(
-      screen.getByRole("button", { name: "Member actions for Grace" }),
+      await screen.findByRole("menuitem", { name: "Ban Grace" }),
     );
-    await user.click(await screen.findByRole("menuitem", { name: "Ban" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Not above you");
   });

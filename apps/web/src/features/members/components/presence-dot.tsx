@@ -1,28 +1,29 @@
 import type { PresenceStatus } from "@opencord/shared/types";
 
 import { cn } from "@/lib/cn";
-
-const LABEL: Record<PresenceStatus, string> = {
-  online: "Online",
-  idle: "Idle",
-  dnd: "Do not disturb",
-  offline: "Offline",
-};
+import { PRESENCE_LABEL } from "@/stores/presence";
 
 const TONE: Record<PresenceStatus, string> = {
-  online: "bg-emerald-500",
-  idle: "bg-amber-500",
-  dnd: "bg-red-500",
-  offline: "bg-muted-foreground/40",
+  online: "bg-presence-online",
+  idle: "bg-presence-idle",
+  dnd: "bg-presence-dnd",
+  offline: "bg-presence-offline",
 };
 
-export function PresenceDot({ status }: { status: PresenceStatus }) {
+export function PresenceDot({
+  className,
+  status,
+}: {
+  className?: string;
+  status: PresenceStatus;
+}) {
   return (
     <span
-      aria-label={LABEL[status]}
+      aria-label={PRESENCE_LABEL[status]}
       className={cn(
-        "size-2 shrink-0 rounded-full ring-2 ring-sidebar",
+        "inline-block size-2 shrink-0 rounded-full",
         TONE[status],
+        className,
       )}
       role="img"
     />

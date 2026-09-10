@@ -88,7 +88,11 @@ const ME = {
   isGuest: false,
 };
 
-function stubApi(members: ServerMemberEntry[], roles: PublicRole[]) {
+function stubApi(
+  members: ServerMemberEntry[],
+  roles: PublicRole[],
+  ownerId: string = SERVER_DETAIL.ownerId,
+) {
   const fetchMock = vi.fn<typeof fetch>().mockImplementation((input) => {
     const url = input instanceof Request ? input.url : input.toString();
     const body = url.endsWith("/users/@me")
@@ -97,7 +101,7 @@ function stubApi(members: ServerMemberEntry[], roles: PublicRole[]) {
         ? roles
         : url.includes("/members")
           ? { data: members, nextCursor: null }
-          : SERVER_DETAIL;
+          : { ...SERVER_DETAIL, ownerId };
 
     return Promise.resolve(
       new Response(JSON.stringify(body), {
@@ -131,6 +135,56 @@ afterEach(() => {
 });
 
 describe("MemberList", () => {
+  it("crowns the server owner and nobody else", async () => {
+    stubApi(MEMBERS, ROLES, "u-grace");
+
+    mountList();
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Grace's profile, server owner",
+      }),
+    ).toBeInTheDocument();
+
+    expect(screen.getAllByLabelText("Server owner")).toHaveLength(1);
+    expect(
+      screen.getByRole("button", { name: "HAL 9000's profile" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Ada's profile" }),
+    ).toBeInTheDocument();
+  });
+
+  it("holds the crown's column open on every row", async () => {
+    stubApi(MEMBERS, ROLES, "u-grace");
+
+    mountList();
+
+    await screen.findByLabelText("Server owner");
+
+    const slots = screen.getAllByTestId("member-badge");
+
+    expect(slots).toHaveLength(MEMBERS.length);
+
+    for (const slot of slots) {
+      expect(slot).toHaveClass("w-4", "shrink-0");
+    }
+
+    expect(
+      slots.filter((slot) => within(slot).queryByLabelText("Server owner")),
+    ).toHaveLength(1);
+  });
+
+  it("crowns nobody when the owner is not on screen", async () => {
+    stubApi(MEMBERS, ROLES);
+
+    mountList();
+
+    await screen.findByText("Ada");
+
+    expect(screen.queryByLabelText("Server owner")).not.toBeInTheDocument();
+  });
+
   it("groups members under their highest-positioned role", async () => {
     stubApi(MEMBERS, ROLES);
 
@@ -167,7 +221,7 @@ describe("MemberList", () => {
     mountList();
 
     expect(
-      await screen.findByRole("heading", { name: "Moderator — 2" }),
+      await screen.findByRole("heading", { name: "Moderator 2" }),
     ).toBeInTheDocument();
   });
 
@@ -194,7 +248,7 @@ describe("MemberList", () => {
     expect(within(everyone).getByRole("listitem")).not.toHaveAttribute("style");
   });
 
-  it("hides the action menu from a member who can moderate nobody", async () => {
+  it("carries no per-row actions", async () => {
     stubApi(MEMBERS, ROLES);
 
     mountList();
@@ -204,58 +258,33 @@ describe("MemberList", () => {
     expect(
       screen.queryAllByRole("button", { name: /^Member actions/ }),
     ).toEqual([]);
+    expect(screen.queryAllByRole("button", { name: /^Message / })).toEqual([]);
   });
 
-  it("greys out actions on peers and on the owner", async () => {
+  it("shows a status line rather than the handle", async () => {
     stubApi(
-      [member("u-me", "Me", ["r-mod"]), member("u-owner", "Owner", [])],
+      [
+        member("u-ada", "Ada", ["r-mod"]),
+        {
+          ...member("u-grace", "Grace", []),
+          user: {
+            ...member("u-grace", "Grace", []).user,
+            customStatus: "reviewing PRs",
+            customStatusEmoji: null,
+            isGuest: false,
+          },
+        },
+      ],
       ROLES,
-    );
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn<typeof fetch>().mockImplementation((input) => {
-        const url = input instanceof Request ? input.url : input.toString();
-
-        const body = url.endsWith("/users/@me")
-          ? ME
-          : url.endsWith("/roles")
-            ? ROLES
-            : url.includes("/members")
-              ? {
-                  data: [
-                    member("u-me", "Me", ["r-mod"]),
-                    member("u-owner", "Owner", []),
-                    member("u-peer", "Peer", ["r-mod"]),
-                    member("u-junior", "Junior", []),
-                  ],
-                  nextCursor: null,
-                }
-              : { ...SERVER_DETAIL, roles: [ROLES[1]] };
-
-        return Promise.resolve(
-          new Response(JSON.stringify(body), {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          }),
-        );
-      }),
     );
 
     mountList();
 
-    expect(
-      await screen.findByRole("button", { name: "Member actions for Junior" }),
-    ).toBeEnabled();
-    expect(
-      screen.getByRole("button", { name: "Member actions for Peer" }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: "Member actions for Owner" }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: "Member actions for Me" }),
-    ).toBeDisabled();
+    expect(await screen.findByText("Ada")).toBeInTheDocument();
+    expect(screen.getByText("reviewing PRs")).toBeInTheDocument();
+    expect(screen.queryByText("@ada")).not.toBeInTheDocument();
+    expect(screen.queryByText("@grace")).not.toBeInTheDocument();
+    expect(screen.queryByText("Offline")).not.toBeInTheDocument();
   });
 
   it("an uncoloured highest role falls back to a coloured lower one", async () => {

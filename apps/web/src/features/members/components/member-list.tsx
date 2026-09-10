@@ -1,32 +1,24 @@
-import { Permissions } from "@opencord/shared/permissions";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { MessageSquare } from "lucide-react";
+import { Crown, Users } from "lucide-react";
 import type { CSSProperties } from "react";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { EmptyState } from "@/components/layout/empty-state";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useOpenDm } from "@/features/dms/api/queries";
 import {
   displayName,
   type ServerMemberEntry,
   serverMembersQuery,
 } from "@/features/members/api/queries";
-import { MemberActions } from "@/features/members/components/member-actions";
-import { PresenceDot } from "@/features/members/components/presence-dot";
-import {
-  has,
-  outranks,
-  useServerPermissions,
-} from "@/features/permissions/hooks/use-permissions";
+import { MemberIdentity } from "@/features/members/components/member-identity";
 import {
   type PublicRole,
   roleColor,
   serverRolesQuery,
 } from "@/features/roles/api/queries";
 import { serverQuery } from "@/features/servers/api/queries";
-import { currentUserQuery } from "@/features/users/api/queries";
-import { statusOf, usePresence } from "@/stores/presence";
+import { UserAvatar } from "@/features/users/components/user-avatar";
+import { UserProfilePopover } from "@/features/users/components/user-profile-popover";
 
 interface Group {
   role: PublicRole;
@@ -90,27 +82,28 @@ export function MemberList({ serverId }: { serverId: string | undefined }) {
 
   const roles = useQuery({ ...serverRolesQuery(serverId ?? ""), enabled });
   const server = useQuery({ ...serverQuery(serverId ?? ""), enabled });
-  const { data: me } = useQuery(currentUserQuery);
-  const permissions = useServerPermissions(serverId);
-  const presence = usePresence((state) => state.byUser);
-  const { openDm } = useOpenDm();
 
-  const mayModerate =
-    has(permissions, Permissions.KICK_MEMBERS) ||
-    has(permissions, Permissions.MANAGE_ROLES);
-
-  const actor = {
-    id: me?.id,
-    roleIds: server.data?.roles.map((role) => role.id) ?? [],
-  };
-
-  if (!enabled || members.isPending || roles.isPending) {
+  if (!enabled) {
     return (
-      <div aria-hidden className="flex flex-col gap-2 p-3">
-        {["a", "b", "c", "d"].map((key) => (
-          <div className="flex items-center gap-2" key={key}>
-            <Skeleton className="size-7 rounded-full" />
-            <Skeleton className="h-3 flex-1" />
+      <EmptyState
+        description="Open a channel and the people who can read it appear here."
+        icon={<Users aria-hidden className="size-5" />}
+        title="No server open"
+      />
+    );
+  }
+
+  if (members.isPending || roles.isPending) {
+    return (
+      <div aria-hidden className="flex flex-col gap-3 p-5">
+        {["a", "b", "c", "d", "e", "f"].map((key, index) => (
+          <div
+            className="flex items-center gap-3"
+            key={key}
+            style={{ opacity: 1 - index * 0.13 }}
+          >
+            <Skeleton className="size-9 rounded-full" />
+            <Skeleton className="h-3.5 flex-1" />
           </div>
         ))}
       </div>
@@ -119,7 +112,7 @@ export function MemberList({ serverId }: { serverId: string | undefined }) {
 
   if (members.isError || roles.isError) {
     return (
-      <p className="p-4 text-sm text-muted-foreground" role="alert">
+      <p className="p-4 text-body text-muted-foreground" role="alert">
         Could not load members.
       </p>
     );
@@ -130,83 +123,83 @@ export function MemberList({ serverId }: { serverId: string | undefined }) {
   const groups = group(everyone, roles.data);
 
   return (
-    <div className="flex flex-col gap-4 p-3">
-      {groups.map(({ role, members: entries }) => (
-        <section aria-labelledby={`member-group-${role.id}`} key={role.id}>
-          <h3
-            className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
-            id={`member-group-${role.id}`}
-          >
-            {role.name} — {entries.length}
-          </h3>
-          <ul className="flex flex-col gap-1">
-            {entries.map((member) => (
-              <li
-                className="flex items-center gap-2"
-                key={member.user.id}
-                style={
-                  {
-                    "--member-color": roleColor(
-                      highestColouredRole(member, byId),
-                    ),
-                  } as CSSProperties
-                }
-              >
-                <span className="relative shrink-0">
-                  <Avatar aria-hidden className="size-7">
-                    <AvatarImage
-                      alt=""
-                      src={member.user.avatarUrl ?? undefined}
-                    />
-                    <AvatarFallback>
-                      {displayName(member).slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="absolute -right-0.5 -bottom-0.5">
-                    <PresenceDot status={statusOf(presence, member.user.id)} />
-                  </span>
-                </span>
-                <span className="role-color flex-1 truncate text-sm">
-                  {displayName(member)}
-                </span>
-                {member.user.id === actor.id ? null : (
-                  <Button
-                    aria-label={`Message ${displayName(member)}`}
-                    onClick={() => {
-                      openDm(member.user.id);
-                    }}
-                    size="icon-xs"
-                    variant="ghost"
-                  >
-                    <MessageSquare />
-                  </Button>
-                )}
-                {mayModerate ? (
-                  <MemberActions
-                    canAct={outranks(
-                      actor,
-                      member,
-                      roles.data,
-                      server.data?.ownerId,
-                    )}
-                    member={member}
-                    permissions={permissions}
-                    roles={roles.data}
+    <div className="flex flex-col p-2 pt-4 pb-3">
+      <div className="flex flex-col gap-6">
+        {groups.map(({ role, members: entries }) => (
+          <section aria-labelledby={`member-group-${role.id}`} key={role.id}>
+            <h3
+              className="mb-2 px-3 text-micro font-semibold tracking-[0.1em] text-muted-foreground uppercase"
+              id={`member-group-${role.id}`}
+            >
+              {role.name}{" "}
+              <span className="font-normal tabular-nums">{entries.length}</span>
+            </h3>
+            <ul className="flex flex-col gap-0.5">
+              {entries.map((member) => (
+                <li
+                  className="group/member flex items-center gap-2 rounded-xl px-3 py-1.5 transition-colors duration-100 hover:bg-accent/60"
+                  key={member.user.id}
+                  style={
+                    {
+                      "--member-color": roleColor(
+                        highestColouredRole(member, byId),
+                      ),
+                    } as CSSProperties
+                  }
+                >
+                  <UserProfilePopover
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                    label={
+                      member.user.id === server.data?.ownerId
+                        ? `${displayName(member)}'s profile, server owner`
+                        : `${displayName(member)}'s profile`
+                    }
                     serverId={serverId}
-                  />
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+                    side="left"
+                    userId={member.user.id}
+                  >
+                    <UserAvatar
+                      avatarUrl={member.user.avatarUrl}
+                      name={displayName(member)}
+                      size="sm"
+                      userId={member.user.id}
+                    />
+                    <MemberIdentity
+                      customStatus={member.user.customStatus}
+                      customStatusEmoji={member.user.customStatusEmoji}
+                      name={displayName(member)}
+                    />
+
+                    <span
+                      aria-hidden={member.user.id !== server.data?.ownerId}
+                      className="flex w-4 shrink-0 items-center justify-end"
+                      data-testid="member-badge"
+                    >
+                      {member.user.id === server.data?.ownerId ? (
+                        <Crown
+                          aria-label="Server owner"
+                          className="size-4 text-amber-500 dark:text-amber-400"
+                          role="img"
+                        >
+                          <title>Server owner</title>
+                        </Crown>
+                      ) : null}
+                    </span>
+                  </UserProfilePopover>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
 
       {members.hasNextPage ? (
         <Button
+          className="mt-3 w-full"
           disabled={members.isFetchingNextPage}
           onClick={() => void members.fetchNextPage()}
           size="sm"
-          variant="ghost"
+          variant="outline"
         >
           {members.isFetchingNextPage ? "Loading…" : "Show more"}
         </Button>
