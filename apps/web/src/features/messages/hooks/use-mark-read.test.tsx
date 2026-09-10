@@ -62,6 +62,7 @@ function entry(overrides: Partial<ChannelListEntry>): ChannelListEntry {
     hasUnread: false,
     hasEveryone: false,
     mentionCount: 0,
+    unreadCount: 0,
     ...overrides,
   };
 }

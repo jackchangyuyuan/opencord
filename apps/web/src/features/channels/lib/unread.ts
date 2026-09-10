@@ -2,12 +2,14 @@ export interface UnreadState {
   hasUnread: boolean;
   hasEveryone: boolean;
   mentionCount: number;
+  unreadCount: number;
 }
 
 export const NOTHING_UNREAD: UnreadState = {
   hasUnread: false,
   hasEveryone: false,
   mentionCount: 0,
+  unreadCount: 0,
 };
 
 export function badgeCount(state: UnreadState): number {
@@ -26,5 +28,10 @@ export function rollUp(states: readonly UnreadState[]): UnreadState {
       (total, state) => total + state.mentionCount,
       0,
     ),
+    unreadCount: states.reduce((total, state) => total + state.unreadCount, 0),
   };
+}
+
+export function dmBadgeCount(state: UnreadState): number {
+  return Math.max(state.unreadCount, badgeCount(state));
 }

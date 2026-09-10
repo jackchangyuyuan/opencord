@@ -22,6 +22,7 @@ function dm(id: string, name: string, hasUnread: boolean): DmEntry {
     hasUnread,
     hasEveryone: false,
     mentionCount: 0,
+    unreadCount: 0,
     recipient: {
       id: `u-${name}`,
       username: name.toLowerCase(),
