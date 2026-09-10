@@ -112,12 +112,12 @@ describe("OverwriteEditor", () => {
     renderEditor();
 
     const group = await screen.findByRole("radiogroup", {
-      name: "View channels",
+      name: "View channel",
     });
 
     expect(group).toBeInTheDocument();
     expect(
-      screen.getByRole("radio", { name: "View channels: Inherit" }),
+      screen.getByRole("radio", { name: "View channel: Inherit" }),
     ).toBeChecked();
   });
 
@@ -133,7 +133,7 @@ describe("OverwriteEditor", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("radio", { name: "View channels: Deny" }),
+        screen.getByRole("radio", { name: "View channel: Deny" }),
       ).toBeChecked();
     });
   });
@@ -143,11 +143,9 @@ describe("OverwriteEditor", () => {
 
     renderEditor();
 
-    await screen.findByRole("radiogroup", { name: "View channels" });
+    await screen.findByRole("radiogroup", { name: "View channel" });
 
-    await user.click(
-      screen.getByRole("radio", { name: "View channels: Deny" }),
-    );
+    await user.click(screen.getByRole("radio", { name: "View channel: Deny" }));
     await user.click(screen.getByRole("button", { name: "Save overwrite" }));
 
     const put = requests.find((entry) => entry.method === "PUT");
@@ -163,7 +161,7 @@ describe("OverwriteEditor", () => {
 
     renderEditor();
 
-    await screen.findByRole("radiogroup", { name: "View channels" });
+    await screen.findByRole("radiogroup", { name: "View channel" });
 
     await user.click(screen.getByRole("button", { name: "Clear overwrite" }));
 

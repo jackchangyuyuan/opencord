@@ -11,6 +11,10 @@ export interface PublicRole {
   isDefault: boolean;
 }
 
+export interface ServerRoleSummary extends PublicRole {
+  memberCount: number;
+}
+
 export function serverRolesQueryKey(serverId: string) {
   return ["servers", serverId, "roles"] as const;
 }
@@ -19,7 +23,7 @@ export function serverRolesQuery(serverId: string) {
   return queryOptions({
     queryKey: serverRolesQueryKey(serverId),
     queryFn: ({ signal }) =>
-      api<PublicRole[]>(`/servers/${serverId}/roles`, { signal }),
+      api<ServerRoleSummary[]>(`/servers/${serverId}/roles`, { signal }),
   });
 }
 
