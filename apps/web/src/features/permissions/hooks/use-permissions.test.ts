@@ -4,7 +4,12 @@ import { describe, expect, it } from "vitest";
 import type { ServerMemberEntry } from "@/features/members/api/queries";
 import type { PublicRole } from "@/features/roles/api/queries";
 
-import { has, highestPosition, outranks } from "./use-permissions";
+import {
+  has,
+  highestPosition,
+  mayDeleteMessage,
+  outranks,
+} from "./use-permissions";
 
 const ROLES: PublicRole[] = [
   {
@@ -134,6 +139,48 @@ describe("outranks", () => {
   it("refuses when the caller is not known yet", () => {
     expect(
       outranks({ id: undefined, roleIds: [] }, member("u-x", []), ROLES, owner),
+    ).toBe(false);
+  });
+});
+
+describe("mayDeleteMessage", () => {
+  const moderator = {
+    viewerId: "u-mod",
+    permissions: Permissions.MANAGE_MESSAGES,
+    isDirectMessage: false,
+  };
+
+  it("lets you delete your own message anywhere", () => {
+    expect(mayDeleteMessage({ ...moderator, permissions: 0 }, "u-mod")).toBe(
+      true,
+    );
+    expect(
+      mayDeleteMessage(
+        { ...moderator, permissions: 0, isDirectMessage: true },
+        "u-mod",
+      ),
+    ).toBe(true);
+  });
+
+  it("lets the bit delete somebody else's message in a channel", () => {
+    expect(mayDeleteMessage(moderator, "u-other")).toBe(true);
+  });
+
+  it("refuses somebody else's direct message however the mask reads", () => {
+    expect(
+      mayDeleteMessage({ ...moderator, isDirectMessage: true }, "u-other"),
+    ).toBe(false);
+  });
+
+  it("refuses without the bit", () => {
+    expect(mayDeleteMessage({ ...moderator, permissions: 0 }, "u-other")).toBe(
+      false,
+    );
+  });
+
+  it("refuses while the session is still loading", () => {
+    expect(
+      mayDeleteMessage({ ...moderator, viewerId: undefined }, "u-mod"),
     ).toBe(false);
   });
 });

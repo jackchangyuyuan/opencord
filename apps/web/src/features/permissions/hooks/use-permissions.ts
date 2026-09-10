@@ -1,4 +1,8 @@
-import { DM_PERMISSIONS, resolve } from "@opencord/shared/permissions";
+import {
+  DM_PERMISSIONS,
+  Permissions,
+  resolve,
+} from "@opencord/shared/permissions";
 import { useQuery } from "@tanstack/react-query";
 
 import {
@@ -111,5 +115,29 @@ export function outranks(
   return (
     highestPosition(target.roleIds, roles) <
     highestPosition(actor.roleIds, roles)
+  );
+}
+
+export interface MessageActor {
+  viewerId: string | undefined;
+  permissions: number;
+  isDirectMessage: boolean;
+}
+
+export function mayDeleteMessage(
+  actor: MessageActor,
+  authorId: string,
+): boolean {
+  if (actor.viewerId === undefined) {
+    return false;
+  }
+
+  if (authorId === actor.viewerId) {
+    return true;
+  }
+
+  return (
+    !actor.isDirectMessage &&
+    has(actor.permissions, Permissions.MANAGE_MESSAGES)
   );
 }
