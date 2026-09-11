@@ -1,5 +1,5 @@
 import { Permissions } from "@opencord/shared/permissions";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link2 } from "lucide-react";
 import { useId, useState } from "react";
 
@@ -15,9 +15,13 @@ import {
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   type InviteSummary,
   inviteUrl,
-  serverInvitesQuery,
   serverInvitesQueryKey,
 } from "@/features/invites/api/queries";
 import {
@@ -41,9 +45,7 @@ export function InviteDialog({ serverId }: { serverId: string }) {
   const [open, setOpen] = useState(false);
   const [maxUses, setMaxUses] = useState("");
   const [expiresInHours, setExpiresInHours] = useState("");
-  const [copied, setCopied] = useState<string | null>(null);
-
-  const { data } = useQuery({ ...serverInvitesQuery(serverId), enabled: open });
+  const [copied, setCopied] = useState(false);
 
   const create = useMutation({
     meta: { inline: true },
@@ -56,6 +58,7 @@ export function InviteDialog({ serverId }: { serverId: string }) {
         },
       }),
     onSuccess: async () => {
+      setCopied(false);
       await queryClient.invalidateQueries({
         queryKey: serverInvitesQueryKey(serverId),
       });
@@ -68,17 +71,30 @@ export function InviteDialog({ serverId }: { serverId: string }) {
 
   return (
     <Dialog onOpenChange={setOpen} open={open}>
-      <DialogTrigger
-        aria-label="Invite people"
-        render={<Button size="icon-xs" variant="ghost" />}
-      >
-        <Link2 />
-      </DialogTrigger>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DialogTrigger
+              aria-label="Invite people"
+              render={
+                <Button
+                  className="text-muted-foreground"
+                  size="icon-sm"
+                  variant="ghost"
+                />
+              }
+            />
+          }
+        >
+          <Link2 />
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Invite people</TooltipContent>
+      </Tooltip>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Invite people</DialogTitle>
-          <DialogDescription>
-            Leave both fields empty for a link that never runs out.
+          <DialogDescription className="sr-only">
+            Create an invite link for this server.
           </DialogDescription>
         </DialogHeader>
 
@@ -129,33 +145,30 @@ export function InviteDialog({ serverId }: { serverId: string }) {
           {create.isPending ? "Creating…" : "Create invite"}
         </Button>
 
-        <ul className="flex flex-col gap-1">
-          {(data ?? []).map((invite) => (
-            <li className="flex items-center gap-2" key={invite.code}>
-              <span className="min-w-0 flex-1 truncate font-mono text-xs">
-                {inviteUrl(invite.code)}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {invite.maxUses === null
-                  ? `${String(invite.uses)} uses`
-                  : `${String(invite.uses)}/${String(invite.maxUses)}`}
-              </span>
-              <Button
-                onClick={() => {
-                  void navigator.clipboard
-                    .writeText(inviteUrl(invite.code))
-                    .then(() => {
-                      setCopied(invite.code);
-                    });
-                }}
-                size="xs"
-                variant="outline"
-              >
-                {copied === invite.code ? "Copied" : "Copy link"}
-              </Button>
-            </li>
-          ))}
-        </ul>
+        {create.data === undefined ? null : (
+          <div className="flex items-center gap-2 rounded-lg border p-2">
+            <span className="min-w-0 flex-1 truncate font-mono text-xs">
+              {inviteUrl(create.data.code)}
+            </span>
+            <Button
+              onClick={() => {
+                void navigator.clipboard
+                  .writeText(inviteUrl(create.data.code))
+                  .then(() => {
+                    setCopied(true);
+                  });
+              }}
+              size="xs"
+              variant="outline"
+            >
+              {copied ? "Copied" : "Copy link"}
+            </Button>
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          Every open invite is listed in Server settings → Invites.
+        </p>
       </DialogContent>
     </Dialog>
   );
