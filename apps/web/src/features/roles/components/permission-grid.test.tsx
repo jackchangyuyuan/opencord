@@ -4,7 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { PERMISSION_NAMES, toggleBit } from "@/features/roles/lib/permissions";
+import {
+  CHANNEL_PERMISSION_NAMES,
+  PERMISSION_NAMES,
+  ROLE_PERMISSION_GROUPS,
+  toggleBit,
+  UNGROUPED_PERMISSIONS,
+} from "@/features/roles/lib/permissions";
 
 import { PermissionGrid } from "./permission-grid";
 
@@ -105,6 +111,56 @@ describe("PermissionGrid", () => {
 
     expect(held).toBeChecked();
     expect(held).toHaveAttribute("aria-disabled", "true");
+  });
+});
+
+describe("the role grid's scope framing", () => {
+  it("names the access bit for the server, not for a channel", () => {
+    render(<Harness />);
+
+    expect(
+      screen.getByRole("switch", { name: "View channels" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("switch", { name: "View channel" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("groups the bits by what they are permission to do", () => {
+    render(<Harness />);
+
+    for (const group of ROLE_PERMISSION_GROUPS) {
+      expect(screen.getByText(group.title)).toBeInTheDocument();
+    }
+  });
+
+  it("leaves no permission out of a group", () => {
+    expect(UNGROUPED_PERMISSIONS).toEqual([]);
+  });
+
+  it("explains scope only where the name does not", () => {
+    render(<Harness />);
+
+    expect(
+      screen.getByText(
+        "Grants every permission and ignores channel overrides.",
+      ),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.queryByText(/A channel can override it/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/joins a server, not a channel/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers every bit here, and only the channel-scoped ones per channel", () => {
+    expect(PERMISSION_NAMES).toHaveLength(12);
+    expect(CHANNEL_PERMISSION_NAMES).toHaveLength(7);
+    expect(CHANNEL_PERMISSION_NAMES).not.toContain("CREATE_INVITE");
+    expect(CHANNEL_PERMISSION_NAMES).not.toContain("ADMINISTRATOR");
+    expect(CHANNEL_PERMISSION_NAMES).toContain("VIEW_CHANNEL");
   });
 });
 

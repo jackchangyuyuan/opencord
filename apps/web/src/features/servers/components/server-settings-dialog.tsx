@@ -19,7 +19,7 @@ import {
   has,
   useServerPermissions,
 } from "@/features/permissions/hooks/use-permissions";
-import { RoleList } from "@/features/roles/components/role-list";
+import { RolesPage } from "@/features/roles/components/roles-page";
 import { serversQuery } from "@/features/servers/api/queries";
 import { ServerOverviewTab } from "@/features/servers/components/server-overview-tab";
 import { useUi } from "@/stores/ui";
@@ -79,7 +79,7 @@ export function ServerSettingsDialog({ serverId }: { serverId: string }) {
             <ServerOverviewTab onDone={closeModal} server={server} />
           </TabsContent>
           <TabsContent value="roles">
-            <RoleList serverId={serverId} />
+            <RolesPage serverId={serverId} />
           </TabsContent>
           <TabsContent value="overwrites">
             <OverwriteEditor serverId={serverId} />
