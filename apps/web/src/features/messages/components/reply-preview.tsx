@@ -2,7 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { MentionText } from "@/features/messages/components/mention-text";
 import { userQuery } from "@/features/users/api/queries";
+import { UserAvatar } from "@/features/users/components/user-avatar";
 import { useUi } from "@/stores/ui";
 
 export function ReplyPreview({ channelId }: { channelId: string }) {
@@ -20,15 +22,24 @@ export function ReplyPreview({ channelId }: { channelId: string }) {
     return null;
   }
 
+  const name = author?.name ?? "Unknown";
+
   return (
     <div
       className="flex items-center gap-2 border-t bg-muted/40 px-3 py-1.5 text-xs"
       data-slot="reply-preview"
     >
-      <span className="text-muted-foreground">Replying to</span>
-      <span className="font-medium">{author?.name ?? "Unknown"}</span>
+      <span className="shrink-0 text-muted-foreground">Replying to</span>
+      <UserAvatar
+        avatarUrl={author?.avatarUrl ?? null}
+        name={name}
+        showPresence={false}
+        size="xs"
+        userId={target.authorId}
+      />
+      <span className="max-w-40 shrink-0 truncate font-medium">{name}</span>
       <span className="min-w-0 flex-1 truncate text-muted-foreground">
-        {target.content}
+        <MentionText channelId={channelId} content={target.content} />
       </span>
       <Button
         aria-label="Cancel reply"

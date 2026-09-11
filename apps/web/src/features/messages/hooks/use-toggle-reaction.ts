@@ -1,10 +1,14 @@
-import type { Message, MessageReaction } from "@opencord/shared/types";
+import type { MessageReaction } from "@opencord/shared/types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
-import { channelMessageCaches } from "@/features/messages/api/queries";
-import type { MessageCache } from "@/features/messages/hooks/use-send-message";
+import {
+  channelMessageCaches,
+  type MessageCache,
+} from "@/features/messages/api/queries";
+import { mapMessage } from "@/features/messages/lib/cache";
 import { api, ApiError } from "@/lib/api-client";
+import { chatAlert } from "@/lib/toast";
 
 export interface ToggleInput {
   messageId: string;
@@ -46,29 +50,8 @@ export function applyToggle(
     .filter((entry) => entry.count > 0);
 }
 
-function mapMessage(
-  cache: MessageCache | undefined,
-  messageId: string,
-  map: (message: Message) => Message,
-): MessageCache | undefined {
-  if (cache === undefined) {
-    return cache;
-  }
-
-  return {
-    ...cache,
-    pages: cache.pages.map((page) => ({
-      ...page,
-      data: page.data.map((entry) =>
-        entry.id === messageId ? { ...entry, ...map(entry) } : entry,
-      ),
-    })),
-  };
-}
-
 export interface ToggleReactionState {
   toggle: (input: ToggleInput) => void;
-  error: string | null;
 }
 
 export function useToggleReaction(channelId: string): ToggleReactionState {
@@ -76,7 +59,7 @@ export function useToggleReaction(channelId: string): ToggleReactionState {
 
   const caches = channelMessageCaches(channelId);
 
-  const { mutate, error } = useMutation({
+  const { mutate } = useMutation({
     meta: { inline: true },
     mutationFn: ({ messageId, emoji, add }: ToggleInput) =>
       api<unknown>(
@@ -85,22 +68,23 @@ export function useToggleReaction(channelId: string): ToggleReactionState {
       ),
 
     onMutate: ({ messageId, emoji, add }) => {
-      const previous = queryClient.getQueriesData<MessageCache>(caches);
-
       queryClient.setQueriesData<MessageCache>(caches, (cache) =>
         mapMessage(cache, messageId, (message) => ({
           ...message,
           reactions: applyToggle(message.reactions, emoji, add),
         })),
       );
-
-      return { previous };
     },
 
-    onError: (_error, _input, context) => {
-      for (const [queryKey, cache] of context?.previous ?? []) {
-        queryClient.setQueryData<MessageCache>(queryKey, cache);
-      }
+    onError: (error, { messageId, emoji, add }) => {
+      queryClient.setQueriesData<MessageCache>(caches, (cache) =>
+        mapMessage(cache, messageId, (message) => ({
+          ...message,
+          reactions: applyToggle(message.reactions, emoji, !add),
+        })),
+      );
+
+      chatAlert(messageFor(error));
     },
   });
 
@@ -111,10 +95,7 @@ export function useToggleReaction(channelId: string): ToggleReactionState {
     [mutate],
   );
 
-  return {
-    toggle,
-    error: error === null ? null : messageFor(error),
-  };
+  return { toggle };
 }
 
 function messageFor(error: Error): string {

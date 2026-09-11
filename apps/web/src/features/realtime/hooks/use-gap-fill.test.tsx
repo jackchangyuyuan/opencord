@@ -4,11 +4,12 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { MessageCache } from "@/features/messages/api/queries";
 import {
   channelMessagesQueryKey,
   encodeCursor,
+  MESSAGE_PAGE_SIZE,
 } from "@/features/messages/api/queries";
-import type { MessageCache } from "@/features/messages/hooks/use-send-message";
 
 const { rawEmit, reset, socket } = vi.hoisted(() => {
   type Listener = (...args: unknown[]) => void;
@@ -42,10 +43,15 @@ const { rawEmit, reset, socket } = vi.hoisted(() => {
 
 vi.mock("@/lib/socket", () => ({ socket }));
 
-const { GAP_FILL_INTERVAL_MS, useGapFill } = await import("./use-gap-fill");
+const { GAP_FILL_INTERVAL_MS, RECOVERY_OVERLAP, useGapFill } =
+  await import("./use-gap-fill");
 
 const CHANNEL_ID = "88888888-8888-4888-8888-888888888888";
 const OTHER_CHANNEL_ID = "99999999-9999-4999-8999-999999999999";
+
+function run(id: number): string {
+  return `m-${String(id).padStart(3, "0")}`;
+}
 
 function message(id: string, content: string): Message {
   return {
@@ -143,7 +149,7 @@ describe("useGapFill", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      `/api/v1/channels/${CHANNEL_ID}/messages?after=${encodeCursor("m-1")}`,
+      `/api/v1/channels/${CHANNEL_ID}/messages?after=${encodeCursor("m-1")}&limit=${String(MESSAGE_PAGE_SIZE)}`,
       expect.objectContaining({ method: "GET" }),
     );
   });
@@ -195,12 +201,12 @@ describe("useGapFill", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      `/api/v1/channels/${CHANNEL_ID}/messages?after=${encodeCursor("m-1")}`,
+      `/api/v1/channels/${CHANNEL_ID}/messages?after=${encodeCursor("m-1")}&limit=${String(MESSAGE_PAGE_SIZE)}`,
       expect.objectContaining({ method: "GET" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      `/api/v1/channels/${CHANNEL_ID}/messages?after=${encodeCursor("m-3")}`,
+      `/api/v1/channels/${CHANNEL_ID}/messages?after=${encodeCursor("m-3")}&limit=${String(MESSAGE_PAGE_SIZE)}`,
       expect.objectContaining({ method: "GET" }),
     );
   });
@@ -326,6 +332,148 @@ describe("useGapFill", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers a message missed in the middle of the history", async () => {
+    const history = Array.from({ length: RECOVERY_OVERLAP + 5 }, (_, at) =>
+      run(at + 1),
+    );
+    const missed = history[history.length - 3] ?? "";
+    const cached = history.filter((id) => id !== missed);
+
+    seed(client, CHANNEL_ID, cached.map((id) => message(id, id)).reverse());
+
+    const from = cached.at(-1 - RECOVERY_OVERLAP) ?? "";
+
+    const fetchMock = stubFetch({
+      data: history.filter((id) => id > from).map((id) => message(id, id)),
+      nextCursor: null,
+    });
+
+    renderHook(
+      () => {
+        useGapFill(CHANNEL_ID);
+      },
+      { wrapper },
+    );
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() => {
+      expect(entries().map((entry) => entry.id)).toContain(missed);
+    });
+
+    expect(entries().map((entry) => entry.id)).toEqual([...history].reverse());
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/channels/${CHANNEL_ID}/messages?after=${encodeCursor(from)}&limit=${String(MESSAGE_PAGE_SIZE)}`,
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("picks up an edit and a reaction made while the connection was down", async () => {
+    seed(client, CHANNEL_ID, [
+      message(run(2), "before"),
+      message(run(1), "first"),
+    ]);
+
+    stubFetch({
+      data: [
+        {
+          ...message(run(2), "after"),
+          editedAt: "2026-09-11T11:00:00.000Z",
+          reactions: [{ emoji: "\u{1F44D}", count: 1, me: true }],
+        },
+      ],
+      nextCursor: null,
+    });
+
+    renderHook(
+      () => {
+        useGapFill(CHANNEL_ID);
+      },
+      { wrapper },
+    );
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() => {
+      expect(entries()[0]?.content).toBe("after");
+    });
+
+    expect(entries()[0]?.reactions).toEqual([
+      { emoji: "\u{1F44D}", count: 1, me: true },
+    ]);
+  });
+
+  it("tombstones a message deleted while the connection was down", async () => {
+    seed(client, CHANNEL_ID, [
+      message(run(3), "third"),
+      message(run(2), "second"),
+      message(run(1), "first"),
+    ]);
+
+    stubFetch({ data: [message(run(3), "third")], nextCursor: null });
+
+    renderHook(
+      () => {
+        useGapFill(CHANNEL_ID);
+      },
+      { wrapper },
+    );
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() => {
+      expect(
+        entries().find((entry) => entry.id === run(2))?.deletedAt,
+      ).not.toBeNull();
+    });
+
+    expect(entries().find((entry) => entry.id === run(2))?.content).toBe("");
+    expect(
+      entries().find((entry) => entry.id === run(1))?.deletedAt,
+    ).toBeNull();
+    expect(
+      entries().find((entry) => entry.id === run(3))?.deletedAt,
+    ).toBeNull();
+  });
+
+  it("tombstones the newest message when that is the one that was deleted", async () => {
+    seed(client, CHANNEL_ID, [
+      message(run(3), "third"),
+      message(run(2), "second"),
+      message(run(1), "first"),
+    ]);
+
+    stubFetch({ data: [message(run(2), "second")], nextCursor: null });
+
+    renderHook(
+      () => {
+        useGapFill(CHANNEL_ID);
+      },
+      { wrapper },
+    );
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() => {
+      expect(
+        entries().find((entry) => entry.id === run(3))?.deletedAt,
+      ).not.toBeNull();
+    });
+
+    expect(
+      entries().find((entry) => entry.id === run(2))?.deletedAt,
+    ).toBeNull();
   });
 
   it("asks for nothing when the channel has no message to anchor on", async () => {

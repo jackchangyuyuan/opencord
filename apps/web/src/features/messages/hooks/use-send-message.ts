@@ -1,130 +1,91 @@
 import type { MessageAttachmentInput } from "@opencord/shared/schemas";
-import type { Message } from "@opencord/shared/types";
-import {
-  type InfiniteData,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { useCallback } from "react";
+import type { Message, MessagePreview } from "@opencord/shared/types";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useRef, useSyncExternalStore } from "react";
 
 import {
   channelMessagesQueryKey,
-  type MessagePage,
+  type MessageCache,
 } from "@/features/messages/api/queries";
+import {
+  applyIncoming,
+  type ChatMessage,
+  findSend,
+  insertOptimistic,
+  type LocalState,
+  markLocal,
+  optimisticId,
+  removeSend,
+  type SendIdentity,
+} from "@/features/messages/lib/cache";
 import { api, ApiError } from "@/lib/api-client";
-
-export type RetryMode = "same-nonce" | "new-nonce" | "none" | "claim";
-
-export interface LocalState {
-  status: "sending" | "failed";
-  retry: RetryMode;
-  reason: string | null;
-}
-
-export type ChatMessage = Message & { local?: LocalState };
-
-export type MessageCache = InfiniteData<MessagePage, string | null>;
 
 const NONCE_REUSED = "NONCE_REUSED";
 const GUEST_QUOTA_REACHED = "GUEST_QUOTA_REACHED";
+const RATE_LIMITED = "RATE_LIMITED";
+
+let blockedUntilMs = 0;
+
+const blockedListeners = new Set<() => void>();
+
+function setBlockedUntil(at: number): void {
+  blockedUntilMs = at;
+
+  for (const listener of blockedListeners) {
+    listener();
+  }
+}
+
+export function useRateLimited(): boolean {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  return useSyncExternalStore(
+    (onChange) => {
+      const wake = () => {
+        onChange();
+
+        if (timerRef.current !== null) {
+          clearTimeout(timerRef.current);
+          timerRef.current = null;
+        }
+
+        const left = blockedUntilMs - Date.now();
+
+        if (left > 0) {
+          timerRef.current = setTimeout(wake, left);
+        }
+      };
+
+      blockedListeners.add(wake);
+      wake();
+
+      return () => {
+        blockedListeners.delete(wake);
+
+        if (timerRef.current !== null) {
+          clearTimeout(timerRef.current);
+          timerRef.current = null;
+        }
+      };
+    },
+    () => blockedUntilMs > Date.now(),
+    () => false,
+  );
+}
 
 export function newNonce(): string {
   return crypto.randomUUID();
 }
 
-function emptyCache(): MessageCache {
-  return { pages: [{ data: [], nextCursor: null }], pageParams: [null] };
-}
+function failureFor(error: unknown, sent: SendInput): LocalState {
+  const draft = { source: sent.content, attachments: sent.attachments ?? [] };
 
-function mapPages(
-  cache: MessageCache,
-  map: (entries: ChatMessage[]) => ChatMessage[],
-): MessageCache {
-  return {
-    ...cache,
-    pages: cache.pages.map((page) => ({ ...page, data: map(page.data) })),
-  };
-}
-
-export function findByNonce(
-  cache: MessageCache | undefined,
-  nonce: string,
-): ChatMessage | undefined {
-  return cache?.pages
-    .flatMap((page) => page.data)
-    .find((entry) => entry.nonce === nonce);
-}
-
-export function insertOptimistic(
-  cache: MessageCache | undefined,
-  message: ChatMessage,
-): MessageCache {
-  const base = cache ?? emptyCache();
-  const [first, ...rest] = base.pages;
-
-  if (first === undefined) {
-    return { ...base, pages: [{ data: [message], nextCursor: null }] };
-  }
-
-  return {
-    ...base,
-    pages: [{ ...first, data: [message, ...first.data] }, ...rest],
-  };
-}
-
-function matches(entry: ChatMessage, message: Message): boolean {
-  return (
-    entry.id === message.id ||
-    (message.nonce !== null && entry.nonce === message.nonce)
-  );
-}
-
-export function applyIncoming(
-  cache: MessageCache | undefined,
-  message: Message,
-): MessageCache {
-  const base = cache ?? emptyCache();
-
-  const known = base.pages.some((page) =>
-    page.data.some((entry) => matches(entry, message)),
-  );
-
-  if (!known) {
-    return insertOptimistic(base, message);
-  }
-
-  return mapPages(base, (entries) =>
-    entries.map((entry) => (matches(entry, message) ? message : entry)),
-  );
-}
-
-export function markLocal(
-  cache: MessageCache | undefined,
-  nonce: string,
-  local: LocalState,
-): MessageCache {
-  return mapPages(cache ?? emptyCache(), (entries) =>
-    entries.map((entry) =>
-      entry.nonce === nonce ? { ...entry, local } : entry,
-    ),
-  );
-}
-
-export function removeByNonce(
-  cache: MessageCache | undefined,
-  nonce: string,
-): MessageCache {
-  return mapPages(cache ?? emptyCache(), (entries) =>
-    entries.filter((entry) => entry.nonce !== nonce),
-  );
-}
-
-function failureFor(error: unknown): LocalState {
   if (error instanceof ApiError && error.code === NONCE_REUSED) {
     return {
       status: "failed",
       retry: "new-nonce",
       reason: "That message was already sent",
+      ...draft,
     };
   }
 
@@ -133,33 +94,43 @@ function failureFor(error: unknown): LocalState {
       status: "failed",
       retry: "claim",
       reason: "Your guest message allowance is used up",
+      ...draft,
     };
+  }
+
+  if (error instanceof ApiError && error.code === RATE_LIMITED) {
+    setBlockedUntil(Date.now() + ((error.retryAfterSeconds ?? 5) + 1) * 1000);
   }
 
   return {
     status: "failed",
     retry: "same-nonce",
     reason: error instanceof ApiError ? error.message : "Could not send",
+    ...draft,
   };
 }
 
 export interface SendInput {
   content: string;
+  optimisticContent?: string;
   nonce: string;
   authorId: string;
   replyToId?: string;
+  replyTo?: MessagePreview;
   attachments?: MessageAttachmentInput[];
 }
 
 export function useSendMessage(channelId: string) {
   const queryClient = useQueryClient();
-  const key = channelMessagesQueryKey(channelId);
 
   const update = useCallback(
     (map: (cache: MessageCache | undefined) => MessageCache) => {
-      queryClient.setQueryData<MessageCache>(key, map);
+      queryClient.setQueryData<MessageCache>(
+        channelMessagesQueryKey(channelId),
+        map,
+      );
     },
-    [key, queryClient],
+    [channelId, queryClient],
   );
 
   const { mutate, isPending } = useMutation({
@@ -177,28 +148,42 @@ export function useSendMessage(channelId: string) {
         },
       }),
 
-    onMutate: ({ content, nonce, authorId, replyToId }: SendInput) => {
-      const existing = findByNonce(
-        queryClient.getQueryData<MessageCache>(key),
+    onMutate: (input: SendInput) => {
+      const {
+        content,
+        optimisticContent,
         nonce,
+        authorId,
+        replyToId,
+        replyTo,
+      } = input;
+      const identity: SendIdentity = { authorId, nonce };
+
+      const existing = findSend(
+        queryClient.getQueryData<MessageCache>(
+          channelMessagesQueryKey(channelId),
+        ),
+        identity,
       );
 
       const sending: LocalState = {
         status: "sending",
         retry: "same-nonce",
         reason: null,
+        source: content,
+        attachments: input.attachments ?? [],
       };
 
       if (existing === undefined) {
         update((cache) =>
           insertOptimistic(cache, {
-            id: `optimistic:${nonce}`,
+            id: optimisticId(nonce),
             channelId,
             authorId,
-            content,
+            content: optimisticContent ?? content,
             nonce,
             replyToId: replyToId ?? null,
-            replyTo: null,
+            replyTo: replyTo ?? null,
             pinnedAt: null,
             pinnedBy: null,
             editedAt: null,
@@ -210,7 +195,7 @@ export function useSendMessage(channelId: string) {
           }),
         );
       } else {
-        update((cache) => markLocal(cache, nonce, sending));
+        update((cache) => markLocal(cache, identity, sending));
       }
     },
 
@@ -218,8 +203,14 @@ export function useSendMessage(channelId: string) {
       update((cache) => applyIncoming(cache, message));
     },
 
-    onError: (error, { nonce }) => {
-      update((cache) => markLocal(cache, nonce, failureFor(error)));
+    onError: (error, input) => {
+      update((cache) =>
+        markLocal(
+          cache,
+          { authorId: input.authorId, nonce: input.nonce },
+          failureFor(error, input),
+        ),
+      );
     },
   });
 
@@ -239,21 +230,33 @@ export function useSendMessage(channelId: string) {
         return;
       }
 
+      const content = entry.local?.source ?? entry.content;
+      const optimistic = { optimisticContent: entry.content };
+      const attachments = entry.local?.attachments ?? [];
+
       const replyTo =
-        entry.replyToId === null ? {} : { replyToId: entry.replyToId };
+        entry.replyToId === null
+          ? {}
+          : {
+              replyToId: entry.replyToId,
+              ...(entry.replyTo === null ? {} : { replyTo: entry.replyTo }),
+            };
+
+      const again = {
+        content,
+        ...optimistic,
+        authorId,
+        ...replyTo,
+        ...(attachments.length === 0 ? {} : { attachments }),
+      };
 
       if (mode === "new-nonce") {
-        update((cache) => removeByNonce(cache, nonce));
-        mutate({
-          content: entry.content,
-          nonce: newNonce(),
-          authorId,
-          ...replyTo,
-        });
+        update((cache) => removeSend(cache, { authorId, nonce }));
+        mutate({ ...again, nonce: newNonce() });
         return;
       }
 
-      mutate({ content: entry.content, nonce, authorId, ...replyTo });
+      mutate({ ...again, nonce });
     },
     [mutate, update],
   );
@@ -263,7 +266,9 @@ export function useSendMessage(channelId: string) {
       const nonce = entry.nonce;
 
       if (nonce !== null) {
-        update((cache) => removeByNonce(cache, nonce));
+        update((cache) =>
+          removeSend(cache, { authorId: entry.authorId, nonce }),
+        );
       }
     },
     [update],

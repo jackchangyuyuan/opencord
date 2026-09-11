@@ -6,18 +6,24 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sessionQueryKey } from "@/features/auth/hooks/use-session";
-import { serverChannelsQueryKey } from "@/features/channels/api/queries";
+import {
+  channelQuery,
+  serverChannelsQueryKey,
+} from "@/features/channels/api/queries";
+import { dmsQueryKey } from "@/features/dms/api/queries";
 import { serverMembersQueryKey } from "@/features/members/api/queries";
+import type { MessageCache } from "@/features/messages/api/queries";
 import {
   channelMessagesAroundQueryKey,
   channelMessagesQueryKey,
+  channelPinsQueryKey,
 } from "@/features/messages/api/queries";
-import type { MessageCache } from "@/features/messages/hooks/use-send-message";
 import { serverRolesQueryKey } from "@/features/roles/api/queries";
 import {
   serverQueryKey,
   serversQueryKey,
 } from "@/features/servers/api/queries";
+import { currentUserQuery, userQueryKey } from "@/features/users/api/queries";
 import { usePresence } from "@/stores/presence";
 import { useTyping } from "@/stores/typing";
 
@@ -102,6 +108,53 @@ function cached(): MessageCache | undefined {
   return client.getQueryData<MessageCache>(channelMessagesQueryKey(CHANNEL_ID));
 }
 
+function seedHistory(data: Message[] = []): void {
+  client.setQueryData<MessageCache>(channelMessagesQueryKey(CHANNEL_ID), {
+    pageParams: [null],
+    pages: [{ data, nextCursor: null }],
+  });
+}
+
+function seedChannelList(): void {
+  client.setQueryData(serverChannelsQueryKey(SERVER_ID), [
+    {
+      id: CHANNEL_ID,
+      serverId: SERVER_ID,
+      type: "text",
+      name: "general",
+      topic: null,
+      position: 0,
+      lastMessageId: null,
+      lastReadMessageId: null,
+      hasUnread: false,
+      hasEveryone: false,
+      mentionCount: 0,
+      createdAt: "2026-09-11T10:00:00.000Z",
+    },
+  ]);
+}
+
+function channelRow() {
+  return client
+    .getQueryData<
+      { id: string; hasUnread: boolean; lastMessageId: string | null }[]
+    >(serverChannelsQueryKey(SERVER_ID))
+    ?.find((channel) => channel.id === CHANNEL_ID);
+}
+
+function signIn(userId: string): void {
+  client.setQueryData(currentUserQuery.queryKey, {
+    id: userId,
+    username: "ada",
+    name: "Ada",
+    avatarUrl: null,
+    description: null,
+    customStatus: null,
+    customStatusEmoji: null,
+    isGuest: false,
+  });
+}
+
 function entries() {
   return cached()?.pages.flatMap((page) => page.data) ?? [];
 }
@@ -118,6 +171,7 @@ beforeEach(() => {
 
 describe("useSocketEvents", () => {
   it("applies message:create into the channel's cache", () => {
+    seedHistory();
     renderHook(
       () => {
         useSocketEvents();
@@ -130,7 +184,78 @@ describe("useSocketEvents", () => {
     expect(entries().map((entry) => entry.id)).toEqual(["m-1"]);
   });
 
+  it("does not invent a history for a channel nobody has opened", () => {
+    seedChannelList();
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("message:create", { message: message({ authorId: "u-grace" }) });
+
+    expect(cached()).toBeUndefined();
+    expect(channelRow()?.hasUnread).toBe(true);
+  });
+
+  it("does not mark a channel unread for a message you sent yourself", () => {
+    signIn("u-ada");
+    seedChannelList();
+    seedHistory();
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("message:create", { message: message({ authorId: "u-ada" }) });
+
+    expect(entries().map((entry) => entry.id)).toEqual(["m-1"]);
+    expect(channelRow()?.hasUnread).toBe(false);
+    expect(channelRow()?.lastMessageId).toBe("m-1");
+  });
+
+  it("marks a channel unread for a message somebody else sent", () => {
+    signIn("u-ada");
+    seedChannelList();
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("message:create", { message: message({ authorId: "u-grace" }) });
+
+    expect(channelRow()?.hasUnread).toBe(true);
+    expect(channelRow()?.lastMessageId).toBe("m-1");
+  });
+
+  it("leaves an existing unread dot alone when you send into that channel", () => {
+    signIn("u-ada");
+    seedChannelList();
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("message:create", { message: message({ authorId: "u-grace" }) });
+    emit("message:create", {
+      message: message({ id: "m-2", authorId: "u-ada" }),
+    });
+
+    expect(channelRow()?.hasUnread).toBe(true);
+  });
+
   it("keeps the tombstone when an older update follows a delete", () => {
+    seedHistory();
     renderHook(
       () => {
         useSocketEvents();
@@ -162,6 +287,7 @@ describe("useSocketEvents", () => {
   });
 
   it("discards an update whose editedAt predates the cached one", () => {
+    seedHistory();
     renderHook(
       () => {
         useSocketEvents();
@@ -187,6 +313,7 @@ describe("useSocketEvents", () => {
   });
 
   it("applies a newer update", () => {
+    seedHistory();
     renderHook(
       () => {
         useSocketEvents();
@@ -222,6 +349,162 @@ describe("useSocketEvents", () => {
     emit("message:update", { message: message({ content: "ghost" }) });
 
     expect(entries()).toHaveLength(0);
+  });
+
+  it("blanks the quoted line of a message that was deleted", () => {
+    seedHistory([
+      message({
+        id: "m-2",
+        content: "agreed",
+        replyToId: "m-1",
+        replyTo: {
+          id: "m-1",
+          authorId: "u-ada",
+          content: "the deploy is green",
+          deletedAt: null,
+        },
+      }),
+    ]);
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("message:delete", {
+      channelId: CHANNEL_ID,
+      messageId: "m-1",
+      deletedAt: "2026-09-11T10:06:00.000Z",
+    });
+
+    expect(entries()[0]?.replyTo).toEqual({
+      id: "m-1",
+      authorId: "u-ada",
+      content: "",
+      deletedAt: "2026-09-11T10:06:00.000Z",
+    });
+  });
+
+  it("rewrites the quoted line of a message that was edited", () => {
+    seedHistory([
+      message({
+        id: "m-2",
+        content: "agreed",
+        replyToId: "m-1",
+        replyTo: {
+          id: "m-1",
+          authorId: "u-ada",
+          content: "the deploy is green",
+          deletedAt: null,
+        },
+      }),
+    ]);
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("message:update", {
+      message: message({
+        id: "m-1",
+        content: "the deploy is red",
+        editedAt: "2026-09-11T10:06:00.000Z",
+      }),
+    });
+
+    expect(entries()[0]?.replyTo?.content).toBe("the deploy is red");
+  });
+
+  it("rewrites a pinned message the popover is already showing", () => {
+    seedHistory([message({ pinnedAt: "2026-09-11T10:01:00.000Z" })]);
+    client.setQueryData(channelPinsQueryKey(CHANNEL_ID), [
+      message({ pinnedAt: "2026-09-11T10:01:00.000Z" }),
+    ]);
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("message:update", {
+      message: message({
+        content: "edited while pinned",
+        pinnedAt: "2026-09-11T10:01:00.000Z",
+        editedAt: "2026-09-11T10:06:00.000Z",
+      }),
+    });
+
+    expect(
+      client.getQueryData<Message[]>(channelPinsQueryKey(CHANNEL_ID))?.[0]
+        ?.content,
+    ).toBe("edited while pinned");
+  });
+
+  it("takes a deleted message out of the pin list", () => {
+    seedHistory([message({ pinnedAt: "2026-09-11T10:01:00.000Z" })]);
+    client.setQueryData(channelPinsQueryKey(CHANNEL_ID), [
+      message({ pinnedAt: "2026-09-11T10:01:00.000Z" }),
+    ]);
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("message:delete", {
+      channelId: CHANNEL_ID,
+      messageId: "m-1",
+      deletedAt: "2026-09-11T10:06:00.000Z",
+    });
+
+    expect(
+      client.getQueryData<Message[]>(channelPinsQueryKey(CHANNEL_ID))?.length,
+    ).toBe(0);
+  });
+
+  it("refreshes the channel itself when it is renamed", () => {
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("channel:update", { serverId: SERVER_ID, channelId: CHANNEL_ID });
+
+    const keys = invalidate.mock.calls.map(([options]) => options?.queryKey);
+
+    expect(keys).toContainEqual(serverChannelsQueryKey(SERVER_ID));
+    expect(keys).toContainEqual(channelQuery(CHANNEL_ID).queryKey);
+  });
+
+  it("never moves a channel's newest-message pointer backwards", () => {
+    seedHistory();
+    seedChannelList();
+    signIn("u-ada");
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("message:create", { message: message({ id: "m-9" }) });
+    emit("message:create", { message: message({ id: "m-2" }) });
+
+    expect(channelRow()?.lastMessageId).toBe("m-9");
   });
 
   it("refreshes every cache a permission change can invalidate", () => {
@@ -321,6 +604,83 @@ describe("useSocketEvents", () => {
     });
     expect(invalidate).toHaveBeenNthCalledWith(2, {
       queryKey: serverMembersQueryKey(SERVER_ID),
+    });
+  });
+
+  it("refetches every surface that renders a user on user:update", () => {
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    client.setQueryData(currentUserQuery.queryKey, {
+      id: "u-me",
+      username: "me",
+      name: "Me",
+      avatarUrl: null,
+      description: null,
+      customStatus: null,
+      customStatusEmoji: null,
+      isGuest: false,
+    });
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("user:update", { userId: "u-ada" });
+
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: userQueryKey("u-ada"),
+    });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: dmsQueryKey });
+    expect(invalidate).not.toHaveBeenCalledWith({
+      queryKey: currentUserQuery.queryKey,
+    });
+
+    const predicate = invalidate.mock.calls
+      .map(([argument]) => argument)
+      .find(
+        (argument) => argument !== undefined && "predicate" in argument,
+      )?.predicate;
+
+    expect(predicate).toBeDefined();
+    expect(
+      predicate?.({
+        queryKey: serverMembersQueryKey(SERVER_ID),
+      } as never),
+    ).toBe(true);
+    expect(
+      predicate?.({ queryKey: ["channels", CHANNEL_ID, "members"] } as never),
+    ).toBe(true);
+    expect(predicate?.({ queryKey: ["servers"] } as never)).toBe(false);
+  });
+
+  it("re-reads your own profile when the edit was yours", () => {
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    client.setQueryData(currentUserQuery.queryKey, {
+      id: "u-me",
+      username: "me",
+      name: "Me",
+      avatarUrl: null,
+      description: null,
+      customStatus: null,
+      customStatusEmoji: null,
+      isGuest: false,
+    });
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("user:update", { userId: "u-me" });
+
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: currentUserQuery.queryKey,
     });
   });
 

@@ -4,27 +4,34 @@ import { useEffect } from "react";
 import {
   channelMessagesQueryKey,
   fetchNewerMessages,
+  type MessageCache,
 } from "@/features/messages/api/queries";
 import {
   applyIncoming,
-  type MessageCache,
-} from "@/features/messages/hooks/use-send-message";
+  isOptimistic,
+  tombstone,
+} from "@/features/messages/lib/cache";
 import { socket } from "@/lib/socket";
 
 export const GAP_FILL_INTERVAL_MS = 60_000;
 
-const OPTIMISTIC_PREFIX = "optimistic:";
+export const RECOVERY_OVERLAP = 25;
 
-export function newestServerMessageId(
-  cache: MessageCache | undefined,
-): string | null {
-  const known = (cache?.pages ?? [])
+function serverMessageIds(cache: MessageCache | undefined): string[] {
+  return (cache?.pages ?? [])
     .flatMap((page) => page.data)
-    .filter((entry) => !entry.id.startsWith(OPTIMISTIC_PREFIX))
     .map((entry) => entry.id)
+    .filter((id) => !isOptimistic(id))
     .sort();
+}
 
-  return known.at(-1) ?? null;
+export function recoveryCursor(
+  cache: MessageCache | undefined,
+  overlap = RECOVERY_OVERLAP,
+): string | null {
+  const known = serverMessageIds(cache);
+
+  return known.at(-1 - overlap) ?? known.at(0) ?? null;
 }
 
 export function useGapFill(activeChannelId: string | undefined): void {
@@ -35,9 +42,18 @@ export function useGapFill(activeChannelId: string | undefined): void {
 
     const fill = async (channelId: string): Promise<void> => {
       const key = channelMessagesQueryKey(channelId);
-      let after = newestServerMessageId(
+      const cached = serverMessageIds(
         queryClient.getQueryData<MessageCache>(key),
       );
+      const from = recoveryCursor(queryClient.getQueryData<MessageCache>(key));
+
+      if (from === null) {
+        return;
+      }
+
+      const held = cached.filter((id) => id > from);
+      const live = new Set<string>();
+      let after: string | null = from;
 
       while (after !== null) {
         const page = await fetchNewerMessages(channelId, after);
@@ -47,15 +63,26 @@ export function useGapFill(activeChannelId: string | undefined): void {
         }
 
         for (const message of page.data) {
-          queryClient.setQueryData<MessageCache>(key, (cache) =>
-            applyIncoming(cache, message),
-          );
+          live.add(message.id);
         }
+
+        queryClient.setQueryData<MessageCache>(key, (cache) =>
+          page.data.reduce<MessageCache | undefined>(
+            (next, message) => applyIncoming(next, message, "fetch"),
+            cache,
+          ),
+        );
 
         const tail = page.data.at(-1);
 
         after = page.nextCursor === null || tail === undefined ? null : tail.id;
       }
+
+      const missing = new Set(held.filter((id) => !live.has(id)));
+
+      queryClient.setQueryData<MessageCache>(key, (cache) =>
+        tombstone(cache, missing, new Date().toISOString()),
+      );
     };
 
     const openChannelIds = (): string[] =>

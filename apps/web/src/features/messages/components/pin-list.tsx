@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { channelPinsQuery } from "@/features/messages/api/queries";
+import { MentionText } from "@/features/messages/components/mention-text";
 import { userQuery } from "@/features/users/api/queries";
 
 function PinRow({
@@ -40,7 +41,7 @@ function PinRow({
       >
         <span className="text-xs font-medium">{author?.name ?? "Unknown"}</span>
         <span className="line-clamp-2 text-sm text-muted-foreground">
-          {content}
+          <MentionText channelId={channelId} content={content} />
         </span>
       </button>
     </li>

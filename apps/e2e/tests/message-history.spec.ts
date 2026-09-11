@@ -13,8 +13,8 @@ const baseURL = process.env["E2E_BASE_URL"] ?? "http://localhost:5173";
 
 const password = "correct horse battery staple";
 
-const SEEDED = 60;
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 75;
+const SEEDED = PAGE_SIZE + 25;
 
 interface Fixture {
   cookie: { name: string; value: string };

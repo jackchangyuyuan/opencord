@@ -5,8 +5,8 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { MessageCache } from "@/features/messages/api/queries";
 import { channelPinsQueryKey } from "@/features/messages/api/queries";
-import type { MessageCache } from "@/features/messages/hooks/use-send-message";
 import {
   applyMessageEvent,
   pinStateChanged,

@@ -10,10 +10,21 @@ const STATUS_LABEL = {
 } as const;
 
 const STATUS_TONE = {
-  connecting: "bg-amber-500",
-  connected: "bg-emerald-500",
+  connecting: "bg-presence-idle",
+  connected: "bg-presence-online",
   disconnected: "bg-destructive",
 } as const;
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <p className="hidden items-baseline gap-1.5 sm:flex">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-mono text-meta font-medium text-foreground tabular-nums">
+        {value}
+      </span>
+    </p>
+  );
+}
 
 export function StatusWidget() {
   const status = useConnection((state) => state.status);
@@ -24,7 +35,7 @@ export function StatusWidget() {
   return (
     <section
       aria-labelledby="status-widget-heading"
-      className="flex items-center gap-3 rounded-lg border px-2.5 py-1.5 text-xs"
+      className="flex min-w-0 items-center gap-4 text-meta *:shrink-0"
     >
       <h2 className="sr-only" id="status-widget-heading">
         Connection
@@ -41,29 +52,28 @@ export function StatusWidget() {
         {STATUS_LABEL[status]}
       </p>
 
-      <p>
-        <span className="text-muted-foreground">Instance </span>
+      <span aria-hidden className="hidden h-4 w-px bg-border sm:block" />
+
+      <p className="flex items-baseline gap-1.5">
+        <span className="text-muted-foreground">Instance</span>
         <span
-          className="font-mono font-medium text-foreground"
+          className="font-mono text-meta font-medium text-foreground"
           data-testid="serving-instance"
         >
           {instanceId ?? "—"}
         </span>
       </p>
 
-      <p>
-        <span className="text-muted-foreground">Online </span>
-        <span className="font-medium text-foreground">
-          {data === undefined ? "—" : data.onlineUsers}
-        </span>
-      </p>
+      <span aria-hidden className="hidden h-4 w-px bg-border sm:block" />
 
-      <p>
-        <span className="text-muted-foreground">Sockets </span>
-        <span className="font-medium text-foreground">
-          {data === undefined ? "—" : data.sockets}
-        </span>
-      </p>
+      <Field
+        label="Online"
+        value={data === undefined ? "—" : String(data.onlineUsers)}
+      />
+      <Field
+        label="Sockets"
+        value={data === undefined ? "—" : String(data.sockets)}
+      />
     </section>
   );
 }

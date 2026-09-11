@@ -1,11 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  type ComponentPropsWithoutRef,
-  createContext,
-  type ReactNode,
-  use,
-} from "react";
-import Markdown from "react-markdown";
+import { type ComponentPropsWithoutRef, createContext, memo, use } from "react";
+import Markdown, { type Options } from "react-markdown";
+import { useNavigate } from "react-router";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
@@ -22,31 +18,81 @@ import { serverRolesQuery } from "@/features/roles/api/queries";
 import { userQuery } from "@/features/users/api/queries";
 
 const CHIP =
-  "rounded bg-primary/10 px-1 font-medium text-primary hover:bg-primary/20";
+  "rounded-md bg-primary/10 px-1 py-px font-medium text-primary hover:bg-primary/20";
+
+const CHANNEL_CHIP =
+  "rounded-md bg-primary/10 px-1 py-px font-medium text-primary underline decoration-primary/40 underline-offset-2 hover:bg-primary/20 hover:decoration-primary focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none";
+
+const BROADCAST_CHIP =
+  "rounded-md bg-brand px-1.5 py-px font-semibold text-brand-foreground";
 
 const MessageChannelContext = createContext<string | null>(null);
 
-function UserChip({ id, fallback }: { id: string; fallback: ReactNode }) {
+const REMARK_PLUGINS = [remarkGfm];
+const REHYPE_PLUGINS = [
+  [rehypeSanitize, sanitizeSchema],
+  rehypeMentions,
+] satisfies Options["rehypePlugins"];
+const REHYPE_PLUGINS_WITH_CODE = [
+  ...REHYPE_PLUGINS,
+  rehypeHighlight,
+] satisfies Options["rehypePlugins"];
+
+const CODE_FENCE = "```";
+
+const UNKNOWN_USER = "@unknown-user";
+const UNKNOWN_ROLE = "@unknown-role";
+const UNKNOWN_CHANNEL = "#unknown-channel";
+
+function UserChip({ id }: { id: string }) {
   const { data } = useQuery(userQuery(id));
 
   return data === undefined ? (
-    <span>{fallback}</span>
+    <span className={CHIP}>{UNKNOWN_USER}</span>
   ) : (
-    <span className={CHIP}>@{data.username}</span>
+    <span className={CHIP} title={`@${data.username}`}>
+      @{data.name}
+    </span>
   );
 }
 
-function ChannelChip({ id, fallback }: { id: string; fallback: ReactNode }) {
+function BroadcastChip({ token }: { token: string }) {
+  const channelId = use(MessageChannelContext);
+
+  const { data: channel } = useQuery({
+    ...channelQuery(channelId ?? ""),
+    enabled: channelId !== null,
+  });
+
+  return channel?.serverId == null ? (
+    <span>@{token}</span>
+  ) : (
+    <span className={BROADCAST_CHIP}>@{token}</span>
+  );
+}
+
+function ChannelChip({ id }: { id: string }) {
+  const navigate = useNavigate();
   const { data } = useQuery(channelQuery(id));
 
-  return data?.name == null ? (
-    <span>{fallback}</span>
-  ) : (
-    <span className={CHIP}>#{data.name}</span>
+  if (data?.name == null) {
+    return <span className={CHIP}>{UNKNOWN_CHANNEL}</span>;
+  }
+
+  return (
+    <button
+      className={CHANNEL_CHIP}
+      onClick={() => {
+        void navigate(`/app/channels/${id}`);
+      }}
+      type="button"
+    >
+      #{data.name}
+    </button>
   );
 }
 
-function RoleChip({ id, fallback }: { id: string; fallback: ReactNode }) {
+function RoleChip({ id }: { id: string }) {
   const channelId = use(MessageChannelContext);
 
   const { data: channel } = useQuery({
@@ -64,14 +110,21 @@ function RoleChip({ id, fallback }: { id: string; fallback: ReactNode }) {
   const role = roles?.find((candidate) => candidate.id === id);
 
   return role === undefined ? (
-    <span>{fallback}</span>
+    <span className={BROADCAST_CHIP}>{UNKNOWN_ROLE}</span>
   ) : (
-    <span className={CHIP}>@{role.name}</span>
+    <span className={BROADCAST_CHIP}>@{role.name}</span>
   );
 }
 
+const MARKDOWN_COMPONENTS: Options["components"] = { span: MentionSpan };
+
 function isMentionKind(value: unknown): value is MentionKind {
-  return value === "user" || value === "role" || value === "channel";
+  return (
+    value === "user" ||
+    value === "role" ||
+    value === "channel" ||
+    value === "broadcast"
+  );
 }
 
 function MentionSpan(props: ComponentPropsWithoutRef<"span">) {
@@ -83,42 +136,55 @@ function MentionSpan(props: ComponentPropsWithoutRef<"span">) {
     return <span {...props} />;
   }
 
+  if (kind === "broadcast") {
+    return <BroadcastChip token={id} />;
+  }
+
   if (kind === "channel") {
-    return <ChannelChip fallback={props.children} id={id} />;
+    return <ChannelChip id={id} />;
   }
 
   if (kind === "role") {
-    return <RoleChip fallback={props.children} id={id} />;
+    return <RoleChip id={id} />;
   }
 
-  return <UserChip fallback={props.children} id={id} />;
+  return <UserChip id={id} />;
 }
 
-export function MessageContent({
+export const MessageContent = memo(function MessageContent({
   channelId,
   content,
+  edited = false,
 }: {
   channelId: string;
   content: string;
+  edited?: boolean;
 }) {
   return (
     <div
-      className="message-markdown text-sm break-words"
+      className="message-markdown text-body break-words"
+      data-edited={edited ? "" : undefined}
       data-testid="message-content"
     >
+      {edited ? (
+        <span className="sr-only" data-slot="edited-note">
+          {" "}
+          (edited)
+        </span>
+      ) : null}
       <MessageChannelContext value={channelId}>
         <Markdown
-          components={{ span: MentionSpan }}
-          rehypePlugins={[
-            [rehypeSanitize, sanitizeSchema],
-            rehypeMentions,
-            rehypeHighlight,
-          ]}
-          remarkPlugins={[remarkGfm]}
+          components={MARKDOWN_COMPONENTS}
+          rehypePlugins={
+            content.includes(CODE_FENCE)
+              ? REHYPE_PLUGINS_WITH_CODE
+              : REHYPE_PLUGINS
+          }
+          remarkPlugins={REMARK_PLUGINS}
         >
           {content}
         </Markdown>
       </MessageChannelContext>
     </div>
   );
-}
+});

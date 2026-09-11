@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { MessageContent } from "@/features/messages/components/message-content";
@@ -18,9 +19,11 @@ function markup(
   seed?.(client);
 
   render(
-    <QueryClientProvider client={client}>
-      <MessageContent channelId={CHANNEL_ID} content={content} />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={client}>
+        <MessageContent channelId={CHANNEL_ID} content={content} />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 
   return screen.getByTestId("message-content");
@@ -124,7 +127,14 @@ describe("mentions inside Markdown", () => {
     const root = markup("hello <@u-ada> world", seedMentionTargets);
 
     expect(paragraphs(root)).toBe(1);
-    expect(root).toHaveTextContent("hello @ada world");
+    expect(root).toHaveTextContent("hello @Ada world");
+  });
+
+  it("names a mentioned person by their display name", () => {
+    const root = markup("hello <@u-ada> world", seedMentionTargets);
+
+    expect(root.innerHTML).toContain('title="@ada"');
+    expect(root.innerHTML).not.toContain(">@ada<");
   });
 
   it("keeps emphasis that spans a mention", () => {
@@ -132,28 +142,50 @@ describe("mentions inside Markdown", () => {
 
     expect(paragraphs(root)).toBe(1);
     expect(root.innerHTML).toMatch(
-      /<strong>hello <span[^>]*>@ada<\/span> world<\/strong>/,
+      /<strong>hello <span[^>]*>@Ada<\/span> world<\/strong>/,
     );
     expect(root).not.toHaveTextContent("*");
   });
 
-  it("names a role from the server roles already in cache", () => {
+  it("names a role from the server roles already in cache, and fills it", () => {
     const root = markup("ping <@&r-mod> please", seedMentionTargets);
 
     expect(root).toHaveTextContent("ping @Moderator please");
+    expect(root.innerHTML).toMatch(
+      /<span class="[^"]*\bbg-brand\b[^"]*">@Moderator<\/span>/,
+    );
   });
 
-  it("names a mentioned channel", () => {
+  it("names a deleted role as an unknown role", () => {
+    const root = markup("ping <@&r-gone> please", seedMentionTargets);
+
+    expect(root).toHaveTextContent("ping @unknown-role please");
+    expect(root.innerHTML).not.toContain("r-gone");
+  });
+
+  it("names a mentioned channel, as something you can follow", () => {
     const root = markup(`see <#${CHANNEL_ID}>`, seedMentionTargets);
 
     expect(root).toHaveTextContent("see #general");
+    expect(
+      screen.getByRole("button", { name: "#general" }),
+    ).toBeInTheDocument();
   });
 
-  it("leaves an unresolvable marker as its literal text", () => {
+  it("names a channel the viewer cannot read as an unknown channel", () => {
+    const root = markup("see <#66666666-6666-4666-8666-666666666666>");
+
+    expect(root).toHaveTextContent("see #unknown-channel");
+    expect(root.innerHTML).not.toContain("66666666");
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("names an unresolvable user marker as an unknown user", () => {
     const root = markup("hello <@u-nobody> world");
 
     expect(paragraphs(root)).toBe(1);
-    expect(root).toHaveTextContent("hello <@u-nobody> world");
+    expect(root).toHaveTextContent("hello @unknown-user world");
+    expect(root.innerHTML).not.toContain("u-nobody");
   });
 
   it("leaves a marker inside code alone", () => {
@@ -162,5 +194,65 @@ describe("mentions inside Markdown", () => {
     expect(root.innerHTML).toContain("<code>");
     expect(root).toHaveTextContent("<@u-ada>");
     expect(root.innerHTML).not.toContain("data-mention-kind");
+  });
+});
+
+describe("an @everyone broadcast", () => {
+  const CHIP = /<span class="[^"]*\bbg-brand\b[^"]*">([^<]*)<\/span>/;
+
+  function chip(root: HTMLElement): string | null {
+    return CHIP.exec(root.innerHTML)?.[1] ?? null;
+  }
+
+  it("highlights the token in a server channel", () => {
+    const root = markup("@everyone ship it", seedMentionTargets);
+
+    expect(chip(root)).toBe("@everyone");
+    expect(root).toHaveTextContent("@everyone ship it");
+  });
+
+  it("highlights @here the same way", () => {
+    const root = markup("@here quick one", seedMentionTargets);
+
+    expect(chip(root)).toBe("@here");
+  });
+
+  it("leaves a word that merely starts with the token alone", () => {
+    const root = markup("@everyones problem", seedMentionTargets);
+
+    expect(chip(root)).toBeNull();
+    expect(root).toHaveTextContent("@everyones problem");
+  });
+
+  it("leaves a domain that continues past the token alone", () => {
+    const root = markup("mail@everyone.example", seedMentionTargets);
+
+    expect(chip(root)).toBeNull();
+  });
+
+  it("leaves the token inside code alone", () => {
+    const root = markup("`@everyone`", seedMentionTargets);
+
+    expect(chip(root)).toBeNull();
+    expect(root.innerHTML).toContain("<code>");
+  });
+
+  it("stays literal in a direct message", () => {
+    const root = markup("@everyone hello", (client) => {
+      client.setQueryData(["channels", CHANNEL_ID], {
+        id: CHANNEL_ID,
+        serverId: null,
+        type: "dm",
+        name: null,
+        topic: null,
+        position: 0,
+        lastMessageId: null,
+        lastEveryoneMentionId: null,
+        createdAt: "2026-09-12T00:00:00.000Z",
+      });
+    });
+
+    expect(chip(root)).toBeNull();
+    expect(root).toHaveTextContent("@everyone hello");
   });
 });

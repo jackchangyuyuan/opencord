@@ -66,27 +66,47 @@ describe("ReactionBar", () => {
     expect(onToggle).toHaveBeenCalledWith("👍", true);
   });
 
-  it("offers the curated picker", async () => {
+  it("gives focus up after a pointer press", async () => {
     const user = userEvent.setup();
-    const onToggle = vi.fn();
 
-    render(<ReactionBar onToggle={onToggle} reactions={message([])} />);
-
-    await user.click(screen.getByRole("button", { name: "Add reaction" }));
-    await user.click(
-      await screen.findByRole("button", { name: "React with 🔥" }),
+    render(
+      <ReactionBar
+        onToggle={() => undefined}
+        reactions={message([{ emoji: "👍", count: 3, me: false }])}
+      />,
     );
 
-    expect(onToggle).toHaveBeenCalledWith("🔥", true);
+    const chip = screen.getByRole("button", { name: "👍 3" });
+
+    await user.click(chip);
+
+    expect(chip).not.toHaveFocus();
   });
 
-  it("renders no reaction list at all when a message has none", () => {
-    render(<ReactionBar onToggle={() => undefined} reactions={message([])} />);
+  it("keeps focus after a keyboard press", async () => {
+    const user = userEvent.setup();
 
-    expect(screen.queryByRole("list")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Add reaction" }),
-    ).toBeInTheDocument();
+    render(
+      <ReactionBar
+        onToggle={() => undefined}
+        reactions={message([{ emoji: "👍", count: 3, me: false }])}
+      />,
+    );
+
+    const chip = screen.getByRole("button", { name: "👍 3" });
+
+    chip.focus();
+    await user.keyboard("{Enter}");
+
+    expect(chip).toHaveFocus();
+  });
+
+  it("renders nothing at all when a message has no reactions", () => {
+    const { container } = render(
+      <ReactionBar onToggle={() => undefined} reactions={message([])} />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("shows but does not offer reactions without the permission", () => {

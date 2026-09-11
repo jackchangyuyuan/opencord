@@ -58,6 +58,51 @@ afterEach(() => {
 });
 
 describe("ReplyContext", () => {
+  it("names the people a quoted message mentioned", async () => {
+    client.setQueryData(["users", "u-grace"], {
+      id: "u-grace",
+      username: "grace",
+      name: "Grace Hopper",
+      avatarUrl: null,
+    });
+
+    render(
+      <ReplyContext
+        channelId={CHANNEL_ID}
+        replyTo={preview({ content: "hey <@u-grace> look at this" })}
+      />,
+      { wrapper },
+    );
+
+    expect(
+      await screen.findByText(/hey @Grace Hopper look at this/),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves a broadcast token as the word it already is", () => {
+    render(
+      <ReplyContext
+        channelId={CHANNEL_ID}
+        replyTo={preview({ content: "@everyone ship it" })}
+      />,
+      { wrapper },
+    );
+
+    expect(screen.getByText(/@everyone ship it/)).toBeInTheDocument();
+  });
+
+  it("says what a marker was when its target is gone", () => {
+    render(
+      <ReplyContext
+        channelId={CHANNEL_ID}
+        replyTo={preview({ content: "see <#c-gone> and <@&r-gone>" })}
+      />,
+      { wrapper },
+    );
+
+    expect(screen.getByText(/see #channel and @role/)).toBeInTheDocument();
+  });
+
   it("quotes the message being replied to", () => {
     render(<ReplyContext channelId={CHANNEL_ID} replyTo={preview()} />, {
       wrapper,

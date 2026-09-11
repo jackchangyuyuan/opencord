@@ -2,8 +2,14 @@ import type { Message } from "@opencord/shared/types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
-import { channelPinsQueryKey } from "@/features/messages/api/queries";
+import {
+  channelMessageCaches,
+  channelPinsQueryKey,
+  type MessageCache,
+} from "@/features/messages/api/queries";
+import { mapMessage } from "@/features/messages/lib/cache";
 import { api, ApiError } from "@/lib/api-client";
+import { chatAlert } from "@/lib/toast";
 
 export interface TogglePinInput {
   messageId: string;
@@ -13,23 +19,36 @@ export interface TogglePinInput {
 export interface TogglePinState {
   togglePin: (input: TogglePinInput) => void;
   isPending: boolean;
-  error: string | null;
 }
 
 export function useTogglePin(channelId: string): TogglePinState {
   const queryClient = useQueryClient();
 
-  const { mutate, isPending, error } = useMutation({
+  const { mutate, isPending } = useMutation({
     meta: { inline: true },
     mutationFn: ({ messageId, pin }: TogglePinInput) =>
       api<Message>(`/channels/${channelId}/messages/${messageId}/pin`, {
         method: pin ? "PUT" : "DELETE",
       }),
 
-    onSuccess: () => {
+    onSuccess: (message) => {
+      queryClient.setQueriesData<MessageCache>(
+        channelMessageCaches(channelId),
+        (cache) =>
+          mapMessage(cache, message.id, (entry) => ({
+            ...entry,
+            pinnedAt: message.pinnedAt,
+            pinnedBy: message.pinnedBy,
+          })),
+      );
+
       void queryClient.invalidateQueries({
         queryKey: channelPinsQueryKey(channelId),
       });
+    },
+
+    onError: (error) => {
+      chatAlert(messageFor(error));
     },
   });
 
@@ -40,11 +59,7 @@ export function useTogglePin(channelId: string): TogglePinState {
     [mutate],
   );
 
-  return {
-    togglePin,
-    isPending,
-    error: error === null ? null : messageFor(error),
-  };
+  return { togglePin, isPending };
 }
 
 function messageFor(error: Error): string {

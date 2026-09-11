@@ -8,9 +8,11 @@ import { channelMessagesQueryKey } from "@/features/messages/api/queries";
 import {
   buildRows,
   flattenPages,
-  localDay,
+  listAnchor,
   prependedCount,
 } from "@/features/messages/lib/rows";
+import { localDay } from "@/lib/local-day";
+import { useUi } from "@/stores/ui";
 
 import { MessageList } from "./message-list";
 
@@ -19,12 +21,20 @@ vi.mock("react-virtuoso", () => ({
     data,
     itemContent,
     firstItemIndex,
+    scrollerRef,
   }: {
     data: { key: string }[];
     itemContent: (index: number, row: unknown) => React.ReactNode;
     firstItemIndex: number;
+    scrollerRef?: (ref: HTMLElement | null) => void;
   }) => (
-    <div data-first-item-index={firstItemIndex} data-testid="virtuoso">
+    <div
+      data-first-item-index={firstItemIndex}
+      data-testid="virtuoso"
+      ref={(node) => {
+        scrollerRef?.(node);
+      }}
+    >
       {data.map((row, index) => (
         <div key={row.key}>{itemContent(firstItemIndex + index, row)}</div>
       ))}
@@ -154,6 +164,32 @@ describe("buildRows", () => {
 
     expect(rows.map((row) => row.grouped)).toEqual([false, false]);
   });
+
+  it("breaks the group for a reply, even from the same author", () => {
+    const rows = buildRows([
+      message("m-1", "u-ada", "2026-09-01T10:00:00.000Z", "a"),
+      message("m-2", "u-ada", "2026-09-01T10:00:30.000Z", "b"),
+      {
+        ...message("m-3", "u-ada", "2026-09-01T10:01:00.000Z", "c"),
+        replyToId: "m-1",
+        replyTo: {
+          id: "m-1",
+          authorId: "u-ada",
+          content: "a",
+          deletedAt: null,
+        },
+      },
+      message("m-4", "u-ada", "2026-09-01T10:01:30.000Z", "d"),
+    ]).filter((row) => row.kind === "message");
+
+    expect(rows.map((row) => row.grouped)).toEqual([false, true, false, true]);
+  });
+
+  it("marks the message a date divider was emitted for", () => {
+    const rows = buildRows(oldestFirst).filter((row) => row.kind === "message");
+
+    expect(rows.map((row) => row.firstOfDay)).toEqual([true, false, true]);
+  });
 });
 
 describe("localDay", () => {
@@ -204,25 +240,43 @@ describe("date dividers follow the viewer's calendar", () => {
 });
 
 describe("prependedCount", () => {
-  const rows = buildRows([
-    message("m-1", "u-ada", "2026-09-11T15:30:00.000Z", "a"),
-    message("m-2", "u-ada", "2026-09-11T15:31:00.000Z", "b"),
-  ]);
+  const page = [
+    message("m-3", "u-ada", "2026-09-11T15:30:00.000Z", "a"),
+    message("m-4", "u-ada", "2026-09-11T15:31:00.000Z", "b"),
+  ];
+
+  const rows = buildRows(page);
 
   it("is nothing before the first page is known", () => {
     expect(prependedCount(null, rows)).toBe(0);
   });
 
-  it("is nothing while the head is unchanged", () => {
-    expect(prependedCount(rows[0]?.key ?? "", rows)).toBe(0);
+  it("is nothing while the list is unchanged", () => {
+    expect(prependedCount(listAnchor(rows), rows)).toBe(0);
   });
 
-  it("counts the rows inserted ahead of the previous head", () => {
-    expect(prependedCount(rows[1]?.key ?? "", rows)).toBe(1);
+  it("counts the rows inserted ahead of the anchor", () => {
+    const older = buildRows([
+      message("m-1", "u-ada", "2026-09-10T09:00:00.000Z", "older"),
+      ...page,
+    ]);
+
+    expect(prependedCount(listAnchor(rows), older)).toBe(2);
   });
 
-  it("is nothing when the previous head is gone", () => {
-    expect(prependedCount("date-1999-01-01", rows)).toBe(0);
+  it("counts an older page that lands on the same day", () => {
+    const older = buildRows([
+      message("m-1", "u-ada", "2026-09-11T15:20:00.000Z", "older"),
+      message("m-2", "u-ada", "2026-09-11T15:25:00.000Z", "older still"),
+      ...page,
+    ]);
+
+    expect(older.filter((row) => row.kind === "date")).toHaveLength(1);
+    expect(prependedCount(listAnchor(rows), older)).toBe(2);
+  });
+
+  it("is nothing when the anchor is gone", () => {
+    expect(prependedCount({ key: "m-gone", index: 1 }, rows)).toBe(0);
   });
 });
 
@@ -407,5 +461,51 @@ describe("MessageList", () => {
     expect(
       screen.getByText("Choose a channel to start reading"),
     ).toBeInTheDocument();
+  });
+});
+
+describe("choosing Reply", () => {
+  afterEach(() => {
+    useUi.setState({ replyTarget: null });
+  });
+
+  it("does not scroll the conversation", async () => {
+    stubApi({ data: NEWEST_FIRST, nextCursor: null });
+    mountList();
+
+    await screen.findByText("third");
+
+    const scroller = screen.getByTestId("virtuoso");
+
+    const writes: number[] = [];
+
+    Object.defineProperty(scroller, "scrollHeight", {
+      configurable: true,
+      get: () => 10411,
+    });
+    Object.defineProperty(scroller, "clientHeight", {
+      configurable: true,
+      get: () => 716,
+    });
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      get: () => 4106,
+      set: (value: number) => writes.push(value),
+    });
+
+    act(() => {
+      useUi.getState().setReplyTarget({
+        channelId: CHANNEL_ID,
+        messageId: "m-1",
+        authorId: "u-ada",
+        content: "first",
+      });
+    });
+
+    await waitFor(() => {
+      expect(useUi.getState().replyTarget?.messageId).toBe("m-1");
+    });
+
+    expect(writes).toEqual([]);
   });
 });

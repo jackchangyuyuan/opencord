@@ -4,14 +4,18 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { MessageCache } from "@/features/messages/api/queries";
 import {
   channelMessagesAroundQueryKey,
   channelMessagesQueryKey,
 } from "@/features/messages/api/queries";
 import { applyMessageEvent } from "@/features/realtime/lib/apply-message-event";
 
-import type { MessageCache } from "./use-send-message";
 import { useToggleReaction } from "./use-toggle-reaction";
+
+const chatAlert = vi.hoisted(() => vi.fn<(title: string) => void>());
+
+vi.mock("@/lib/toast", () => ({ chatAlert }));
 
 const CHANNEL_ID = "99999999-9999-4999-8999-999999999999";
 const MESSAGE_ID = "m-1";
@@ -64,6 +68,8 @@ function reactionsIn(key: readonly unknown[]): Message["reactions"] {
 }
 
 beforeEach(() => {
+  chatAlert.mockClear();
+
   client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -98,11 +104,84 @@ describe("toggling a reaction", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.error).toBe("You cannot react in this channel");
+      expect(chatAlert).toHaveBeenCalledWith(
+        "You cannot react in this channel",
+      );
     });
 
     expect(reactionsIn(channelMessagesQueryKey(CHANNEL_ID))).toEqual([
       { emoji: "👍", count: 2, me: false },
+    ]);
+  });
+
+  it("keeps what arrived while the refused request was in flight", async () => {
+    const key = channelMessagesQueryKey(CHANNEL_ID);
+
+    client.setQueryData<MessageCache>(
+      key,
+      cacheWith([{ emoji: "👍", count: 2, me: false }]),
+    );
+
+    let refuse = (): void => undefined;
+
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          refuse = () => {
+            resolve(
+              respond(403, {
+                error: { code: "FORBIDDEN", message: "Forbidden" },
+              }),
+            );
+          };
+        }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useToggleReaction(CHANNEL_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.toggle({ messageId: MESSAGE_ID, emoji: "👍", add: true });
+    });
+
+    expect(reactionsIn(key)).toEqual([{ emoji: "👍", count: 3, me: true }]);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    act(() => {
+      client.setQueryData<MessageCache>(key, (cache) =>
+        applyMessageEvent(cache, {
+          type: "reaction",
+          add: true,
+          payload: {
+            channelId: CHANNEL_ID,
+            messageId: MESSAGE_ID,
+            userId: "u-grace",
+            emoji: "🎉",
+          },
+          viewerId: VIEWER_ID,
+        }),
+      );
+    });
+
+    act(() => {
+      refuse();
+    });
+
+    await waitFor(() => {
+      expect(chatAlert).toHaveBeenCalledWith(
+        "You cannot react in this channel",
+      );
+    });
+
+    expect(reactionsIn(key)).toEqual([
+      { emoji: "👍", count: 2, me: false },
+      { emoji: "🎉", count: 1, me: false },
     ]);
   });
 
@@ -133,7 +212,7 @@ describe("toggling a reaction", () => {
     ]);
 
     await waitFor(() => {
-      expect(result.current.error).not.toBeNull();
+      expect(chatAlert).toHaveBeenCalled();
     });
 
     expect(reactionsIn(aroundKey)).toEqual([]);

@@ -1,7 +1,7 @@
 import type { MessageReaction } from "@opencord/shared/types";
 
-import { Button } from "@/components/ui/button";
-import { EmojiPicker } from "@/features/messages/components/emoji-picker";
+import { cn } from "@/lib/cn";
+import { releaseAfterPointer } from "@/lib/pointer-focus";
 
 export function ReactionBar({
   disabled = false,
@@ -12,42 +12,42 @@ export function ReactionBar({
   onToggle: (emoji: string, add: boolean) => void;
   reactions: readonly MessageReaction[];
 }) {
-  return (
-    <>
-      {reactions.length === 0 ? null : (
-        <ul className="mt-0.5 flex flex-wrap items-center gap-1">
-          {reactions.map((reaction) => (
-            <li key={reaction.emoji}>
-              <Button
-                aria-label={`${reaction.emoji} ${String(reaction.count)}`}
-                aria-pressed={reaction.me}
-                disabled={disabled}
-                onClick={() => {
-                  onToggle(reaction.emoji, !reaction.me);
-                }}
-                size="xs"
-                tabIndex={-1}
-                variant={reaction.me ? "secondary" : "ghost"}
-              >
-                <span aria-hidden="true">{reaction.emoji}</span>
-                <span aria-hidden="true" className="tabular-nums">
-                  {reaction.count}
-                </span>
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
+  if (reactions.length === 0) {
+    return null;
+  }
 
-      {disabled ? null : (
-        <div className="absolute top-0 right-3 z-10 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-          <EmojiPicker
-            onPick={(emoji) => {
-              onToggle(emoji, true);
+  return (
+    <ul className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      {reactions.map((reaction) => (
+        <li key={reaction.emoji}>
+          <button
+            aria-label={`${reaction.emoji} ${String(reaction.count)}`}
+            aria-pressed={reaction.me}
+            className={cn(
+              "flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-meta transition-colors duration-100",
+              "focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+              "disabled:pointer-events-none disabled:opacity-60",
+              reaction.me
+                ? "border-brand/50 bg-brand-subtle text-foreground"
+                : "border-border bg-muted text-muted-foreground hover:border-foreground/20 hover:text-foreground",
+            )}
+            disabled={disabled}
+            onClick={(event) => {
+              onToggle(reaction.emoji, !reaction.me);
+              releaseAfterPointer(event);
             }}
-          />
-        </div>
-      )}
-    </>
+            tabIndex={-1}
+            type="button"
+          >
+            <span aria-hidden="true" className="text-base leading-none">
+              {reaction.emoji}
+            </span>
+            <span aria-hidden="true" className="font-medium tabular-nums">
+              {reaction.count}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }

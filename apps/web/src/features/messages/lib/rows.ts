@@ -1,5 +1,7 @@
 import type { Message } from "@opencord/shared/types";
 
+import { localDay } from "@/lib/local-day";
+
 export const GROUPING_WINDOW_MS = 5 * 60 * 1000;
 
 export interface DateDividerRow {
@@ -13,18 +15,15 @@ export interface MessageRowItem {
   key: string;
   message: Message;
   grouped: boolean;
+  firstOfDay: boolean;
 }
 
 export type Row = DateDividerRow | MessageRowItem;
 
-function pad(value: number, length = 2): string {
-  return String(value).padStart(length, "0");
-}
-
-export function localDay(iso: string): string {
-  const at = new Date(iso);
-
-  return `${pad(at.getFullYear(), 4)}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+export function rowKey(message: Message): string {
+  return message.nonce === null
+    ? message.id
+    : `nonce:${message.authorId}:${message.nonce}`;
 }
 
 export function flattenPages(pages: readonly { data: Message[] }[]): Message[] {
@@ -50,26 +49,47 @@ export function buildRows(messages: readonly Message[]): Row[] {
 
     const grouped =
       !newDay &&
+      message.replyTo === null &&
       previous?.authorId === message.authorId &&
       Date.parse(message.createdAt) - Date.parse(previous.createdAt) <
         GROUPING_WINDOW_MS;
 
-    rows.push({ kind: "message", key: message.id, message, grouped });
+    rows.push({
+      kind: "message",
+      key: rowKey(message),
+      message,
+      grouped,
+      firstOfDay: newDay,
+    });
     previous = message;
   }
 
   return rows;
 }
 
+export interface ListAnchor {
+  key: string;
+  index: number;
+}
+
+export function listAnchor(rows: readonly Row[]): ListAnchor | null {
+  const index = rows.findIndex((row) => row.kind === "message");
+  const row = rows[index];
+
+  return row === undefined ? null : { key: row.key, index };
+}
+
 export function prependedCount(
-  previousFirstKey: string | null,
+  previous: ListAnchor | null,
   rows: readonly Row[],
 ): number {
-  if (previousFirstKey === null) {
+  if (previous === null) {
     return 0;
   }
 
-  const index = rows.findIndex((row) => row.key === previousFirstKey);
+  const index = rows.findIndex(
+    (row) => row.kind === "message" && row.key === previous.key,
+  );
 
-  return index <= 0 ? 0 : index;
+  return index <= previous.index ? 0 : index - previous.index;
 }

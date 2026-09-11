@@ -6,16 +6,22 @@ import { useEffect } from "react";
 import { sessionQueryKey } from "@/features/auth/hooks/use-session";
 import {
   type ChannelListEntry,
+  channelQuery,
   isChannelList,
   serverChannelsQueryKey,
 } from "@/features/channels/api/queries";
-import { serverMembersQueryKey } from "@/features/members/api/queries";
+import { dmsQueryKey } from "@/features/dms/api/queries";
+import {
+  isMemberList,
+  serverMembersQueryKey,
+} from "@/features/members/api/queries";
+import type { MessageCache } from "@/features/messages/api/queries";
 import {
   channelMessageCaches,
   channelMessagesQueryKey,
   channelPinsQueryKey,
 } from "@/features/messages/api/queries";
-import type { MessageCache } from "@/features/messages/hooks/use-send-message";
+import { isNotStale } from "@/features/messages/lib/cache";
 import {
   applyMessageEvent,
   type MessageEvent,
@@ -26,7 +32,7 @@ import {
   serverQueryKey,
   serversQueryKey,
 } from "@/features/servers/api/queries";
-import { currentUserQuery } from "@/features/users/api/queries";
+import { currentUserQuery, userQueryKey } from "@/features/users/api/queries";
 import { socket } from "@/lib/socket";
 import { usePresence } from "@/stores/presence";
 import { useTyping } from "@/stores/typing";
@@ -41,6 +47,14 @@ export function useSocketEvents(): void {
   useEffect(() => {
     const apply = (channelId: string, event: MessageEvent) => {
       if (event.type === "create") {
+        if (
+          queryClient.getQueryData<MessageCache>(
+            channelMessagesQueryKey(channelId),
+          ) === undefined
+        ) {
+          return;
+        }
+
         queryClient.setQueryData<MessageCache>(
           channelMessagesQueryKey(channelId),
           (cache) => applyMessageEvent(cache, event),
@@ -54,21 +68,44 @@ export function useSocketEvents(): void {
       );
     };
 
-    const markUnread = (channelId: string, messageId: string) => {
+    const knowsChannel = (channelId: string) =>
+      queryClient
+        .getQueriesData<ChannelListEntry[]>({
+          predicate: (query) => isChannelList(query.queryKey),
+        })
+        .some(([, channels]) =>
+          (channels ?? []).some((channel) => channel.id === channelId),
+        );
+
+    const noteNewMessage = (
+      channelId: string,
+      messageId: string,
+      notify: boolean,
+    ) => {
       queryClient.setQueriesData<ChannelListEntry[]>(
         { predicate: (query) => isChannelList(query.queryKey) },
         (channels) =>
-          channels?.map((channel) =>
-            channel.id === channelId
-              ? {
-                  ...channel,
-                  lastMessageId: messageId,
-                  hasUnread:
-                    channel.lastReadMessageId === null ||
-                    messageId > channel.lastReadMessageId,
-                }
-              : channel,
-          ),
+          channels?.map((channel) => {
+            if (channel.id !== channelId) {
+              return channel;
+            }
+
+            const unread =
+              notify &&
+              (channel.lastReadMessageId === null ||
+                messageId > channel.lastReadMessageId);
+
+            return {
+              ...channel,
+              lastMessageId:
+                channel.lastMessageId !== null &&
+                messageId < channel.lastMessageId
+                  ? channel.lastMessageId
+                  : messageId,
+              hasUnread: channel.hasUnread || unread,
+              unreadCount: channel.unreadCount + (unread ? 1 : 0),
+            };
+          }),
       );
     };
 
@@ -89,6 +126,16 @@ export function useSocketEvents(): void {
       });
     };
 
+    const editPinned = (message: Message) => {
+      queryClient.setQueryData<Message[]>(
+        channelPinsQueryKey(message.channelId),
+        (pins) =>
+          pins?.map((pin) =>
+            pin.id === message.id && isNotStale(message, pin) ? message : pin,
+          ),
+      );
+    };
+
     const syncPins = (message: Message) => {
       const cache = queryClient.getQueryData<MessageCache>(
         channelMessagesQueryKey(message.channelId),
@@ -99,16 +146,33 @@ export function useSocketEvents(): void {
       }
     };
 
+    const unpin = (channelId: string, messageId: string) => {
+      queryClient.setQueryData<Message[]>(
+        channelPinsQueryKey(channelId),
+        (pins) => pins?.filter((pin) => pin.id !== messageId),
+      );
+    };
+
     const handlers: Handlers = {
       "message:create": ({ message }) => {
+        if (!knowsChannel(message.channelId)) {
+          invalidate(dmsQueryKey);
+        }
+
         apply(message.channelId, { type: "create", message });
-        markUnread(message.channelId, message.id);
+        noteNewMessage(
+          message.channelId,
+          message.id,
+          message.authorId !== viewerId(),
+        );
       },
       "message:update": ({ message }) => {
         syncPins(message);
+        editPinned(message);
         apply(message.channelId, { type: "update", message });
       },
       "message:delete": (payload) => {
+        unpin(payload.channelId, payload.messageId);
         apply(payload.channelId, { type: "delete", payload });
       },
       "reaction:add": (payload) => {
@@ -130,11 +194,13 @@ export function useSocketEvents(): void {
       "channel:create": ({ serverId }) => {
         invalidate(serverChannelsQueryKey(serverId));
       },
-      "channel:update": ({ serverId }) => {
+      "channel:update": ({ serverId, channelId }) => {
         invalidate(serverChannelsQueryKey(serverId));
+        invalidate(channelQuery(channelId).queryKey);
       },
-      "channel:delete": ({ serverId }) => {
+      "channel:delete": ({ serverId, channelId }) => {
         invalidate(serverChannelsQueryKey(serverId));
+        invalidate(channelQuery(channelId).queryKey);
       },
       "server:update": () => {
         invalidate(serversQueryKey);
@@ -157,6 +223,18 @@ export function useSocketEvents(): void {
         invalidate(serverChannelsQueryKey(serverId));
         invalidate(serverQueryKey(serverId));
         invalidateChannelOverwrites();
+      },
+      "user:update": ({ userId }) => {
+        invalidate(userQueryKey(userId));
+        invalidate(dmsQueryKey);
+
+        if (userId === viewerId()) {
+          invalidate(currentUserQuery.queryKey);
+        }
+
+        void queryClient.invalidateQueries({
+          predicate: (query) => isMemberList(query.queryKey),
+        });
       },
       "presence:update": ({ userId, status }) => {
         usePresence.getState().setStatus(userId, status);

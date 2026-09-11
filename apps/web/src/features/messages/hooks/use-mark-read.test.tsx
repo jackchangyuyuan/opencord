@@ -41,7 +41,14 @@ const { rawEmit, reset, socket } = vi.hoisted(() => {
 
 vi.mock("@/lib/socket", () => ({ socket }));
 
-const { MARK_READ_DELAY_MS, useMarkRead } = await import("./use-mark-read");
+const {
+  EVERYTHING_UNREAD,
+  MARK_READ_DELAY_MS,
+  REFRESH_COALESCE_MS,
+  useMarkRead,
+} = await import("./use-mark-read");
+
+const RETRY_WINDOW_MS = 10_000;
 
 const SERVER_ID = "11111111-1111-4111-8111-111111111111";
 const CHANNEL_ID = "88888888-8888-4888-8888-888888888888";
@@ -68,7 +75,7 @@ function entry(overrides: Partial<ChannelListEntry>): ChannelListEntry {
 }
 
 let client: QueryClient;
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
 
 function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
@@ -98,7 +105,9 @@ beforeEach(() => {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
 
-  fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+  fetchMock = vi.fn<typeof fetch>(() =>
+    Promise.resolve(new Response(null, { status: 204 })),
+  );
   vi.stubGlobal("fetch", fetchMock);
 });
 
@@ -111,7 +120,9 @@ describe("useMarkRead", () => {
   it("debounces the mark-read into one request", async () => {
     seed([entry({ hasUnread: true, lastMessageId: "m-3" })]);
 
-    const { result } = renderHook(() => useMarkRead(CHANNEL_ID), { wrapper });
+    const { result } = renderHook(() => useMarkRead(CHANNEL_ID, SERVER_ID), {
+      wrapper,
+    });
 
     act(() => {
       result.current.markRead("m-1");
@@ -133,7 +144,9 @@ describe("useMarkRead", () => {
   it("never sends a watermark that moves backwards", async () => {
     seed([entry({ hasUnread: true })]);
 
-    const { result } = renderHook(() => useMarkRead(CHANNEL_ID), { wrapper });
+    const { result } = renderHook(() => useMarkRead(CHANNEL_ID, SERVER_ID), {
+      wrapper,
+    });
 
     act(() => {
       result.current.markRead("m-9");
@@ -149,10 +162,81 @@ describe("useMarkRead", () => {
     ]);
   });
 
+  it("carries the read through a transient failure", async () => {
+    seed([entry({ hasUnread: true, lastMessageId: "m-3" })]);
+
+    fetchMock
+      .mockImplementationOnce(() =>
+        Promise.resolve(new Response(null, { status: 503 })),
+      )
+      .mockImplementation(() =>
+        Promise.resolve(new Response(null, { status: 204 })),
+      );
+
+    const { result } = renderHook(() => useMarkRead(CHANNEL_ID, SERVER_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.markRead("m-3");
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MARK_READ_DELAY_MS + RETRY_WINDOW_MS);
+    });
+
+    expect(readCalls()).toEqual([
+      { url: `/api/v1/channels/${CHANNEL_ID}/read`, messageId: "m-3" },
+      { url: `/api/v1/channels/${CHANNEL_ID}/read`, messageId: "m-3" },
+    ]);
+  });
+
+  it("attempts the read again once the channel is read on", async () => {
+    seed([entry({ hasUnread: true, lastMessageId: "m-3" })]);
+
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(new Response(null, { status: 503 })),
+    );
+
+    const { result } = renderHook(() => useMarkRead(CHANNEL_ID, SERVER_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.markRead("m-3");
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MARK_READ_DELAY_MS + RETRY_WINDOW_MS);
+    });
+
+    const attempts = readCalls().length;
+
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(new Response(null, { status: 204 })),
+    );
+
+    act(() => {
+      result.current.markRead("m-3");
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MARK_READ_DELAY_MS);
+    });
+
+    expect(readCalls().length).toBe(attempts + 1);
+    expect(readCalls().at(-1)).toEqual({
+      url: `/api/v1/channels/${CHANNEL_ID}/read`,
+      messageId: "m-3",
+    });
+  });
+
   it("ignores an optimistic message that has no server id yet", () => {
     seed([entry({ hasUnread: true })]);
 
-    const { result } = renderHook(() => useMarkRead(CHANNEL_ID), { wrapper });
+    const { result } = renderHook(() => useMarkRead(CHANNEL_ID, SERVER_ID), {
+      wrapper,
+    });
 
     act(() => {
       result.current.markRead("optimistic:abc");
@@ -165,7 +249,9 @@ describe("useMarkRead", () => {
   it("captures the divider before the mark-read fires", async () => {
     seed([entry({ hasUnread: true, lastReadMessageId: "m-4" })]);
 
-    const { result } = renderHook(() => useMarkRead(CHANNEL_ID), { wrapper });
+    const { result } = renderHook(() => useMarkRead(CHANNEL_ID, SERVER_ID), {
+      wrapper,
+    });
 
     expect(result.current.dividerAfterMessageId).toBe("m-4");
 
@@ -181,17 +267,122 @@ describe("useMarkRead", () => {
   it("shows no divider for a channel with nothing unread", () => {
     seed([entry({ hasUnread: false, lastReadMessageId: "m-4" })]);
 
-    const { result } = renderHook(() => useMarkRead(CHANNEL_ID), { wrapper });
+    const { result } = renderHook(() => useMarkRead(CHANNEL_ID, SERVER_ID), {
+      wrapper,
+    });
 
     expect(result.current.dividerAfterMessageId).toBeNull();
   });
 
-  it("leaves the divider null for a channel that was never read", () => {
+  it("puts the divider above everything for a channel that was never read", () => {
     seed([entry({ hasUnread: true, lastReadMessageId: null })]);
 
-    const { result } = renderHook(() => useMarkRead(CHANNEL_ID), { wrapper });
+    const { result } = renderHook(() => useMarkRead(CHANNEL_ID, SERVER_ID), {
+      wrapper,
+    });
+
+    expect(result.current.dividerAfterMessageId).toBe(EVERYTHING_UNREAD);
+  });
+
+  it("captures the divider from a channel list that arrives late", async () => {
+    const { result } = renderHook(() => useMarkRead(CHANNEL_ID, SERVER_ID), {
+      wrapper,
+    });
 
     expect(result.current.dividerAfterMessageId).toBeNull();
+
+    await act(async () => {
+      seed([entry({ hasUnread: true, lastReadMessageId: "m-4" })]);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.dividerAfterMessageId).toBe("m-4");
+  });
+
+  it("holds a read taken before the list and sends it after", async () => {
+    const { result } = renderHook(() => useMarkRead(CHANNEL_ID, SERVER_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.markRead("m-9");
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MARK_READ_DELAY_MS);
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      seed([entry({ hasUnread: true, lastReadMessageId: "m-4" })]);
+      await vi.advanceTimersByTimeAsync(MARK_READ_DELAY_MS);
+    });
+
+    expect(readCalls()).toEqual([
+      { url: `/api/v1/channels/${CHANNEL_ID}/read`, messageId: "m-9" },
+    ]);
+    expect(result.current.dividerAfterMessageId).toBe("m-4");
+  });
+
+  it("holds the newest read taken before the list", async () => {
+    const { result } = renderHook(() => useMarkRead(CHANNEL_ID, SERVER_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.markRead("m-5");
+      result.current.markRead("m-9");
+    });
+
+    await act(async () => {
+      seed([entry({ hasUnread: true, lastReadMessageId: "m-4" })]);
+      await vi.advanceTimersByTimeAsync(MARK_READ_DELAY_MS);
+    });
+
+    expect(readCalls()).toEqual([
+      { url: `/api/v1/channels/${CHANNEL_ID}/read`, messageId: "m-9" },
+    ]);
+  });
+
+  it("drops a held read when the channel changes first", async () => {
+    const { rerender, result } = renderHook(
+      ({ channelId }: { channelId: string }) =>
+        useMarkRead(channelId, SERVER_ID),
+      { initialProps: { channelId: CHANNEL_ID }, wrapper },
+    );
+
+    act(() => {
+      result.current.markRead("m-9");
+    });
+
+    rerender({ channelId: OTHER_CHANNEL_ID });
+
+    await act(async () => {
+      seed([
+        entry({ hasUnread: true, lastReadMessageId: "m-4" }),
+        entry({ id: OTHER_CHANNEL_ID, name: "other", hasUnread: true }),
+      ]);
+      await vi.advanceTimersByTimeAsync(MARK_READ_DELAY_MS);
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores a list that cannot hold this channel", () => {
+    client.setQueryData<ChannelListEntry[]>(dmsQueryKey, []);
+
+    const { result } = renderHook(() => useMarkRead(CHANNEL_ID, SERVER_ID), {
+      wrapper,
+    });
+
+    expect(result.current.dividerAfterMessageId).toBeNull();
+
+    act(() => {
+      result.current.markRead("m-9");
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("flushes the pending read against the channel it was read in", async () => {
@@ -206,7 +397,8 @@ describe("useMarkRead", () => {
     ]);
 
     const { rerender, result } = renderHook(
-      ({ channelId }: { channelId: string }) => useMarkRead(channelId),
+      ({ channelId }: { channelId: string }) =>
+        useMarkRead(channelId, SERVER_ID),
       { initialProps: { channelId: CHANNEL_ID }, wrapper },
     );
 
@@ -231,7 +423,9 @@ describe("useMarkRead", () => {
 
     const invalidate = vi.spyOn(client, "invalidateQueries");
 
-    const { result } = renderHook(() => useMarkRead(CHANNEL_ID), { wrapper });
+    const { result } = renderHook(() => useMarkRead(CHANNEL_ID, SERVER_ID), {
+      wrapper,
+    });
 
     await act(async () => {
       rawEmit("read:update", {
@@ -239,7 +433,7 @@ describe("useMarkRead", () => {
         lastReadMessageId: "m-9",
         mentionCount: 0,
       });
-      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(REFRESH_COALESCE_MS);
     });
 
     expect(invalidate).toHaveBeenCalled();
@@ -249,7 +443,9 @@ describe("useMarkRead", () => {
   it("flushes a pending read when the tab is hidden", async () => {
     seed([entry({ hasUnread: true })]);
 
-    const { result } = renderHook(() => useMarkRead(CHANNEL_ID), { wrapper });
+    const { result } = renderHook(() => useMarkRead(CHANNEL_ID, SERVER_ID), {
+      wrapper,
+    });
 
     await act(async () => {
       result.current.markRead("m-6");
@@ -263,7 +459,9 @@ describe("useMarkRead", () => {
   });
 
   it("does nothing without a channel", () => {
-    const { result } = renderHook(() => useMarkRead(undefined), { wrapper });
+    const { result } = renderHook(() => useMarkRead(undefined, undefined), {
+      wrapper,
+    });
 
     act(() => {
       result.current.markRead("m-1");
@@ -289,19 +487,24 @@ describe("a direct message", () => {
 
     const invalidate = vi.spyOn(client, "invalidateQueries");
 
-    const { result } = renderHook(() => useMarkRead(DM_ID), { wrapper });
+    const { result } = renderHook(() => useMarkRead(DM_ID, null), { wrapper });
 
     act(() => {
       result.current.markRead("m-9");
     });
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(MARK_READ_DELAY_MS);
+      await vi.advanceTimersByTimeAsync(
+        MARK_READ_DELAY_MS + REFRESH_COALESCE_MS,
+      );
     });
 
+    const data = client.getQueryData(dmsQueryKey);
+    const dmList = { queryKey: dmsQueryKey, state: { data } };
+
     expect(
-      invalidate.mock.calls.some(([filters]) =>
-        filters?.predicate?.({ queryKey: dmsQueryKey } as never),
+      invalidate.mock.calls.some(
+        ([filters]) => filters?.predicate?.(dmList as never) === true,
       ),
     ).toBe(true);
   });
@@ -309,7 +512,7 @@ describe("a direct message", () => {
   it("captures the divider from the DM list", () => {
     seedDm({ hasUnread: true, lastReadMessageId: "m-4" });
 
-    const { result } = renderHook(() => useMarkRead(DM_ID), { wrapper });
+    const { result } = renderHook(() => useMarkRead(DM_ID, null), { wrapper });
 
     expect(result.current.dividerAfterMessageId).toBe("m-4");
   });

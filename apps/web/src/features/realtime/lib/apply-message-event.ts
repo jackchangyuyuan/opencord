@@ -1,10 +1,16 @@
-import type { Message, MessageReaction } from "@opencord/shared/types";
+import type {
+  Message,
+  MessagePreview,
+  MessageReaction,
+} from "@opencord/shared/types";
 
+import type { MessageCache } from "@/features/messages/api/queries";
 import {
   applyIncoming,
   type ChatMessage,
-  type MessageCache,
-} from "@/features/messages/hooks/use-send-message";
+  findMessage,
+  isNotStale,
+} from "@/features/messages/lib/cache";
 
 export interface DeletePayload {
   channelId: string;
@@ -65,19 +71,23 @@ export function applyReaction(
     .filter((entry) => entry.count > 0);
 }
 
-function find(cache: MessageCache, messageId: string): ChatMessage | undefined {
-  return cache.pages
-    .flatMap((page) => page.data)
-    .find((entry) => entry.id === messageId);
-}
-
 export function pinStateChanged(
   cache: MessageCache | undefined,
   message: Message,
 ): boolean {
-  const cached = cache === undefined ? undefined : find(cache, message.id);
+  const cached = findMessage(cache, message.id);
 
   return cached?.pinnedAt !== message.pinnedAt;
+}
+
+function mapEntries(
+  cache: MessageCache,
+  next: (entry: ChatMessage) => ChatMessage,
+): MessageCache {
+  return {
+    ...cache,
+    pages: cache.pages.map((page) => ({ ...page, data: page.data.map(next) })),
+  };
 }
 
 function replace(
@@ -85,15 +95,23 @@ function replace(
   messageId: string,
   next: (entry: ChatMessage) => ChatMessage,
 ): MessageCache {
-  return {
-    ...cache,
-    pages: cache.pages.map((page) => ({
-      ...page,
-      data: page.data.map((entry) =>
-        entry.id === messageId ? next(entry) : entry,
-      ),
-    })),
-  };
+  return mapEntries(cache, (entry) =>
+    entry.id === messageId ? next(entry) : entry,
+  );
+}
+
+function requote(
+  entry: ChatMessage,
+  messageId: string,
+  next: (quoted: MessagePreview) => MessagePreview,
+): ChatMessage {
+  if (entry.replyTo?.id !== messageId) {
+    return entry;
+  }
+
+  const quoted = next(entry.replyTo);
+
+  return quoted === entry.replyTo ? entry : { ...entry, replyTo: quoted };
 }
 
 export function applyMessageEvent(
@@ -109,7 +127,7 @@ export function applyMessageEvent(
   }
 
   if (event.type === "reaction") {
-    const cached = find(cache, event.payload.messageId);
+    const cached = findMessage(cache, event.payload.messageId);
 
     if (cached === undefined) {
       return cache;
@@ -138,36 +156,41 @@ export function applyMessageEvent(
   }
 
   if (event.type === "delete") {
-    const cached = find(cache, event.payload.messageId);
+    const { messageId, deletedAt } = event.payload;
 
-    if (cached === undefined) {
-      return cache;
+    return mapEntries(cache, (entry) => {
+      if (entry.id !== messageId) {
+        return requote(entry, messageId, (quoted) =>
+          quoted.deletedAt === null
+            ? { ...quoted, content: "", deletedAt }
+            : quoted,
+        );
+      }
+
+      return entry.deletedAt === null
+        ? { ...entry, content: "", deletedAt }
+        : entry;
+    });
+  }
+
+  const cached = findMessage(cache, event.message.id);
+  const fresh = cached !== undefined && isNotStale(event.message, cached);
+
+  return mapEntries(cache, (entry) => {
+    if (entry.id !== event.message.id) {
+      return requote(entry, event.message.id, (quoted) =>
+        quoted.deletedAt === null
+          ? { ...quoted, content: event.message.content }
+          : quoted,
+      );
     }
 
-    return replace(cache, event.payload.messageId, (entry) => ({
-      ...entry,
-      content: "",
-      deletedAt: event.payload.deletedAt,
-    }));
-  }
-
-  const cached = find(cache, event.message.id);
-
-  if (cached?.deletedAt !== null) {
-    return cache;
-  }
-
-  if (
-    cached.editedAt !== null &&
-    event.message.editedAt !== null &&
-    Date.parse(event.message.editedAt) < Date.parse(cached.editedAt)
-  ) {
-    return cache;
-  }
-
-  return replace(cache, event.message.id, (entry) => ({
-    ...event.message,
-    reactions: entry.reactions,
-    ...(entry.local === undefined ? {} : { local: entry.local }),
-  }));
+    return fresh
+      ? {
+          ...event.message,
+          reactions: entry.reactions,
+          ...(entry.local === undefined ? {} : { local: entry.local }),
+        }
+      : entry;
+  });
 }

@@ -1,4 +1,6 @@
-export type MentionKind = "user" | "role" | "channel";
+import { MENTION_MARKER_PATTERN } from "@opencord/shared/constants";
+
+export type MentionKind = "user" | "role" | "channel" | "broadcast";
 
 export const MENTION_KIND_ATTRIBUTE = "data-mention-kind";
 export const MENTION_ID_ATTRIBUTE = "data-mention-id";
@@ -6,7 +8,6 @@ export const MENTION_ID_ATTRIBUTE = "data-mention-id";
 const MENTION_KIND_PROPERTY = "dataMentionKind";
 const MENTION_ID_PROPERTY = "dataMentionId";
 
-const MARKER = /<(@&?|#)([^<>\s]+)>/g;
 const OPAQUE_TAGS = new Set(["code", "pre"]);
 
 interface HastNode {
@@ -17,7 +18,11 @@ interface HastNode {
   children?: HastNode[] | undefined;
 }
 
-function kindOf(prefix: string): MentionKind {
+function kindOf(prefix: string | undefined): MentionKind {
+  if (prefix === undefined) {
+    return "broadcast";
+  }
+
   if (prefix === "#") {
     return "channel";
   }
@@ -29,7 +34,7 @@ function splitMarkers(value: string): HastNode[] | null {
   const nodes: HastNode[] = [];
   let cursor = 0;
 
-  for (const match of value.matchAll(MARKER)) {
+  for (const match of value.matchAll(MENTION_MARKER_PATTERN)) {
     const start = match.index;
 
     if (start > cursor) {
@@ -40,8 +45,8 @@ function splitMarkers(value: string): HastNode[] | null {
       type: "element",
       tagName: "span",
       properties: {
-        [MENTION_KIND_PROPERTY]: kindOf(match[1] ?? "@"),
-        [MENTION_ID_PROPERTY]: match[2] ?? "",
+        [MENTION_KIND_PROPERTY]: kindOf(match[1]),
+        [MENTION_ID_PROPERTY]: match[2] ?? match[3] ?? "",
       },
       children: [{ type: "text", value: match[0] }],
     });
