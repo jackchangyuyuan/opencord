@@ -12,7 +12,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AuditLogTab } from "@/features/audit-log/components/audit-log-tab";
+import { AuditLogPage } from "@/features/audit-log/components/audit-log-page";
 import { OverwriteEditor } from "@/features/channels/components/overwrite-editor";
 import { BanList } from "@/features/members/components/ban-list";
 import {
@@ -89,7 +89,7 @@ export function ServerSettingsDialog({ serverId }: { serverId: string }) {
           </TabsContent>
           {mayManageServer ? (
             <TabsContent value="audit-log">
-              <AuditLogTab serverId={serverId} />
+              <AuditLogPage serverId={serverId} />
             </TabsContent>
           ) : null}
         </Tabs>
