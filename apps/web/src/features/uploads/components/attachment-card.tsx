@@ -1,6 +1,7 @@
 import { Loader2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Truncated } from "@/components/ui/truncated";
 import type { PendingUpload } from "@/features/uploads/hooks/use-upload";
 import { cn } from "@/lib/cn";
 
@@ -25,18 +26,23 @@ export function AttachmentCard({
         src={item.previewUrl}
         width={104}
       />
-      <span className="truncate px-1 text-[0.625rem] text-muted-foreground">
-        {item.name}
-      </span>
+      {item.status === "error" ? (
+        <span
+          className="truncate px-1 text-micro text-destructive"
+          role="alert"
+        >
+          {item.error ?? "The upload failed"}
+        </span>
+      ) : (
+        <Truncated
+          className="px-1 text-micro text-muted-foreground"
+          value={item.name}
+        />
+      )}
       {item.status === "uploading" ? (
         <span className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/60">
           <Loader2 aria-hidden className="size-4 animate-spin" />
           <span className="sr-only">{`Uploading ${item.name}`}</span>
-        </span>
-      ) : null}
-      {item.status === "error" ? (
-        <span className="px-1 text-[0.625rem] text-destructive" role="alert">
-          {item.error ?? "The upload failed"}
         </span>
       ) : null}
       <Button

@@ -5,9 +5,10 @@ import {
   type UploadKind,
 } from "@opencord/shared/constants";
 import type { MessageAttachmentInput } from "@opencord/shared/schemas";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, ApiError } from "@/lib/api-client";
+import { chatAlert, toastFailure } from "@/lib/toast";
 
 export type UploadStatus = "idle" | "uploading" | "error" | "done";
 
@@ -32,7 +33,11 @@ function isAllowedType(type: string): boolean {
   return (UPLOAD_CONTENT_TYPES as readonly string[]).includes(type);
 }
 
-async function postToStorage(grant: UploadGrant, file: File): Promise<void> {
+async function postToStorage(
+  grant: UploadGrant,
+  file: File,
+  signal: AbortSignal,
+): Promise<void> {
   const form = new FormData();
 
   for (const [name, value] of Object.entries(grant.upload.fields)) {
@@ -44,6 +49,7 @@ async function postToStorage(grant: UploadGrant, file: File): Promise<void> {
   const response = await fetch(grant.upload.url, {
     method: "POST",
     body: form,
+    signal,
   });
 
   if (!response.ok) {
@@ -78,17 +84,52 @@ function reasonFor(error: unknown): string {
   return error instanceof Error ? error.message : "The upload failed";
 }
 
+function refusalFor(file: File, kind: UploadKind): string | null {
+  if (!isAllowedType(file.type)) {
+    return "That file type is not an accepted image";
+  }
+
+  return file.size > maxUploadBytes(kind) ? "That file is too large" : null;
+}
+
 export function useUpload(kind: UploadKind, max = MAX_ATTACHMENTS_PER_MESSAGE) {
   const [items, setItems] = useState<PendingUpload[]>([]);
 
-  const patch = useCallback((id: string, next: Partial<PendingUpload>) => {
-    setItems((current) =>
-      current.map((item) => (item.id === id ? { ...item, ...next } : item)),
-    );
+  const heldRef = useRef<PendingUpload[]>([]);
+  const inFlightRef = useRef(new Map<string, AbortController>());
+
+  const write = useCallback(
+    (next: (current: readonly PendingUpload[]) => PendingUpload[]) => {
+      heldRef.current = next(heldRef.current);
+      setItems(heldRef.current);
+    },
+    [],
+  );
+
+  const announce = kind === "attachment" ? chatAlert : toastFailure;
+
+  const patch = useCallback(
+    (id: string, next: Partial<PendingUpload>) => {
+      write((current) =>
+        current.map((item) => (item.id === id ? { ...item, ...next } : item)),
+      );
+    },
+    [write],
+  );
+
+  const discard = useCallback((going: readonly PendingUpload[]) => {
+    for (const item of going) {
+      inFlightRef.current.get(item.id)?.abort();
+      inFlightRef.current.delete(item.id);
+      URL.revokeObjectURL(item.previewUrl);
+    }
   }, []);
 
   const run = useCallback(
     async (id: string, file: File): Promise<void> => {
+      const attempt = new AbortController();
+
+      inFlightRef.current.set(id, attempt);
       patch(id, { status: "uploading", error: null });
 
       try {
@@ -102,9 +143,10 @@ export function useUpload(kind: UploadKind, max = MAX_ATTACHMENTS_PER_MESSAGE) {
             contentType: file.type,
             size: file.size,
           },
+          signal: attempt.signal,
         });
 
-        await postToStorage(grant, file);
+        await postToStorage(grant, file, attempt.signal);
 
         patch(id, {
           status: "done",
@@ -113,70 +155,77 @@ export function useUpload(kind: UploadKind, max = MAX_ATTACHMENTS_PER_MESSAGE) {
           height: size?.height ?? null,
         });
       } catch (error) {
-        patch(id, { status: "error", error: reasonFor(error) });
+        if (attempt.signal.aborted) {
+          return;
+        }
+
+        const reason = reasonFor(error);
+
+        patch(id, { status: "error", error: reason });
+        announce(reason);
+      } finally {
+        inFlightRef.current.delete(id);
       }
     },
-    [kind, patch],
+    [announce, kind, patch],
   );
 
   const add = useCallback(
     (files: readonly File[]) => {
-      setItems((current) => {
-        const room = max - current.length;
-        const accepted = files.slice(0, Math.max(room, 0));
+      const room = Math.max(max - heldRef.current.length, 0);
 
-        const next = accepted.map((file) => {
-          const rejected = !isAllowedType(file.type)
-            ? "That file type is not an accepted image"
-            : file.size > maxUploadBytes(kind)
-              ? "That file is too large"
-              : null;
+      const accepted = files.slice(0, room).map((file) => ({
+        file,
+        refusal: refusalFor(file, kind),
+        id: crypto.randomUUID(),
+        previewUrl: URL.createObjectURL(file),
+      }));
 
-          const item: PendingUpload = {
-            id: crypto.randomUUID(),
-            name: file.name,
-            previewUrl: URL.createObjectURL(file),
-            status: rejected === null ? "idle" : "error",
-            objectKey: null,
-            width: null,
-            height: null,
-            error: rejected,
-          };
+      write((current) => [
+        ...current,
+        ...accepted.map(({ file, refusal, id, previewUrl }): PendingUpload => ({
+          id,
+          name: file.name,
+          previewUrl,
+          status: refusal === null ? "idle" : "error",
+          objectKey: null,
+          width: null,
+          height: null,
+          error: refusal,
+        })),
+      ]);
 
-          if (rejected === null) {
-            void run(item.id, file);
-          }
-
-          return item;
-        });
-
-        return [...current, ...next];
-      });
+      for (const entry of accepted) {
+        if (entry.refusal === null) {
+          void run(entry.id, entry.file);
+        } else {
+          announce(entry.refusal);
+        }
+      }
     },
-    [kind, max, run],
+    [announce, kind, max, run, write],
   );
 
-  const remove = useCallback((id: string) => {
-    setItems((current) => {
-      const going = current.find((item) => item.id === id);
-
-      if (going !== undefined) {
-        URL.revokeObjectURL(going.previewUrl);
-      }
-
-      return current.filter((item) => item.id !== id);
-    });
-  }, []);
+  const remove = useCallback(
+    (id: string) => {
+      discard(heldRef.current.filter((item) => item.id === id));
+      write((current) => current.filter((item) => item.id !== id));
+    },
+    [discard, write],
+  );
 
   const clear = useCallback(() => {
-    setItems((current) => {
-      for (const item of current) {
-        URL.revokeObjectURL(item.previewUrl);
-      }
+    discard(heldRef.current);
+    write(() => []);
+  }, [discard, write]);
 
-      return [];
-    });
-  }, []);
+  useEffect(
+    () => () => {
+      discard(heldRef.current);
+      heldRef.current = [];
+    },
+    [discard],
+  );
 
   const drafts: MessageAttachmentInput[] = items.flatMap((item) =>
     item.objectKey === null
