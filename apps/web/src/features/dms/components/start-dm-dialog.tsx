@@ -13,6 +13,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useOpenDm } from "@/features/dms/api/queries";
 import { serverMembersQuery } from "@/features/members/api/queries";
 import { serversQuery } from "@/features/servers/api/queries";
@@ -48,12 +53,25 @@ export function StartDmDialog() {
 
   return (
     <Dialog onOpenChange={setOpen} open={open}>
-      <DialogTrigger
-        aria-label="Start a direct message"
-        render={<Button size="icon-xs" variant="ghost" />}
-      >
-        <MessageSquarePlus />
-      </DialogTrigger>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DialogTrigger
+              aria-label="Start a direct message"
+              render={
+                <Button
+                  className="text-muted-foreground"
+                  size="icon-sm"
+                  variant="ghost"
+                />
+              }
+            />
+          }
+        >
+          <MessageSquarePlus />
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Start a direct message</TooltipContent>
+      </Tooltip>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Start a direct message</DialogTitle>

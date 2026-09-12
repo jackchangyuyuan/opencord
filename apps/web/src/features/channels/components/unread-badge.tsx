@@ -3,16 +3,20 @@ import { cn } from "@/lib/cn";
 
 export function UnreadBadge({
   className,
+  count,
   label,
+  noun = "mention",
   state,
 }: {
   className?: string;
+  count?: number;
   label: string;
+  noun?: string;
   state: UnreadState;
 }) {
-  const count = badgeCount(state);
+  const total = count ?? badgeCount(state);
 
-  if (count > 0) {
+  if (total > 0) {
     return (
       <span
         className={cn(
@@ -20,9 +24,9 @@ export function UnreadBadge({
           className,
         )}
       >
-        <span aria-hidden="true">{count > 99 ? "99+" : count}</span>
+        <span aria-hidden="true">{total > 99 ? "99+" : total}</span>
         <span className="sr-only">
-          {`${label}: ${String(count)} unread ${count === 1 ? "mention" : "mentions"}`}
+          {`${label}: ${String(total)} unread ${total === 1 ? noun : `${noun}s`}`}
         </span>
       </span>
     );

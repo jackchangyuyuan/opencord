@@ -15,9 +15,21 @@ export interface DmEntry extends ChannelListEntry {
 
 export const dmsQueryKey = ["dms"] as const;
 
+function compareActivity(left: DmEntry, right: DmEntry): number {
+  return (
+    (right.lastMessageId ?? "").localeCompare(left.lastMessageId ?? "") ||
+    right.id.localeCompare(left.id)
+  );
+}
+
+export function sortDms(entries: readonly DmEntry[]): DmEntry[] {
+  return [...entries].sort(compareActivity);
+}
+
 export const dmsQuery = queryOptions({
   queryKey: dmsQueryKey,
   queryFn: ({ signal }) => api<DmEntry[]>("/dms", { signal }),
+  select: sortDms,
 });
 
 export function dmParticipantsQueryKey(channelId: string) {

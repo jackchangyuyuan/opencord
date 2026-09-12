@@ -72,7 +72,7 @@ describe("DmMemberList", () => {
 
     expect(await screen.findByText("Ada Lovelace")).toBeVisible();
     expect(screen.getByText("Grace Hopper")).toBeVisible();
-    expect(screen.getByText("@ada")).toBeVisible();
+    expect(screen.queryByText("@ada")).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/channels/c-1/members",
       expect.objectContaining({ method: "GET" }),

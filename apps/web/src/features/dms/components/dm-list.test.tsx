@@ -22,7 +22,7 @@ function dm(id: string, name: string, hasUnread: boolean): DmEntry {
     hasUnread,
     hasEveryone: false,
     mentionCount: 0,
-    unreadCount: 0,
+    unreadCount: hasUnread ? 3 : 0,
     recipient: {
       id: `u-${name}`,
       username: name.toLowerCase(),
@@ -107,15 +107,31 @@ describe("DmList", () => {
     );
   });
 
-  it("carries the same unread badge a channel row does", async () => {
+  it("counts the unread messages in a conversation", async () => {
     stubFetch(DMS);
 
     renderList("/app/dms");
 
     expect(
-      await screen.findByText("Grace: unread messages"),
+      await screen.findByText("Grace: 3 unread messages"),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Alan: unread messages")).not.toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.queryByText(/^Alan: /)).not.toBeInTheDocument();
+  });
+
+  it("puts the most recent conversation first, whatever order it arrives in", async () => {
+    stubFetch([
+      { ...DMS[1], lastMessageId: "01a09e00-0000-7000-8000-000000000002" },
+      { ...DMS[0], lastMessageId: "01a09e00-0000-7000-8000-000000000001" },
+    ]);
+
+    renderList("/app/dms");
+
+    await screen.findByRole("link", { name: /Alan/ });
+
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(
+      [expect.stringContaining("Alan"), expect.stringContaining("Grace")],
+    );
   });
 
   it("points at the member list when there is nothing yet", async () => {
