@@ -14,16 +14,23 @@ export interface SearchResponse {
 
 export interface SearchInput {
   q: string;
+  channelIds?: readonly string[];
   serverId?: string;
   offset?: number;
+}
+
+function timeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
 export function searchQueryKey(input: SearchInput) {
   return [
     "search",
     input.q,
+    [...(input.channelIds ?? [])].sort().join(","),
     input.serverId ?? null,
     input.offset ?? 0,
+    timeZone(),
   ] as const;
 }
 
@@ -31,7 +38,12 @@ function searchPath(input: SearchInput): string {
   const params = new URLSearchParams({
     q: input.q,
     limit: String(SEARCH_PAGE_SIZE),
+    tz: timeZone(),
   });
+
+  for (const channelId of input.channelIds ?? []) {
+    params.append("channel_id", channelId);
+  }
 
   if (input.serverId !== undefined) {
     params.set("server_id", input.serverId);

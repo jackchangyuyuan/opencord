@@ -1,14 +1,26 @@
+import {
+  type FilterKey,
+  isDate,
+  isDateKey,
+  isFilterKey,
+} from "@/features/search/lib/query-token";
+
 export interface SearchChip {
-  key: "from" | "in" | "before" | "after";
+  key: FilterKey;
   value: string;
   token: string;
 }
 
 const TOKEN = /"[^"]*"|\S+/g;
-const KEYS = new Set(["from", "in", "before", "after"]);
 
-function isChipKey(key: string): key is SearchChip["key"] {
-  return KEYS.has(key);
+function chipValue(key: string, value: string): string | null {
+  if (!isFilterKey(key) || value === "") {
+    return null;
+  }
+
+  const bare = value.replace(/^[@#]/, "");
+
+  return isDateKey(key) && !isDate(bare) ? null : bare;
 }
 
 export function chipsOf(raw: string): SearchChip[] {
@@ -22,10 +34,10 @@ export function chipsOf(raw: string): SearchChip[] {
     }
 
     const key = token.slice(0, separator).toLowerCase();
-    const value = token.slice(separator + 1);
+    const value = chipValue(key, token.slice(separator + 1));
 
-    if (isChipKey(key) && value !== "") {
-      chips.push({ key, value: value.replace(/^[@#]/, ""), token });
+    if (isFilterKey(key) && value !== null) {
+      chips.push({ key, value, token });
     }
   }
 

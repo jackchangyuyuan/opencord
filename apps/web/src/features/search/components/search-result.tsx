@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
 import { serverChannelsQuery } from "@/features/channels/api/queries";
+import { MentionText } from "@/features/messages/components/mention-text";
 import { userQuery } from "@/features/users/api/queries";
 
 const WHEN = new Intl.DateTimeFormat(undefined, {
@@ -30,7 +31,7 @@ export function SearchResult({
   return (
     <li>
       <button
-        className="flex w-full flex-col gap-1 rounded-lg px-3 py-2 text-left hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none"
+        className="flex w-full flex-col gap-1 rounded-lg border border-transparent px-2.5 py-2 text-left transition-colors duration-100 hover:border-border hover:bg-accent/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
         onClick={() => {
           void navigate(
             `/app/channels/${message.channelId}?around=${encodeURIComponent(message.id)}`,
@@ -38,16 +39,25 @@ export function SearchResult({
         }}
         type="button"
       >
-        <span className="flex items-baseline gap-2 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">
+        <span className="flex min-w-0 items-baseline gap-1.5 text-meta text-muted-foreground">
+          <span className="truncate font-medium text-foreground">
             {author?.name ?? "Unknown"}
           </span>
-          {channel === undefined ? null : <span>#{channel.name}</span>}
-          <span className="ml-auto">
-            {WHEN.format(new Date(message.createdAt))}
-          </span>
+          {channel === undefined ? null : (
+            <span className="shrink-0 rounded bg-muted px-1 py-px">
+              #{channel.name}
+            </span>
+          )}
         </span>
-        <span className="line-clamp-3 text-sm">{message.content}</span>
+        <span className="line-clamp-3 text-body leading-relaxed">
+          <MentionText
+            channelId={message.channelId}
+            content={message.content}
+          />
+        </span>
+        <span className="text-micro text-muted-foreground">
+          {WHEN.format(new Date(message.createdAt))}
+        </span>
       </button>
     </li>
   );

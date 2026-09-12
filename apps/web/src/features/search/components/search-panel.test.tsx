@@ -1,6 +1,6 @@
 import type { Message } from "@opencord/shared/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -96,7 +96,7 @@ describe("SearchPanel", () => {
     renderPanel();
 
     await user.type(
-      screen.getByRole("textbox", { name: "Search messages" }),
+      screen.getByRole("combobox", { name: "Search messages" }),
       "rollback",
     );
     await user.click(screen.getByRole("button", { name: "Search" }));
@@ -114,7 +114,7 @@ describe("SearchPanel", () => {
 
     renderPanel();
 
-    const input = screen.getByRole("textbox", { name: "Search messages" });
+    const input = screen.getByRole("combobox", { name: "Search messages" });
 
     await user.type(input, "in:#general from:@ana rollback");
 
@@ -129,6 +129,152 @@ describe("SearchPanel", () => {
     expect(screen.queryByText("in:#general")).not.toBeInTheDocument();
   });
 
+  it("finishes a date filter from the field its row opens", async () => {
+    const user = userEvent.setup();
+
+    renderPanel();
+
+    const input = screen.getByRole("combobox", { name: "Search messages" });
+
+    await user.click(input);
+    await user.click(screen.getByRole("option", { name: "On date" }));
+
+    expect(input).toHaveValue("on:");
+
+    const day = screen.getByLabelText("On date");
+
+    expect(day).toHaveAttribute("placeholder", "YYYY-MM-DD");
+
+    fireEvent.change(day, { target: { value: "2026-09-15" } });
+
+    expect(input).toHaveValue("on:2026-09-15 ");
+    expect(screen.getByText("on:2026-09-15")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(
+      requestedUrls.find((url) => url.startsWith("/api/v1/search")),
+    ).toContain(encodeURIComponent("on:2026-09-15"));
+  });
+
+  it("keeps a half-typed day out of the query and says nothing about it", async () => {
+    const user = userEvent.setup();
+
+    renderPanel();
+
+    const input = screen.getByRole("combobox", { name: "Search messages" });
+
+    await user.click(input);
+    await user.click(screen.getByRole("option", { name: "Before date" }));
+
+    const day = screen.getByLabelText("Before date");
+
+    fireEvent.change(day, { target: { value: "2026-09-1" } });
+
+    expect(day).toHaveValue("2026-09-1");
+    expect(input).toHaveValue("before:");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    fireEvent.change(day, { target: { value: "2026-02-31" } });
+
+    expect(input).toHaveValue("before:");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "That is not a day. Use YYYY-MM-DD.",
+    );
+
+    fireEvent.change(day, { target: { value: "2026-09-15" } });
+
+    expect(input).toHaveValue("before:2026-09-15 ");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("offers no standing helper line under the date control", async () => {
+    const user = userEvent.setup();
+
+    renderPanel();
+
+    await user.click(screen.getByRole("combobox", { name: "Search messages" }));
+    await user.click(screen.getByRole("option", { name: "On date" }));
+
+    expect(screen.getByLabelText("On date")).toHaveAttribute(
+      "placeholder",
+      "YYYY-MM-DD",
+    );
+    expect(screen.queryByText(/like 2026-09-15/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Example:/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("names the date filters without spelling out their inclusivity", async () => {
+    const user = userEvent.setup();
+
+    renderPanel();
+
+    await user.click(screen.getByRole("combobox", { name: "Search messages" }));
+
+    for (const name of ["On date", "Before date", "After date"]) {
+      expect(screen.getByRole("option", { name })).toBeInTheDocument();
+    }
+
+    for (const wording of [
+      /on and before/i,
+      /on and after/i,
+      /on or before/i,
+      /on or after/i,
+    ]) {
+      expect(screen.queryByText(wording)).not.toBeInTheDocument();
+    }
+  });
+
+  it("offers each filter as one line", async () => {
+    const user = userEvent.setup();
+
+    renderPanel();
+
+    await user.click(screen.getByRole("combobox", { name: "Search messages" }));
+
+    expect(
+      screen.getByRole("option", { name: "From user" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "In channel" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Only messages somebody wrote"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("sends a typed date filter as part of the query", async () => {
+    const user = userEvent.setup();
+
+    renderPanel();
+
+    await user.type(
+      screen.getByRole("combobox", { name: "Search messages" }),
+      "before:2026-09-15 rollback",
+    );
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(
+      requestedUrls.find((url) => url.startsWith("/api/v1/search")),
+    ).toContain(encodeURIComponent("before:2026-09-15"));
+    expect(screen.getByText("before:2026-09-15")).toBeInTheDocument();
+  });
+
+  it("draws no chip for a date that is not one", async () => {
+    const user = userEvent.setup();
+
+    renderPanel();
+
+    await user.type(
+      screen.getByRole("combobox", { name: "Search messages" }),
+      "on:2026-02-31 on:banana",
+    );
+
+    expect(screen.queryByText("on:2026-02-31")).not.toBeInTheDocument();
+    expect(screen.queryByText("on:banana")).not.toBeInTheDocument();
+  });
+
   it("explains a filter-only query the server had to degrade", async () => {
     const user = userEvent.setup();
 
@@ -137,7 +283,7 @@ describe("SearchPanel", () => {
     renderPanel();
 
     await user.type(
-      screen.getByRole("textbox", { name: "Search messages" }),
+      screen.getByRole("combobox", { name: "Search messages" }),
       "in:#general the",
     );
     await user.click(screen.getByRole("button", { name: "Search" }));
@@ -155,7 +301,7 @@ describe("SearchPanel", () => {
     renderPanel();
 
     await user.type(
-      screen.getByRole("textbox", { name: "Search messages" }),
+      screen.getByRole("combobox", { name: "Search messages" }),
       "rollback",
     );
     await user.click(screen.getByRole("button", { name: "Search" }));
@@ -169,7 +315,7 @@ describe("SearchPanel", () => {
     renderPanel();
 
     await user.type(
-      screen.getByRole("textbox", { name: "Search messages" }),
+      screen.getByRole("combobox", { name: "Search messages" }),
       "rollback",
     );
     await user.click(screen.getByRole("button", { name: "Search" }));

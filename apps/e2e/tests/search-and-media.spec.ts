@@ -223,7 +223,7 @@ test("search and media stop at the same permission boundary (flow 5)", async ({
   await expect(image).toHaveAttribute("src", new RegExp(publicKey));
 
   await page.getByRole("button", { name: "Search" }).first().click();
-  await page.getByRole("textbox", { name: "Search messages" }).fill(term);
+  await page.getByRole("combobox", { name: "Search messages" }).fill(term);
   await page.getByRole("button", { name: "Search", exact: true }).click();
 
   await expect(page.getByText(`a public ${term} note`)).toBeVisible();

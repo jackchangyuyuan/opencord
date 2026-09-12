@@ -14,7 +14,7 @@ test.describe("search results", { tag: "@a11y" }, () => {
       const panel = page.getByRole("complementary", { name: "Search" });
 
       await panel
-        .getByRole("textbox", { name: "Search messages" })
+        .getByRole("combobox", { name: "Search messages" })
         .fill("release");
       await panel.getByRole("button", { name: "Search", exact: true }).click();
 
