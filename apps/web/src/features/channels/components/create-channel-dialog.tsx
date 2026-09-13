@@ -26,6 +26,11 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   type ChannelSummary,
   serverChannelsQueryKey,
 } from "@/features/channels/api/queries";
@@ -93,12 +98,25 @@ export function CreateChannelDialog({ serverId }: { serverId: string }) {
       }}
       open={activeModal === "create-channel"}
     >
-      <DialogTrigger
-        render={<Button size="icon-xs" variant="ghost" />}
-        aria-label="Create a channel"
-      >
-        <Plus />
-      </DialogTrigger>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DialogTrigger
+              aria-label="Create a channel"
+              render={
+                <Button
+                  className="text-muted-foreground"
+                  size="icon-sm"
+                  variant="ghost"
+                />
+              }
+            />
+          }
+        >
+          <Plus />
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Create a channel</TooltipContent>
+      </Tooltip>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create a channel</DialogTitle>
