@@ -1,59 +1,23 @@
-import { Moon, Search, Sun, Users } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { ChannelHeader } from "@/components/layout/channel-header";
 import { ChannelSidebar } from "@/components/layout/channel-sidebar";
 import { MemberPanel } from "@/components/layout/member-panel";
 import { MobileDrawer } from "@/components/layout/mobile-drawer";
 import { ServerRail } from "@/components/layout/server-rail";
-import { Button } from "@/components/ui/button";
+import { StatusBar } from "@/components/layout/status-bar";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useActiveChannelId } from "@/features/channels/api/queries";
+import { ChannelSettingsDialog } from "@/features/channels/components/channel-settings-dialog";
 import { ClaimDialog } from "@/features/demo/components/claim-dialog";
 import { ClaimPrompt } from "@/features/demo/components/claim-prompt";
 import { GuidePanel } from "@/features/demo/components/guide-panel";
-import { PinList } from "@/features/messages/components/pin-list";
-import { StatusPicker } from "@/features/realtime/components/status-picker";
-import { StatusWidget } from "@/features/realtime/components/status-widget";
 import { ProfileDialog } from "@/features/users/components/profile-dialog";
 import { useIsMobile } from "@/lib/use-media-query";
-import { usePrefs } from "@/stores/prefs";
 import { useUi } from "@/stores/ui";
-
-function ThemeToggle() {
-  const theme = usePrefs((state) => state.theme);
-  const toggleTheme = usePrefs((state) => state.toggleTheme);
-  const dark = theme === "dark";
-
-  return (
-    <Button onClick={toggleTheme} size="sm" variant="outline">
-      {dark ? <Sun /> : <Moon />}
-      {dark ? "Light" : "Dark"}
-    </Button>
-  );
-}
-
-function RightPanelToggle() {
-  const rightPanel = useUi((state) => state.rightPanel);
-  const setRightPanel = useUi((state) => state.setRightPanel);
-  const search = rightPanel === "search";
-
-  return (
-    <Button
-      onClick={() => {
-        setRightPanel(search ? "members" : "search");
-      }}
-      size="sm"
-      variant="outline"
-    >
-      {search ? <Users /> : <Search />}
-      {search ? "Members" : "Search"}
-    </Button>
-  );
-}
 
 export function AppShell({ children }: { children?: ReactNode }) {
   const isMobile = useIsMobile();
-  const activeChannelId = useActiveChannelId();
+  const channelSettingsId = useUi((state) => state.channelSettingsId);
 
   const navigation = (
     <nav
@@ -75,28 +39,21 @@ export function AppShell({ children }: { children?: ReactNode }) {
           Skip to the conversation
         </a>
 
-        <header className="flex shrink-0 items-center gap-3 border-b px-3 py-2">
-          {isMobile ? <MobileDrawer>{navigation}</MobileDrawer> : null}
-          <h1 className="text-sm font-semibold">OpenCord</h1>
-          <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
-            <PinList channelId={activeChannelId} />
-            <ProfileDialog />
-            <StatusPicker />
-            <StatusWidget />
-            <RightPanelToggle />
-            <ThemeToggle />
-          </div>
-        </header>
+        <h1 className="sr-only">OpenCord</h1>
 
         <div className="flex min-h-0 flex-1">
           {isMobile ? null : navigation}
 
           <main
-            className="flex min-h-0 flex-1 flex-col"
+            className="flex min-h-0 min-w-0 flex-1 flex-col bg-background"
             id="main"
             tabIndex={-1}
           >
-            <h2 className="sr-only">Conversation</h2>
+            <ChannelHeader
+              {...(isMobile
+                ? { drawer: <MobileDrawer>{navigation}</MobileDrawer> }
+                : {})}
+            />
             {children}
           </main>
 
@@ -104,9 +61,17 @@ export function AppShell({ children }: { children?: ReactNode }) {
         </div>
 
         <ClaimPrompt />
+        <StatusBar />
 
         <GuidePanel />
         <ClaimDialog />
+        <ProfileDialog />
+        {channelSettingsId === null ? null : (
+          <ChannelSettingsDialog
+            channelId={channelSettingsId}
+            key={channelSettingsId}
+          />
+        )}
       </div>
     </TooltipProvider>
   );

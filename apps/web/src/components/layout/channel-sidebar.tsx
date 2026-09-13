@@ -1,6 +1,5 @@
-import { Permissions } from "@opencord/shared/permissions";
 import { useQuery } from "@tanstack/react-query";
-import { Compass, Plus, Settings } from "lucide-react";
+import { Compass, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { EmptyState } from "@/components/layout/empty-state";
@@ -9,20 +8,14 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Truncated } from "@/components/ui/truncated";
 import {
-  useActiveChannelId,
   useActiveServerId,
   useOnDirectMessages,
 } from "@/features/channels/api/queries";
 import { ChannelList } from "@/features/channels/components/channel-list";
-import { ChannelSettingsDialog } from "@/features/channels/components/channel-settings-dialog";
 import { CreateChannelDialog } from "@/features/channels/components/create-channel-dialog";
 import { DmList } from "@/features/dms/components/dm-list";
 import { StartDmDialog } from "@/features/dms/components/start-dm-dialog";
 import { InviteDialog } from "@/features/invites/components/invite-dialog";
-import {
-  has,
-  useChannelPermissions,
-} from "@/features/permissions/hooks/use-permissions";
 import { ServerSettingsDialog } from "@/features/server-settings/components/server-settings-dialog";
 import { serversQuery } from "@/features/servers/api/queries";
 import { useUi } from "@/stores/ui";
@@ -48,8 +41,6 @@ function Head({ actions, title }: { actions?: ReactNode; title: string }) {
 
 export function ChannelSidebar() {
   const activeServerId = useActiveServerId();
-  const activeChannelId = useActiveChannelId();
-  const channelPermissions = useChannelPermissions(activeChannelId);
   const openModal = useUi((state) => state.openModal);
   const { data: servers } = useQuery(serversQuery);
 
@@ -57,10 +48,6 @@ export function ChannelSidebar() {
 
   const activeServer = servers?.find((server) => server.id === activeServerId);
   const noServers = servers?.length === 0;
-
-  const mayManageChannel =
-    activeChannelId !== undefined &&
-    has(channelPermissions, Permissions.MANAGE_CHANNELS);
 
   if (dmView) {
     return (
@@ -80,18 +67,6 @@ export function ChannelSidebar() {
         actions={
           activeServerId === undefined ? null : (
             <>
-              {mayManageChannel ? (
-                <Button
-                  aria-label="Channel settings"
-                  onClick={() => {
-                    openModal("channel-settings");
-                  }}
-                  size="icon-xs"
-                  variant="ghost"
-                >
-                  <Settings />
-                </Button>
-              ) : null}
               <InviteDialog serverId={activeServerId} />
               <ServerSettingsDialog serverId={activeServerId} />
               <CreateChannelDialog serverId={activeServerId} />
@@ -122,9 +97,6 @@ export function ChannelSidebar() {
           <ChannelList serverId={activeServerId} />
         )}
       </ScrollArea>
-      {activeChannelId === undefined ? null : (
-        <ChannelSettingsDialog channelId={activeChannelId} />
-      )}
       <UserBar />
     </Frame>
   );

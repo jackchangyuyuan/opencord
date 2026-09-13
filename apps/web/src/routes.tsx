@@ -21,6 +21,7 @@ export const router = createBrowserRouter([
   { path: "/", element: boundaried(<Landing />) },
   { path: "/app", element: gated(<AppRoute />) },
   { path: "/app/channels/:channelId", element: gated(<AppRoute />) },
+  { path: "/app/servers/:serverId", element: gated(<AppRoute />) },
   { path: "/app/dms", element: gated(<AppRoute />) },
   { path: "/sign-in", element: boundaried(<SignIn />) },
   { path: "/sign-up", element: boundaried(<SignUp />) },

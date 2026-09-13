@@ -1,18 +1,26 @@
 import { Link } from "react-router";
 
+import { CenteredPanel } from "@/components/layout/centered-panel";
 import { SignUpForm } from "@/features/auth/components/sign-up-form";
 
 export function SignUp() {
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-sm flex-col justify-center gap-6 p-6">
-      <h1 className="text-2xl font-semibold">Create your account</h1>
+    <CenteredPanel
+      description="A username, an email and a password. Nothing else is asked for."
+      footer={
+        <>
+          Already registered?{" "}
+          <Link
+            className="text-foreground underline underline-offset-4"
+            to="/sign-in"
+          >
+            Sign in
+          </Link>
+        </>
+      }
+      title="Create your account"
+    >
       <SignUpForm />
-      <p className="text-sm text-muted-foreground">
-        Already registered?{" "}
-        <Link className="underline underline-offset-4" to="/sign-in">
-          Sign in
-        </Link>
-      </p>
-    </main>
+    </CenteredPanel>
   );
 }
