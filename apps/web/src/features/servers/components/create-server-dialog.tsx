@@ -7,6 +7,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useForm } from "react-hook-form";
 
+import { RAIL_TILE } from "@/components/layout/nav-styles";
+import { RailTooltip } from "@/components/layout/server-rail";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -29,6 +31,7 @@ import {
   type ServerSummary,
 } from "@/features/servers/api/queries";
 import { api, ApiError } from "@/lib/api-client";
+import { cn } from "@/lib/cn";
 import { useUi } from "@/stores/ui";
 
 export function CreateServerDialog() {
@@ -76,12 +79,23 @@ export function CreateServerDialog() {
       }}
       open={activeModal === "create-server"}
     >
-      <DialogTrigger
-        render={<Button size="icon" variant="outline" />}
-        aria-label="Create a server"
-      >
-        <Plus />
-      </DialogTrigger>
+      <RailTooltip label="Add Server">
+        <DialogTrigger
+          render={
+            <Button
+              className={cn(
+                RAIL_TILE,
+                "border-dashed border-muted-foreground/40 bg-background/60 text-muted-foreground",
+                "hover:border-brand/60 hover:bg-brand-subtle hover:text-brand",
+              )}
+              variant="ghost"
+            />
+          }
+          aria-label="Add Server"
+        >
+          <Plus className="size-[1.375rem]" />
+        </DialogTrigger>
+      </RailTooltip>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create a server</DialogTitle>

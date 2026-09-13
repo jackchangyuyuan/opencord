@@ -4,12 +4,14 @@ import { cn } from "@/lib/cn";
 export function UnreadBadge({
   className,
   count,
+  countOnly = false,
   label,
   noun = "mention",
   state,
 }: {
   className?: string;
   count?: number;
+  countOnly?: boolean;
   label: string;
   noun?: string;
   state: UnreadState;
@@ -34,6 +36,10 @@ export function UnreadBadge({
 
   if (!state.hasUnread) {
     return null;
+  }
+
+  if (countOnly) {
+    return <span className="sr-only">{`${label}: unread messages`}</span>;
   }
 
   return (

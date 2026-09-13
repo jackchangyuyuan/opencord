@@ -64,7 +64,7 @@ describe("CreateServerDialog", () => {
     const user = userEvent.setup();
     const fetchMock = mountRail(() => json({}, 201));
 
-    await user.click(screen.getByRole("button", { name: "Create a server" }));
+    await user.click(screen.getByRole("button", { name: "Add Server" }));
     await user.click(await screen.findByRole("button", { name: "Create" }));
 
     await waitFor(() => {
@@ -85,7 +85,7 @@ describe("CreateServerDialog", () => {
       json({ id: "s-2", name: "Difference Engine" }, 201),
     );
 
-    await user.click(screen.getByRole("button", { name: "Create a server" }));
+    await user.click(screen.getByRole("button", { name: "Add Server" }));
     await user.type(await screen.findByLabelText("Name"), "Difference Engine");
     await user.click(screen.getByRole("button", { name: "Create" }));
 
@@ -115,7 +115,7 @@ describe("CreateServerDialog", () => {
       await screen.findByRole("button", { name: "Analytical Engine" }),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Create a server" }));
+    await user.click(screen.getByRole("button", { name: "Add Server" }));
     await user.type(await screen.findByLabelText("Name"), "Difference Engine");
     await user.click(screen.getByRole("button", { name: "Create" }));
 

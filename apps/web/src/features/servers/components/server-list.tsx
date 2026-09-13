@@ -1,7 +1,12 @@
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { CSSProperties } from "react";
 import { useNavigate } from "react-router";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  RAIL_GUTTER,
+  RAIL_TILE,
+  railIndicator,
+} from "@/components/layout/nav-styles";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
@@ -11,14 +16,22 @@ import {
 import { serverChannelsQuery } from "@/features/channels/api/queries";
 import { UnreadBadge } from "@/features/channels/components/unread-badge";
 import {
+  badgeCount,
   NOTHING_UNREAD,
   rollUp,
   type UnreadState,
 } from "@/features/channels/lib/unread";
 import { serversQuery } from "@/features/servers/api/queries";
 import { cn } from "@/lib/cn";
+import { tintHue } from "@/lib/tint";
 
 function initials(name: string): string {
+  const words = name.split(/\s+/).filter(Boolean);
+
+  if (words.length > 1) {
+    return `${words[0]?.[0] ?? ""}${words[1]?.[0] ?? ""}`.toUpperCase();
+  }
+
   return name.slice(0, 2).toUpperCase();
 }
 
@@ -54,9 +67,9 @@ export function ServerList({ activeServerId }: { activeServerId?: string }) {
 
   if (isPending) {
     return (
-      <div aria-hidden className="flex flex-col items-center gap-2 px-3">
+      <div aria-hidden className={RAIL_GUTTER}>
         {["a", "b", "c"].map((key) => (
-          <Skeleton className="size-10 rounded-2xl" key={key} />
+          <Skeleton className="size-12 rounded-2xl" key={key} />
         ))}
       </div>
     );
@@ -65,7 +78,7 @@ export function ServerList({ activeServerId }: { activeServerId?: string }) {
   if (isError) {
     return (
       <p
-        className="px-2 text-center text-xs text-muted-foreground"
+        className="px-2 text-center text-meta text-muted-foreground"
         role="alert"
       >
         Offline
@@ -74,42 +87,67 @@ export function ServerList({ activeServerId }: { activeServerId?: string }) {
   }
 
   return (
-    <ul className="flex flex-col items-center gap-2 px-3">
-      {data.map((server) => (
-        <li key={server.id}>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  className={cn(
-                    "relative rounded-2xl ring-offset-2 transition-[border-radius]",
-                    "focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none",
-                    server.id === activeServerId && "ring-2 ring-ring",
+    <ul className={RAIL_GUTTER}>
+      {data.map((server) => {
+        const unread = channelLists.get(server.id) ?? NOTHING_UNREAD;
+        const active = server.id === activeServerId;
+
+        return (
+          <li key={server.id}>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    className={cn(
+                      RAIL_TILE,
+                      "server-tint overflow-visible text-base font-semibold",
+                      active &&
+                        "ring-2 ring-brand/70 ring-offset-2 ring-offset-rail",
+                    )}
+                    onClick={() => {
+                      open(server.id).catch(() => undefined);
+                    }}
+                    style={
+                      { "--tint-hue": tintHue(server.id) } as CSSProperties
+                    }
+                    type="button"
+                  />
+                }
+              >
+                <span
+                  aria-hidden
+                  className={railIndicator(
+                    active
+                      ? "active"
+                      : unread.hasUnread || badgeCount(unread) > 0
+                        ? "unread"
+                        : "idle",
                   )}
-                  onClick={() => {
-                    open(server.id).catch(() => undefined);
-                  }}
-                  type="button"
                 />
-              }
-            >
-              <Avatar aria-hidden className="size-10 rounded-2xl">
-                <AvatarImage alt="" src={server.iconUrl ?? undefined} />
-                <AvatarFallback className="rounded-2xl">
-                  {initials(server.name)}
-                </AvatarFallback>
-              </Avatar>
-              <span className="sr-only">{server.name}</span>
-              <UnreadBadge
-                className="absolute -right-1 -bottom-1 ml-0"
-                label={server.name}
-                state={channelLists.get(server.id) ?? NOTHING_UNREAD}
-              />
-            </TooltipTrigger>
-            <TooltipContent side="right">{server.name}</TooltipContent>
-          </Tooltip>
-        </li>
-      ))}
+                {server.iconUrl === null ? (
+                  <span aria-hidden className="tracking-tight">
+                    {initials(server.name)}
+                  </span>
+                ) : (
+                  <img
+                    alt=""
+                    className="size-full rounded-2xl object-cover"
+                    src={server.iconUrl}
+                  />
+                )}
+                <span className="sr-only">{server.name}</span>
+                <UnreadBadge
+                  className="absolute -right-1 -bottom-1 ml-0 ring-2 ring-rail"
+                  countOnly
+                  label={server.name}
+                  state={unread}
+                />
+              </TooltipTrigger>
+              <TooltipContent side="right">{server.name}</TooltipContent>
+            </Tooltip>
+          </li>
+        );
+      })}
     </ul>
   );
 }
