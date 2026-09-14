@@ -1,37 +1,54 @@
+import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
-
-import { Button } from "@/components/ui/button";
 
 export function GuideAction({
   disabled = false,
   icon,
+  index,
   label,
   onSelect,
   proves,
 }: {
   disabled?: boolean;
   icon: ReactNode;
+  index: number;
   label: string;
   onSelect: () => void;
   proves: string;
 }) {
   return (
     <li>
-      <Button
-        className="h-auto w-full flex-col items-start gap-0.5 px-2 py-1.5 text-left"
+      <button
+        className="group/action flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors duration-100 hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-45"
         disabled={disabled}
         onClick={onSelect}
         type="button"
-        variant="ghost"
       >
-        <span className="flex items-center gap-2 text-sm font-medium">
+        <span
+          aria-hidden
+          className="mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground transition-colors group-hover/action:bg-brand group-hover/action:text-brand-foreground"
+        >
           {icon}
-          {label}
         </span>
-        <span className="text-xs font-normal text-muted-foreground">
-          {proves}
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1 text-body leading-5 font-medium">
+            <span className="min-w-0">{label}</span>
+            <span
+              aria-hidden
+              className="ml-auto text-micro text-muted-foreground tabular-nums"
+            >
+              {index}
+            </span>
+          </span>
+          <span className="block text-meta leading-4 text-muted-foreground">
+            {proves}
+          </span>
         </span>
-      </Button>
+        <ChevronRight
+          aria-hidden
+          className="mt-1 size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/action:opacity-100"
+        />
+      </button>
     </li>
   );
 }

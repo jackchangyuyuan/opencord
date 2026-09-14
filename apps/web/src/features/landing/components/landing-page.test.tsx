@@ -70,7 +70,7 @@ afterEach(() => {
 });
 
 describe("LandingPage", () => {
-  it("offers one button above the fold and six bullets below it", () => {
+  it("offers one button above the fold and five cards below it", () => {
     stubFetch();
 
     renderLanding();
@@ -78,7 +78,7 @@ describe("LandingPage", () => {
     expect(
       screen.getByRole("button", { name: "Enter demo — no signup" }),
     ).toBeVisible();
-    expect(screen.getAllByRole("listitem")).toHaveLength(6);
+    expect(screen.getAllByRole("listitem")).toHaveLength(5);
   });
 
   it("does not provision anybody until the button is pressed", () => {

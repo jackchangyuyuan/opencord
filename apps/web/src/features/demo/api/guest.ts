@@ -6,6 +6,7 @@ import { api, ApiError } from "@/lib/api-client";
 export interface DemoScenario {
   userId: string;
   serverCount: number;
+  dmCount: number;
   sandboxId: string;
   landingChannelId: string | null;
 }

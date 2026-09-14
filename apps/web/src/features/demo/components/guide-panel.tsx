@@ -3,6 +3,7 @@ import {
   Activity,
   BellDot,
   Columns2,
+  Compass,
   ScrollText,
   Search,
   Shield,
@@ -27,6 +28,7 @@ export function GuidePanel() {
   const dismissed = useUi((state) => state.demoPanelDismissed);
   const dismiss = useUi((state) => state.dismissDemoPanel);
   const setRightPanel = useUi((state) => state.setRightPanel);
+  const flashArchitecture = useUi((state) => state.flashArchitecture);
   const openModal = useUi((state) => state.openModal);
 
   const { data: servers } = useQuery({
@@ -54,19 +56,26 @@ export function GuidePanel() {
   return (
     <aside
       aria-labelledby="demo-guide-heading"
-      className="fixed right-4 bottom-4 z-40 hidden w-72 flex-col rounded-xl border bg-popover p-3 shadow-lg lg:flex"
+      className="fixed right-2 bottom-10 z-40 hidden w-[15.5rem] flex-col overflow-hidden rounded-xl border bg-popover shadow-e3 lg:flex xl:w-[17rem]"
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-2 border-b bg-brand-subtle/60 px-3 py-2.5">
+        <span
+          aria-hidden
+          className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-lg bg-brand text-brand-foreground"
+        >
+          <Compass className="size-3.5" />
+        </span>
         <div className="flex-1">
-          <h2 className="text-sm font-semibold" id="demo-guide-heading">
+          <h2 className="text-body font-semibold" id="demo-guide-heading">
             Try these
           </h2>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-meta text-muted-foreground">
             Seven things worth thirty seconds.
           </p>
         </div>
         <Button
           aria-label="Dismiss the demo guide"
+          className="-mt-0.5 -mr-1"
           onClick={dismiss}
           size="icon-xs"
           variant="ghost"
@@ -75,9 +84,10 @@ export function GuidePanel() {
         </Button>
       </div>
 
-      <ul className="mt-2 flex flex-col">
+      <ul className="flex flex-col p-1.5">
         <GuideAction
-          icon={<Columns2 aria-hidden className="size-4" />}
+          icon={<Columns2 aria-hidden className="size-3.5" />}
+          index={1}
           label="Open a second window"
           onSelect={() => {
             window.open(
@@ -86,35 +96,39 @@ export function GuidePanel() {
               SECOND_WINDOW,
             );
           }}
-          proves="Real-time delivery, side by side"
+          proves="Live delivery, side by side"
         />
         <GuideAction
-          icon={<Search aria-hidden className="size-4" />}
+          icon={<Search aria-hidden className="size-3.5" />}
+          index={2}
           label="Search the archive"
           onSelect={() => {
             setRightPanel("search");
           }}
-          proves="Full-text search over 200,000 messages"
+          proves="Full-text search, 200k rows"
         />
         <GuideAction
-          icon={<BellDot aria-hidden className="size-4" />}
+          icon={<BellDot aria-hidden className="size-3.5" />}
+          index={3}
           label="Check the unread badges"
           onSelect={() => {
             setRightPanel("members");
             void navigate("/app");
           }}
-          proves="Read-state tracking across channels"
+          proves="Read state across channels"
         />
         <GuideAction
           disabled={sandbox === undefined}
-          icon={<Shield aria-hidden className="size-4" />}
+          icon={<Shield aria-hidden className="size-3.5" />}
+          index={4}
           label="Open your sandbox server"
           onSelect={openSandbox}
-          proves="Roles, overwrites, invites, kick and ban — you own it"
+          proves="Roles, invites, kick and ban"
         />
         <GuideAction
           disabled={sandbox === undefined}
-          icon={<ScrollText aria-hidden className="size-4" />}
+          icon={<ScrollText aria-hidden className="size-3.5" />}
+          index={5}
           label="View the audit log"
           onSelect={() => {
             openSandbox();
@@ -123,23 +137,20 @@ export function GuidePanel() {
           proves="Moderation and accountability"
         />
         <GuideAction
-          icon={<Activity aria-hidden className="size-4" />}
+          icon={<Activity aria-hidden className="size-3.5" />}
+          index={6}
           label="See the architecture"
-          onSelect={() => {
-            setRightPanel("members");
-            document
-              .querySelector<HTMLElement>("[data-testid=socket-status]")
-              ?.scrollIntoView({ block: "center" });
-          }}
-          proves="Serving instance, socket state, online count"
+          onSelect={flashArchitecture}
+          proves="Instance, sockets, online count"
         />
         <GuideAction
-          icon={<UserRoundCheck aria-hidden className="size-4" />}
+          icon={<UserRoundCheck aria-hidden className="size-3.5" />}
+          index={7}
           label="Save my account"
           onSelect={() => {
             openModal("claim-account");
           }}
-          proves="Keep every server, message and DM you have made"
+          proves="Keep everything you have made"
         />
       </ul>
     </aside>
