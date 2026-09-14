@@ -26,7 +26,10 @@ import {
   messages,
   serverMembers,
 } from "../../src/db/schema/index.js";
-import { createSocketServer } from "../../src/socket/index.js";
+import {
+  createSocketServer,
+  type SocketService,
+} from "../../src/socket/index.js";
 import { type Account, cookieHeader, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
@@ -53,7 +56,7 @@ const messageBody = z.object({ id: z.string() });
 
 describe("message broadcasts", () => {
   let httpServer: HttpServer;
-  let io: ReturnType<typeof createSocketServer>;
+  let socketServer: SocketService;
   let origin: string;
   const clients: Client[] = [];
 
@@ -64,7 +67,7 @@ describe("message broadcasts", () => {
   beforeEach(async () => {
     state.auditFails = false;
     httpServer = createServer(app);
-    io = createSocketServer(httpServer);
+    socketServer = await createSocketServer(httpServer);
 
     await new Promise<void>((resolve) => {
       httpServer.listen(0, "127.0.0.1", resolve);
@@ -84,7 +87,7 @@ describe("message broadcasts", () => {
       client.close();
     }
 
-    await io.close();
+    await socketServer.close();
   });
 
   async function open(account: Account): Promise<Client> {

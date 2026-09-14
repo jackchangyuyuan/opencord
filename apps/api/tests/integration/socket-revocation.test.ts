@@ -21,7 +21,7 @@ import { z } from "zod";
 
 import { app } from "../../src/app.js";
 import { db } from "../../src/db/index.js";
-import { serverMembers } from "../../src/db/schema/index.js";
+import { roles, serverMembers } from "../../src/db/schema/index.js";
 import { createSocketServer } from "../../src/socket/index.js";
 import type { SocketServer } from "../../src/socket/types.js";
 import { type Account, cookieHeader, signUp } from "../helpers/accounts.js";
@@ -31,6 +31,7 @@ type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 interface Instance {
   io: SocketServer;
+  close: () => Promise<void>;
   origin: string;
 }
 
@@ -60,7 +61,7 @@ async function signIn(account: Account): Promise<Account> {
 
 async function startInstance(): Promise<Instance> {
   const httpServer = createServer(app);
-  const io = createSocketServer(httpServer);
+  const sockets = await createSocketServer(httpServer);
 
   await new Promise<void>((resolve) => {
     httpServer.listen(0, "127.0.0.1", resolve);
@@ -72,7 +73,7 @@ async function startInstance(): Promise<Instance> {
     throw new Error("Expected the server to listen on a TCP port");
   }
 
-  return { io, origin: `http://127.0.0.1:${String(address.port)}` };
+  return { ...sockets, origin: `http://127.0.0.1:${String(address.port)}` };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -101,7 +102,7 @@ describe("cross-instance permission revocation", () => {
       client.close();
     }
 
-    await Promise.all([holder.io.close(), mutator.io.close()]);
+    await Promise.all([holder.close(), mutator.close()]);
   });
 
   async function open(instance: Instance, account: Account): Promise<Client> {
@@ -204,6 +205,53 @@ describe("cross-instance permission revocation", () => {
       everyoneRoleId: everyone.id,
     };
   }
+
+  it("announces nothing when a role assignment changes nothing", async () => {
+    const fixture = await seed();
+    const client = await open(holder, fixture.grace);
+
+    const [role] = await db
+      .insert(roles)
+      .values({
+        serverId: fixture.serverId,
+        name: "moderator",
+        permissions: Permissions.SEND_MESSAGES,
+        position: 1,
+      })
+      .returning({ id: roles.id });
+
+    if (role === undefined) {
+      throw new Error("the role insert returned no row");
+    }
+
+    const assign = () =>
+      request(app)
+        .put(
+          `/api/v1/servers/${fixture.serverId}/members/${fixture.grace.id}/roles/${role.id}`,
+        )
+        .set("Cookie", fixture.ada.cookies);
+
+    const announced = new Promise<{ serverId: string }>((resolve) => {
+      client.once("permissions:changed", resolve);
+    });
+
+    expect((await assign()).status).toBe(200);
+    await expect(announced).resolves.toEqual({ serverId: fixture.serverId });
+
+    const quiet = new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        resolve(true);
+      }, SILENCE_MS);
+
+      client.once("permissions:changed", () => {
+        clearTimeout(timer);
+        resolve(false);
+      });
+    });
+
+    expect((await assign()).status).toBe(200);
+    await expect(quiet).resolves.toBe(true);
+  });
 
   it("removes the channel room of a socket held by the other instance", async () => {
     const fixture = await seed();
@@ -316,6 +364,32 @@ describe("cross-instance permission revocation", () => {
     expect(rooms.has(`user:${fixture.grace.id}`)).toBe(true);
   });
 
+  function send(author: Account, channelId: string) {
+    return request(app)
+      .post(`/api/v1/channels/${channelId}/messages`)
+      .set("Cookie", author.cookies)
+      .send({ content: "after the door closed", nonce: randomUUID() });
+  }
+
+  it("delivers nothing written after access was taken away", async () => {
+    const fixture = await seed();
+    const client = await open(holder, fixture.grace);
+
+    const denied = await request(app)
+      .put(
+        `/api/v1/channels/${fixture.channelId}/overwrites/roles/${fixture.everyoneRoleId}`,
+      )
+      .set("Cookie", fixture.ada.cookies)
+      .send({ deny: Permissions.VIEW_CHANNEL });
+
+    expect(denied.status).toBeLessThan(300);
+
+    const quiet = silence(client, SILENCE_MS);
+
+    expect((await send(fixture.ada, fixture.channelId)).status).toBe(201);
+    await expect(quiet).resolves.toBe(true);
+  });
+
   it("keeps the mutating instance's own view consistent", async () => {
     const fixture = await seed();
 
@@ -357,7 +431,7 @@ describe("session-scoped revocation", () => {
       client.close();
     }
 
-    await Promise.all([holder.io.close(), mutator.io.close()]);
+    await Promise.all([holder.close(), mutator.close()]);
   });
 
   async function open(instance: Instance, cookie: string): Promise<Client> {

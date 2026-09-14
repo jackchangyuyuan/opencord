@@ -11,6 +11,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { app } from "../../src/app.js";
+import { config } from "../../src/config.js";
 import { db } from "../../src/db/index.js";
 import { serverMembers } from "../../src/db/schema/index.js";
 import { redis } from "../../src/redis.js";
@@ -31,6 +32,7 @@ type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 interface Instance {
   io: SocketServer;
+  close: () => Promise<void>;
   origin: string;
 }
 
@@ -41,7 +43,7 @@ const serverBody = z.object({ id: z.string() });
 
 async function startInstance(): Promise<Instance> {
   const httpServer = createServer(app);
-  const io = createSocketServer(httpServer);
+  const sockets = await createSocketServer(httpServer);
 
   await new Promise<void>((resolve) => {
     httpServer.listen(0, "127.0.0.1", resolve);
@@ -53,7 +55,7 @@ async function startInstance(): Promise<Instance> {
     throw new Error("Expected the server to listen on a TCP port");
   }
 
-  return { io, origin: `http://127.0.0.1:${String(address.port)}` };
+  return { ...sockets, origin: `http://127.0.0.1:${String(address.port)}` };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -97,7 +99,7 @@ describe("presence aggregation across instances", () => {
       client.close();
     }
 
-    await Promise.all([one.io.close(), two.io.close()]);
+    await Promise.all([one.close(), two.close()]);
   });
 
   async function open(instance: Instance, account: Account): Promise<Client> {
@@ -349,6 +351,26 @@ describe("presence aggregation across instances", () => {
 
     expect(connections).toHaveLength(1);
     expect(connections[0]).toMatchObject({ status: "online", idle: false });
+  });
+
+  it("skips a stored connection it cannot read and keeps the rest", async () => {
+    const ada = await signUp("ada");
+
+    await open(one, ada);
+    await settle(ada.id, "online");
+
+    const key = `${config.PRESENCE_NAMESPACE}:conns:${ada.id}`;
+
+    await redis.hset(key, {
+      "old-shape": JSON.stringify({ status: "online" }),
+      "bad-status": JSON.stringify({ status: "sleepy", idle: false }),
+      "not-json": "{",
+    });
+
+    expect(await readConnections(ada.id)).toEqual([
+      { status: "online", idle: false },
+    ]);
+    expect(await readAggregate(ada.id)).toBe("online");
   });
 
   it("sweeps a connection no disconnect ever reported", async () => {

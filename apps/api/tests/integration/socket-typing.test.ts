@@ -37,11 +37,10 @@ const { channelMemberOverwrites, serverMembers } =
 const { createSocketServer } = await import("../../src/socket/index.js");
 const { requireTestDatabase } = await import("../setup.js");
 
-type SocketServer = ReturnType<typeof createSocketServer>;
+type SocketService = Awaited<ReturnType<typeof createSocketServer>>;
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 
-interface Instance {
-  io: SocketServer;
+interface Instance extends SocketService {
   origin: string;
 }
 
@@ -76,7 +75,7 @@ async function createServerWithChannel(
 
 async function startInstance(): Promise<Instance> {
   const httpServer = createServer(app);
-  const io = createSocketServer(httpServer);
+  const sockets = await createSocketServer(httpServer);
 
   await new Promise<void>((resolve) => {
     httpServer.listen(0, "127.0.0.1", resolve);
@@ -88,7 +87,7 @@ async function startInstance(): Promise<Instance> {
     throw new Error("Expected the server to listen on a TCP port");
   }
 
-  return { io, origin: `http://127.0.0.1:${String(address.port)}` };
+  return { ...sockets, origin: `http://127.0.0.1:${String(address.port)}` };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -114,7 +113,7 @@ describe("typing indicators pass all three gates (S-9, SPEC 8.4)", () => {
       client.close();
     }
 
-    await instance.io.close();
+    await instance.close();
   });
 
   async function open(account: Account): Promise<Client> {

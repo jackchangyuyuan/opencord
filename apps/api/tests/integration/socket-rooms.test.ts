@@ -20,7 +20,10 @@ import {
   users,
 } from "../../src/db/schema/index.js";
 import { revalidateSessions } from "../../src/socket/auth.js";
-import { createSocketServer } from "../../src/socket/index.js";
+import {
+  createSocketServer,
+  type SocketService,
+} from "../../src/socket/index.js";
 import { type Account, cookieHeader, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
@@ -59,7 +62,7 @@ async function listChannels(
 
 describe("socket rooms", () => {
   let httpServer: HttpServer;
-  let io: ReturnType<typeof createSocketServer>;
+  let socketServer: SocketService;
   let origin: string;
   const clients: Client[] = [];
 
@@ -69,7 +72,7 @@ describe("socket rooms", () => {
 
   beforeEach(async () => {
     httpServer = createServer(app);
-    io = createSocketServer(httpServer);
+    socketServer = await createSocketServer(httpServer);
 
     await new Promise<void>((resolve) => {
       httpServer.listen(0, "127.0.0.1", resolve);
@@ -89,7 +92,7 @@ describe("socket rooms", () => {
       client.close();
     }
 
-    await io.close();
+    await socketServer.close();
   });
 
   async function open(account: Account): Promise<Client> {
@@ -135,7 +138,7 @@ describe("socket rooms", () => {
   }
 
   async function roomsOf(client: Client): Promise<Set<string>> {
-    const [socket] = await io.local.fetchSockets();
+    const [socket] = await socketServer.io.local.fetchSockets();
 
     expect(socket).toBeDefined();
     expect(socket?.id).toBe(client.id);
@@ -265,7 +268,7 @@ describe("socket rooms", () => {
       .set({ guestExpiresAt: new Date(Date.now() - 60_000) })
       .where(eq(users.id, ada.id));
 
-    await revalidateSessions(io);
+    await revalidateSessions(socketServer.io);
 
     await expect(closed).resolves.toBe("io server disconnect");
   });
@@ -283,7 +286,7 @@ describe("socket rooms", () => {
       .set({ deactivatedAt: new Date() })
       .where(eq(users.id, ada.id));
 
-    await revalidateSessions(io);
+    await revalidateSessions(socketServer.io);
 
     await expect(closed).resolves.toBe("io server disconnect");
   });
@@ -292,7 +295,7 @@ describe("socket rooms", () => {
     const ada = await signUp("ada");
     const client = await open(ada);
 
-    await revalidateSessions(io);
+    await revalidateSessions(socketServer.io);
 
     expect(client.connected).toBe(true);
   });

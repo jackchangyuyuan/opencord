@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { once } from "node:events";
 import { createServer } from "node:http";
 import { join } from "node:path";
 
@@ -8,10 +9,20 @@ import type {
 } from "@opencord/shared/events";
 import { io as connect, type Socket } from "socket.io-client";
 import request from "supertest";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { z } from "zod";
 
 import { app } from "../../src/app.js";
+import { redis } from "../../src/redis.js";
+import { currentSocketServer } from "../../src/socket/emit.js";
 import { createSocketServer } from "../../src/socket/index.js";
 import type { SocketServer } from "../../src/socket/types.js";
 import { requireTestDatabase } from "../setup.js";
@@ -20,12 +31,16 @@ type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 interface Instance {
   io: SocketServer;
+  close: () => Promise<void>;
   origin: string;
 }
 
 const password = "correct horse battery staple";
 const SETTLE_MS = 400;
 const BOOT_TIMEOUT_MS = 30_000;
+const ATTACH_TIMEOUT_MS = 10_000;
+const EXIT_TIMEOUT_MS = 20_000;
+const STDERR_LIMIT = 4000;
 const entrypoint = join(import.meta.dirname, "../../src/index.ts");
 
 const signUpBody = z.object({ user: z.object({ id: z.string() }) });
@@ -57,7 +72,7 @@ async function signUp(username: string): Promise<Account> {
 
 async function startInstance(): Promise<Instance> {
   const httpServer = createServer(app);
-  const io = createSocketServer(httpServer);
+  const sockets = await createSocketServer(httpServer);
 
   await new Promise<void>((resolve) => {
     httpServer.listen(0, "127.0.0.1", resolve);
@@ -69,7 +84,7 @@ async function startInstance(): Promise<Instance> {
     throw new Error("Expected the server to listen on a TCP port");
   }
 
-  return { io, origin: `http://127.0.0.1:${String(address.port)}` };
+  return { ...sockets, origin: `http://127.0.0.1:${String(address.port)}` };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -96,7 +111,7 @@ describe("draining one instance reaches only its own clients", () => {
       client.close();
     }
 
-    await Promise.all([one.io.close(), two.io.close()]);
+    await Promise.all([one.close(), two.close()]);
   });
 
   async function open(instance: Instance, account: Account): Promise<Client> {
@@ -166,8 +181,59 @@ describe("draining one instance reaches only its own clients", () => {
   });
 });
 
+describe("closing a socket server releases what it opened", () => {
+  const opened: ReturnType<typeof redis.duplicate>[] = [];
+
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  beforeEach(() => {
+    const duplicate = redis.duplicate.bind(redis);
+
+    opened.length = 0;
+
+    vi.spyOn(redis, "duplicate").mockImplementation((options) => {
+      const client = duplicate(options);
+
+      opened.push(client);
+
+      return client;
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("quits the adapter's connections and forgets the server", async () => {
+    const httpServer = createServer(app);
+    const sockets = await createSocketServer(httpServer);
+
+    expect(opened).toHaveLength(2);
+    expect(currentSocketServer()).toBe(sockets.io);
+
+    await sockets.close();
+
+    expect(currentSocketServer()).toBeNull();
+
+    await vi.waitFor(() => {
+      expect(opened.map((client) => client.status)).toEqual(["end", "end"]);
+    });
+
+    await expect(sockets.close()).resolves.toBeUndefined();
+  });
+});
+
 describe("SIGTERM drains the instance that received it", () => {
-  const children: ChildProcess[] = [];
+  interface Instance {
+    child: ChildProcess;
+    origin: string;
+    id: string;
+    stderr: () => string;
+  }
+
+  const booted: Instance[] = [];
   const clients: Client[] = [];
 
   beforeAll(() => {
@@ -179,13 +245,14 @@ describe("SIGTERM drains the instance that received it", () => {
       client.close();
     }
 
-    for (const child of children.splice(0)) {
-      if (child.exitCode === null) {
-        child.kill("SIGKILL");
-      }
-    }
-
-    await sleep(SETTLE_MS);
+    await Promise.all(
+      booted.splice(0).map(async (instance) => {
+        if (instance.child.exitCode === null) {
+          instance.child.kill("SIGKILL");
+          await once(instance.child, "exit");
+        }
+      }),
+    );
   });
 
   async function freePort(): Promise<number> {
@@ -212,10 +279,7 @@ describe("SIGTERM drains the instance that received it", () => {
     return port;
   }
 
-  async function boot(instanceId: string): Promise<{
-    child: ChildProcess;
-    origin: string;
-  }> {
+  async function boot(instanceId: string): Promise<Instance> {
     const port = await freePort();
 
     const child = spawn(process.execPath, ["--import", "tsx", entrypoint], {
@@ -228,36 +292,53 @@ describe("SIGTERM drains the instance that received it", () => {
       stdio: ["ignore", "ignore", "pipe"],
     });
 
-    children.push(child);
+    let captured = "";
 
-    const origin = `http://127.0.0.1:${String(port)}`;
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      captured = `${captured}${chunk}`.slice(-STDERR_LIMIT);
+    });
+
+    const instance: Instance = {
+      child,
+      origin: `http://127.0.0.1:${String(port)}`,
+      id: instanceId,
+      stderr: () => captured,
+    };
+
+    booted.push(instance);
+
     const deadline = Date.now() + BOOT_TIMEOUT_MS;
 
     for (;;) {
       if (child.exitCode !== null) {
-        throw new Error(`${instanceId} exited before it listened`);
+        throw new Error(
+          `${instanceId} exited with ${String(child.exitCode)} before it listened: ${captured}`,
+        );
       }
 
       try {
-        const res = await fetch(`${origin}/livez`);
+        const res = await fetch(`${instance.origin}/livez`);
 
         if (res.ok) {
-          return { child, origin };
+          return instance;
         }
       } catch {
         // Not listening yet.
       }
 
       if (Date.now() > deadline) {
-        throw new Error(`${instanceId} never became reachable`);
+        throw new Error(
+          `${instanceId} never answered /livez within ${String(BOOT_TIMEOUT_MS)}ms: ${captured}`,
+        );
       }
 
       await sleep(100);
     }
   }
 
-  function attach(origin: string, account: Account): Promise<Client> {
-    const client: Client = connect(origin, {
+  function attach(instance: Instance, account: Account): Promise<Client> {
+    const client: Client = connect(instance.origin, {
       autoConnect: false,
       extraHeaders: { cookie: account.cookie },
       reconnection: false,
@@ -266,25 +347,70 @@ describe("SIGTERM drains the instance that received it", () => {
 
     clients.push(client);
 
-    const greeted = new Promise<Client>((resolve) => {
-      client.once("connection:ready", () => {
+    return new Promise<Client>((resolve, reject) => {
+      const done = (): void => {
+        clearTimeout(timer);
+        client.off("connection:ready", ready);
+        client.off("connect_error", failed);
+      };
+
+      const ready = (): void => {
+        done();
         resolve(client);
-      });
+      };
+
+      const failed = (error: Error): void => {
+        done();
+        reject(new Error(`${instance.id} refused a socket: ${error.message}`));
+      };
+
+      const timer = setTimeout(() => {
+        done();
+        reject(
+          new Error(
+            `${instance.id} did not greet a socket within ${String(ATTACH_TIMEOUT_MS)}ms: ${instance.stderr()}`,
+          ),
+        );
+      }, ATTACH_TIMEOUT_MS);
+
+      client.on("connection:ready", ready);
+      client.on("connect_error", failed);
+      client.connect();
     });
+  }
 
-    client.connect();
+  function exitOf(instance: Instance): Promise<number | null> {
+    return new Promise<number | null>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        instance.child.off("exit", done);
+        reject(
+          new Error(
+            `${instance.id} did not exit within ${String(EXIT_TIMEOUT_MS)}ms of SIGTERM: ${instance.stderr()}`,
+          ),
+        );
+      }, EXIT_TIMEOUT_MS);
 
-    return greeted;
+      const done = (code: number | null): void => {
+        clearTimeout(timer);
+        resolve(code);
+      };
+
+      instance.child.once("exit", done);
+    });
   }
 
   it("tells its own clients to reconnect before the socket closes, and exits cleanly", async () => {
     const ada = await signUp("ada");
 
-    const draining = await boot("api-drain");
-    const staying = await boot("api-stay");
+    const [draining, staying] = await Promise.all([
+      boot("api-drain"),
+      boot("api-stay"),
+    ]);
 
-    const drainingClient = await attach(draining.origin, ada);
-    const stayingClient = await attach(staying.origin, ada);
+    const [drainingClient, stayingClient] = await Promise.all([
+      attach(draining, ada),
+      attach(staying, ada),
+    ]);
 
     const order: string[] = [];
 
@@ -301,11 +427,7 @@ describe("SIGTERM drains the instance that received it", () => {
       stayingTold += 1;
     });
 
-    const exited = new Promise<number | null>((resolve) => {
-      draining.child.once("exit", (code) => {
-        resolve(code);
-      });
-    });
+    const exited = exitOf(draining);
 
     draining.child.kill("SIGTERM");
 

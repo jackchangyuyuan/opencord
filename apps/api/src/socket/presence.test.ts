@@ -3,13 +3,7 @@ import { describe, expect, it } from "vitest";
 import { aggregate, type Connection } from "./presence.js";
 
 function connection(overrides: Partial<Connection> = {}): Connection {
-  return {
-    status: "online",
-    idle: false,
-    lastSeenMs: 0,
-    instanceId: "api-test",
-    ...overrides,
-  };
+  return { status: "online", idle: false, ...overrides };
 }
 
 describe("aggregate", () => {

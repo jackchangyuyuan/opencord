@@ -7,12 +7,20 @@ import { startJobRunner } from "./jobs/index.js";
 import { logger } from "./lib/logger.js";
 import { assertStorageOrigin } from "./lib/storage.js";
 import { redis } from "./redis.js";
-import { createSocketServer } from "./socket/index.js";
+import { createSocketServer, type SocketService } from "./socket/index.js";
 
 const SHUTDOWN_TIMEOUT_MS = 15_000;
 
 const httpServer = createServer(app);
-const io = createSocketServer(httpServer);
+
+let sockets: SocketService;
+
+try {
+  sockets = await createSocketServer(httpServer);
+} catch (error) {
+  logger.error({ err: error }, "Socket server could not reach Redis");
+  process.exit(1);
+}
 
 try {
   await assertStorageOrigin();
@@ -49,12 +57,9 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
       });
     });
 
-    io.local.emit("system:reconnect");
+    sockets.io.local.emit("system:reconnect");
 
-    await io.close();
-
-    httpServer.closeIdleConnections();
-
+    await sockets.close();
     await drained;
     await jobRunner.stop();
     await db.$client.end();

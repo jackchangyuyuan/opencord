@@ -5,33 +5,25 @@ import type {
   ServerToClientEvents,
 } from "@opencord/shared/events";
 import { io as connect, type Socket } from "socket.io-client";
-import request from "supertest";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { app } from "../../src/app.js";
 import { config } from "../../src/config.js";
 import { db } from "../../src/db/index.js";
 import { sessions } from "../../src/db/schema/index.js";
-import { createSocketServer } from "../../src/socket/index.js";
+import {
+  createSocketServer,
+  type SocketService,
+} from "../../src/socket/index.js";
+import { cookieHeader, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 const INSIDE_REFRESH_WINDOW_MS = 5 * 24 * 60 * 60 * 1000;
 
-async function signUp(): Promise<string> {
-  const res = await request(app).post("/api/auth/sign-up/email").send({
-    email: "ada@example.com",
-    name: "Ada",
-    password: "correct horse battery staple",
-    username: "ada",
-  });
-
-  expect(res.status).toBe(200);
-
-  const cookies = res.get("Set-Cookie") ?? [];
-
-  return cookies.flatMap((cookie) => cookie.split(";", 1)).join("; ");
+async function signIn(): Promise<string> {
+  return cookieHeader((await signUp("ada")).cookies);
 }
 
 function tamper(cookie: string): string {
@@ -40,7 +32,7 @@ function tamper(cookie: string): string {
 
 describe("Socket.IO handshake", () => {
   let httpServer: HttpServer;
-  let io: ReturnType<typeof createSocketServer>;
+  let socketServer: SocketService;
   let origin: string;
   const clients: Client[] = [];
 
@@ -50,7 +42,7 @@ describe("Socket.IO handshake", () => {
 
   beforeEach(async () => {
     httpServer = createServer(app);
-    io = createSocketServer(httpServer);
+    socketServer = await createSocketServer(httpServer);
 
     await new Promise<void>((resolve) => {
       httpServer.listen(0, "127.0.0.1", resolve);
@@ -70,7 +62,7 @@ describe("Socket.IO handshake", () => {
       client.close();
     }
 
-    await io.close();
+    await socketServer.close();
   });
 
   function open(cookie?: string): Client {
@@ -95,7 +87,7 @@ describe("Socket.IO handshake", () => {
   }
 
   it("greets a client whose session cookie rides the handshake", async () => {
-    const client = open(await signUp());
+    const client = open(await signIn());
 
     const ready = new Promise<{ instanceId: string }>((resolve) => {
       client.once("connection:ready", resolve);
@@ -108,14 +100,14 @@ describe("Socket.IO handshake", () => {
 
     await expect(ready).resolves.toEqual({ instanceId: config.INSTANCE_ID });
 
-    await io.close();
+    await socketServer.close();
 
     await expect(disconnected).resolves.toBe("transport close");
     expect(client.connected).toBe(false);
   });
 
   it("does not extend the session lifetime on connect", async () => {
-    const cookie = await signUp();
+    const cookie = await signIn();
 
     const expiresAt = new Date(Date.now() + INSIDE_REFRESH_WINDOW_MS);
 
@@ -148,7 +140,7 @@ describe("Socket.IO handshake", () => {
   });
 
   it("rejects a connection whose session token is invalid", async () => {
-    const client = open(tamper(await signUp()));
+    const client = open(tamper(await signIn()));
     const rejected = rejectionOf(client);
 
     client.connect();
@@ -158,7 +150,7 @@ describe("Socket.IO handshake", () => {
   });
 
   it("rejects a connection whose session has expired", async () => {
-    const cookie = await signUp();
+    const cookie = await signIn();
 
     await db.update(sessions).set({ expiresAt: new Date(Date.now() - 60_000) });
 

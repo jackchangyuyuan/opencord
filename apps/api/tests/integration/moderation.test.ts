@@ -21,7 +21,10 @@ import {
   roles,
   serverMembers,
 } from "../../src/db/schema/index.js";
-import { createSocketServer } from "../../src/socket/index.js";
+import {
+  createSocketServer,
+  type SocketService,
+} from "../../src/socket/index.js";
 import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
@@ -431,7 +434,7 @@ describe("moderation", () => {
 
 describe("moderation over the socket", () => {
   let httpServer: HttpServer;
-  let io: ReturnType<typeof createSocketServer>;
+  let socketServer: SocketService;
   let origin: string;
   const clients: Client[] = [];
 
@@ -441,7 +444,7 @@ describe("moderation over the socket", () => {
 
   beforeEach(async () => {
     httpServer = createServer(app);
-    io = createSocketServer(httpServer);
+    socketServer = await createSocketServer(httpServer);
 
     await new Promise<void>((resolve) => {
       httpServer.listen(0, "127.0.0.1", resolve);
@@ -461,7 +464,7 @@ describe("moderation over the socket", () => {
       client.close();
     }
 
-    await io.close();
+    await socketServer.close();
   });
 
   async function open(account: Account): Promise<Client> {
@@ -492,7 +495,7 @@ describe("moderation over the socket", () => {
   }
 
   async function roomsOf(socketId: string): Promise<Set<string>> {
-    const sockets = await io.local.fetchSockets();
+    const sockets = await socketServer.io.local.fetchSockets();
     const socket = sockets.find((entry) => entry.id === socketId);
 
     return new Set(socket?.rooms ?? []);

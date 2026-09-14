@@ -69,11 +69,12 @@ export async function assignRole(
 
   requireHeldPermissions(context, role.permissions);
 
-  await db.transaction(async (tx) => {
-    await tx
+  const assigned = await db.transaction(async (tx) => {
+    const written = await tx
       .insert(memberRoles)
       .values({ serverId: context.server.id, userId: targetUserId, roleId })
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ roleId: memberRoles.roleId });
 
     await writeAudit(tx, {
       serverId: context.server.id,
@@ -83,12 +84,16 @@ export async function assignRole(
       targetId: targetUserId,
       metadata: { roleId },
     });
+
+    return written.length > 0;
   });
 
-  await rederiveRoomsFor([targetUserId]);
+  if (assigned) {
+    await rederiveRoomsFor([targetUserId]);
 
-  emitRoleUpdate(context.server.id);
-  emitPermissionsChanged(context.server.id);
+    emitRoleUpdate(context.server.id);
+    emitPermissionsChanged(context.server.id);
+  }
 
   return listMemberRoleIds(context.server.id, targetUserId);
 }
@@ -106,8 +111,8 @@ export async function unassignRole(
 
   requireBelowActor(target, actorPosition(context, actorId));
 
-  await db.transaction(async (tx) => {
-    await tx
+  const unassigned = await db.transaction(async (tx) => {
+    const removed = await tx
       .delete(memberRoles)
       .where(
         and(
@@ -115,7 +120,8 @@ export async function unassignRole(
           eq(memberRoles.userId, targetUserId),
           eq(memberRoles.roleId, roleId),
         ),
-      );
+      )
+      .returning({ roleId: memberRoles.roleId });
 
     await writeAudit(tx, {
       serverId: context.server.id,
@@ -125,12 +131,16 @@ export async function unassignRole(
       targetId: targetUserId,
       metadata: { roleId },
     });
+
+    return removed.length > 0;
   });
 
-  await rederiveRoomsFor([targetUserId]);
+  if (unassigned) {
+    await rederiveRoomsFor([targetUserId]);
 
-  emitRoleUpdate(context.server.id);
-  emitPermissionsChanged(context.server.id);
+    emitRoleUpdate(context.server.id);
+    emitPermissionsChanged(context.server.id);
+  }
 
   return listMemberRoleIds(context.server.id, targetUserId);
 }

@@ -1,4 +1,6 @@
+import { presenceStatusSchema } from "@opencord/shared/schemas";
 import type { PresenceStatus } from "@opencord/shared/types";
+import { z } from "zod";
 
 import { config } from "../config.js";
 import { redis } from "../redis.js";
@@ -20,12 +22,12 @@ redis.call('hdel', KEYS[2], ARGV[2])
 return 1
 `;
 
-export interface Connection {
-  status: PresenceStatus;
-  idle: boolean;
-  lastSeenMs: number;
-  instanceId: string;
-}
+const connectionSchema = z.object({
+  status: presenceStatusSchema,
+  idle: z.boolean(),
+});
+
+export type Connection = z.infer<typeof connectionSchema>;
 
 export function aggregate(connections: readonly Connection[]): PresenceStatus {
   if (connections.length === 0) {
@@ -52,32 +54,17 @@ function seenMember(userId: string, socketId: string): string {
 }
 
 function parseConnection(raw: string): Connection | null {
-  const parsed: unknown = JSON.parse(raw);
+  let decoded: unknown;
 
-  if (typeof parsed !== "object" || parsed === null) {
+  try {
+    decoded = JSON.parse(raw);
+  } catch {
     return null;
   }
 
-  const { status, idle, lastSeenMs, instanceId } = parsed as Record<
-    string,
-    unknown
-  >;
+  const parsed = connectionSchema.safeParse(decoded);
 
-  if (
-    typeof status !== "string" ||
-    typeof idle !== "boolean" ||
-    typeof lastSeenMs !== "number" ||
-    typeof instanceId !== "string"
-  ) {
-    return null;
-  }
-
-  return {
-    status: status as PresenceStatus,
-    idle,
-    lastSeenMs,
-    instanceId,
-  };
+  return parsed.success ? parsed.data : null;
 }
 
 function parseConnections(stored: unknown): Connection[] {
@@ -125,12 +112,7 @@ async function writeConnection(
   input: { status: PresenceStatus; idle: boolean },
   now: number,
 ): Promise<void> {
-  const connection: Connection = {
-    status: input.status,
-    idle: input.idle,
-    lastSeenMs: now,
-    instanceId: config.INSTANCE_ID,
-  };
+  const connection: Connection = { status: input.status, idle: input.idle };
 
   await redis
     .multi()

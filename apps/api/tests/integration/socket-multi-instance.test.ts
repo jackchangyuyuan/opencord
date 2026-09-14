@@ -5,42 +5,32 @@ import type {
   ServerToClientEvents,
 } from "@opencord/shared/events";
 import { io as connect, type Socket } from "socket.io-client";
-import request from "supertest";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { app } from "../../src/app.js";
 import { createSocketServer } from "../../src/socket/index.js";
 import type { SocketServer } from "../../src/socket/types.js";
+import { cookieHeader, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 interface Instance {
   io: SocketServer;
+  close: () => Promise<void>;
   origin: string;
 }
 
 const PROBE = { instanceId: "cross-instance-probe" };
 const PROBE_INTERVAL_MS = 25;
 
-async function signUp(): Promise<string> {
-  const res = await request(app).post("/api/auth/sign-up/email").send({
-    email: "ada@example.com",
-    name: "Ada",
-    password: "correct horse battery staple",
-    username: "ada",
-  });
-
-  expect(res.status).toBe(200);
-
-  const cookies = res.get("Set-Cookie") ?? [];
-
-  return cookies.flatMap((cookie) => cookie.split(";", 1)).join("; ");
+async function signIn(): Promise<string> {
+  return cookieHeader((await signUp("ada")).cookies);
 }
 
 async function startInstance(): Promise<Instance> {
   const httpServer = createServer(app);
-  const io = createSocketServer(httpServer);
+  const sockets = await createSocketServer(httpServer);
 
   await new Promise<void>((resolve) => {
     httpServer.listen(0, "127.0.0.1", resolve);
@@ -52,7 +42,7 @@ async function startInstance(): Promise<Instance> {
     throw new Error("Expected the server to listen on a TCP port");
   }
 
-  return { io, origin: `http://127.0.0.1:${String(address.port)}` };
+  return { ...sockets, origin: `http://127.0.0.1:${String(address.port)}` };
 }
 
 function socketIdOf(client: Client): string {
@@ -83,7 +73,7 @@ describe("cross-instance Socket.IO delivery", () => {
       client.close();
     }
 
-    await Promise.all([one.io.close(), two.io.close()]);
+    await Promise.all([one.close(), two.close()]);
   });
 
   async function open(instance: Instance, cookie: string): Promise<Client> {
@@ -110,7 +100,7 @@ describe("cross-instance Socket.IO delivery", () => {
   }
 
   it("delivers an event emitted on one instance to a client on the other", async () => {
-    const cookie = await signUp();
+    const cookie = await signIn();
 
     await open(one, cookie);
     const b = await open(two, cookie);

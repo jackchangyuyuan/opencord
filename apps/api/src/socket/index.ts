@@ -38,7 +38,14 @@ async function initializeConnection(
   socket.emit("connection:ready", { instanceId: config.INSTANCE_ID });
 }
 
-export function createSocketServer(httpServer: HttpServer): SocketServer {
+export interface SocketService {
+  io: SocketServer;
+  close: () => Promise<void>;
+}
+
+export async function createSocketServer(
+  httpServer: HttpServer,
+): Promise<SocketService> {
   const io: SocketServer = new Server(httpServer, {
     transports: ["websocket"],
   });
@@ -52,6 +59,15 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
     });
   }
 
+  // Connected before the adapter is built, because the adapter subscribes from
+  // its constructor and keeps none of the promises. `duplicate()` inherits
+  // lazyConnect, so on an unconnected client those subscriptions sit in
+  // ioredis's offline queue -- and closing a client whose offline queue is not
+  // empty rejects every command in it, with nobody left holding them. A
+  // connected client takes them straight to the stream, and a Redis that
+  // cannot be reached fails the boot here rather than silently.
+  await Promise.all([publisher.connect(), subscriber.connect()]);
+
   io.adapter(
     createAdapter(publisher, subscriber, {
       requestsTimeout: ADAPTER_REQUEST_TIMEOUT_MS,
@@ -61,6 +77,8 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
   authenticateSockets(io);
 
   registerSocketServer(io);
+
+  const leaving = new Set<Promise<unknown>>();
 
   io.on("connection", (socket) => {
     initializeConnection(io, socket).catch((error: unknown) => {
@@ -101,11 +119,15 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
     });
 
     socket.on("disconnect", () => {
-      dropConnection(io, socket.data.user.id, socket.id).catch(
+      const dropped = dropConnection(io, socket.data.user.id, socket.id).catch(
         (error: unknown) => {
           logger.error({ err: error }, "Presence cleanup failed");
         },
       );
+
+      leaving.add(dropped);
+
+      void dropped.finally(() => leaving.delete(dropped));
     });
   });
 
@@ -125,11 +147,23 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
 
   revalidating.unref();
 
-  io.on("close", () => {
-    clearInterval(sweeping);
-    clearInterval(revalidating);
-    unregisterSocketServer(io);
-  });
+  let closing: Promise<void> | null = null;
 
-  return io;
+  const close = (): Promise<void> => {
+    closing ??= (async () => {
+      clearInterval(sweeping);
+      clearInterval(revalidating);
+
+      unregisterSocketServer(io);
+
+      await io.close();
+      await Promise.allSettled([...leaving]);
+
+      await Promise.all([publisher.quit(), subscriber.quit()]);
+    })();
+
+    return closing;
+  };
+
+  return { io, close };
 }

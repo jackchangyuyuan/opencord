@@ -21,6 +21,7 @@ type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 interface Instance {
   io: SocketServer;
+  close: () => Promise<void>;
   origin: string;
 }
 
@@ -33,7 +34,7 @@ const statsBody = z.object({
 
 async function startInstance(): Promise<Instance> {
   const httpServer = createServer(app);
-  const io = createSocketServer(httpServer);
+  const sockets = await createSocketServer(httpServer);
 
   await new Promise<void>((resolve) => {
     httpServer.listen(0, "127.0.0.1", resolve);
@@ -45,7 +46,7 @@ async function startInstance(): Promise<Instance> {
     throw new Error("Expected the server to listen on a TCP port");
   }
 
-  return { io, origin: `http://127.0.0.1:${String(address.port)}` };
+  return { ...sockets, origin: `http://127.0.0.1:${String(address.port)}` };
 }
 
 describe("GET /api/v1/stats", () => {
@@ -65,7 +66,7 @@ describe("GET /api/v1/stats", () => {
       client.close();
     }
 
-    await instance.io.close();
+    await instance.close();
   });
 
   async function open(account: Account): Promise<Client> {

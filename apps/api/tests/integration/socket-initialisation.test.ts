@@ -5,7 +5,6 @@ import type {
   ServerToClientEvents,
 } from "@opencord/shared/events";
 import { io as connect, type Socket } from "socket.io-client";
-import request from "supertest";
 import {
   afterEach,
   beforeAll,
@@ -15,7 +14,6 @@ import {
   it,
   vi,
 } from "vitest";
-import { z } from "zod";
 
 const failing = vi.hoisted(() => ({ heartbeat: false }));
 
@@ -38,32 +36,18 @@ vi.mock("../../src/socket/presence.js", async (importOriginal) => {
 });
 
 const { app } = await import("../../src/app.js");
+const { redis } = await import("../../src/redis.js");
 const { createSocketServer } = await import("../../src/socket/index.js");
+type SocketService = Awaited<ReturnType<typeof createSocketServer>>;
+const { cookieHeader, signUp } = await import("../helpers/accounts.js");
 const { requireTestDatabase } = await import("../setup.js");
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
 
-const password = "correct horse battery staple";
 const SETTLE_MS = 400;
 
-const signUpBody = z.object({ user: z.object({ id: z.string() }) });
-
-async function signUp(username: string): Promise<string> {
-  const res = await request(app)
-    .post("/api/auth/sign-up/email")
-    .send({
-      email: `${username}@example.com`,
-      name: username,
-      password,
-      username,
-    });
-
-  expect(res.status).toBe(200);
-  expect(signUpBody.parse(res.body).user.id).toBeTruthy();
-
-  const cookies = res.get("Set-Cookie") ?? [];
-
-  return cookies.flatMap((cookie) => cookie.split(";", 1)).join("; ");
+async function signIn(username: string): Promise<string> {
+  return cookieHeader((await signUp(username)).cookies);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -74,7 +58,7 @@ function sleep(ms: number): Promise<void> {
 
 describe("a connection that cannot finish initialising is closed", () => {
   let httpServer: HttpServer;
-  let io: ReturnType<typeof createSocketServer>;
+  let socketServer: SocketService;
   let origin: string;
   const clients: Client[] = [];
 
@@ -85,7 +69,7 @@ describe("a connection that cannot finish initialising is closed", () => {
   beforeEach(async () => {
     failing.heartbeat = false;
     httpServer = createServer(app);
-    io = createSocketServer(httpServer);
+    socketServer = await createSocketServer(httpServer);
 
     await new Promise<void>((resolve) => {
       httpServer.listen(0, "127.0.0.1", resolve);
@@ -107,7 +91,7 @@ describe("a connection that cannot finish initialising is closed", () => {
       client.close();
     }
 
-    await io.close();
+    await socketServer.close();
   });
 
   function open(cookie: string): Client {
@@ -125,7 +109,7 @@ describe("a connection that cannot finish initialising is closed", () => {
   }
 
   it("never reports ready and leaves no socket behind when presence fails", async () => {
-    const cookie = await signUp("ada");
+    const cookie = await signIn("ada");
 
     failing.heartbeat = true;
 
@@ -145,11 +129,11 @@ describe("a connection that cannot finish initialising is closed", () => {
 
     expect(ready).toBe(0);
     expect(disconnected).toBe(1);
-    expect(await io.local.fetchSockets()).toEqual([]);
+    expect(await socketServer.io.local.fetchSockets()).toEqual([]);
   });
 
   it("reports ready once initialisation succeeds", async () => {
-    const cookie = await signUp("ada");
+    const cookie = await signIn("ada");
 
     let ready = 0;
 
@@ -162,6 +146,38 @@ describe("a connection that cannot finish initialising is closed", () => {
     await sleep(SETTLE_MS);
 
     expect(ready).toBe(1);
-    expect(await io.local.fetchSockets()).toHaveLength(1);
+    expect(await socketServer.io.local.fetchSockets()).toHaveLength(1);
+  });
+});
+
+describe("the connections the adapter is given", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("are connected before the adapter is built", async () => {
+    const duplicate = redis.duplicate.bind(redis);
+    const created: { status: string }[] = [];
+
+    vi.spyOn(redis, "duplicate").mockImplementation((...args) => {
+      const client = duplicate(...args);
+
+      created.push(client);
+
+      return client;
+    });
+
+    const httpServer = createServer();
+    const sockets = await createSocketServer(httpServer);
+
+    expect(created).toHaveLength(2);
+    expect(created.map((client) => client.status)).toEqual(["ready", "ready"]);
+
+    await sockets.close();
+    httpServer.close();
   });
 });

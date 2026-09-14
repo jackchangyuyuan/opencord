@@ -142,7 +142,7 @@ describe("the ambient-activity job", () => {
 
     const [connection] = await readConnections(fixture.personaId);
 
-    expect(connection?.instanceId).toBe(config.INSTANCE_ID);
+    expect(connection).toEqual({ status: "online", idle: false });
     expect(
       await redis.zscore(SEEN_KEY, `${fixture.personaId}:demo-ambient`),
     ).not.toBeNull();
