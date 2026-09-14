@@ -1,42 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import {
-  type APIRequestContext,
-  type Browser,
-  type BrowserContext,
-  expect,
-  test,
-} from "@playwright/test";
+import { expect, test } from "@playwright/test";
+
+import { signUp } from "./fixtures/accounts.js";
 
 const baseURL = process.env["E2E_BASE_URL"] ?? "http://localhost:5173";
-
-const password = "correct horse battery staple";
-
-interface Account {
-  id: string;
-  request: APIRequestContext;
-  context: BrowserContext;
-}
-
-async function signUp(browser: Browser, prefix: string): Promise<Account> {
-  const context = await browser.newContext({ baseURL });
-  const id = randomUUID();
-
-  const created = await context.request.post("/api/auth/sign-up/email", {
-    data: {
-      email: `${prefix}-${id}@example.com`,
-      name: prefix,
-      password,
-      username: `${prefix}${id.slice(0, 8)}`,
-    },
-  });
-
-  expect(created.status()).toBe(200);
-
-  const { user } = (await created.json()) as { user: { id: string } };
-
-  return { id: user.id, request: context.request, context };
-}
 
 test("a guest creates a server and a second user joins it (flow 3)", async ({
   browser,

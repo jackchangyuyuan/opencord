@@ -18,21 +18,34 @@ interface Fixture {
   serverId: string;
   openChannelId: string;
   backgroundChannelId: string;
+  other: APIRequestContext;
 }
 
-async function seed(request: APIRequestContext): Promise<Fixture> {
+async function signUp(
+  request: APIRequestContext,
+  prefix: string,
+): Promise<void> {
   const id = randomUUID();
 
-  const signUp = await request.post("/api/auth/sign-up/email", {
+  const created = await request.post("/api/auth/sign-up/email", {
     data: {
-      email: `unread-${id}@example.com`,
-      name: "Unread",
+      email: `${prefix}-${id}@example.com`,
+      name: prefix,
       password,
-      username: `unread${id.slice(0, 8)}`,
+      username: `${prefix}${id.slice(0, 8)}`,
     },
   });
 
-  expect(signUp.status()).toBe(200);
+  expect(created.status()).toBe(200);
+}
+
+async function seed(
+  request: APIRequestContext,
+  browser: Browser,
+): Promise<Fixture> {
+  const id = randomUUID();
+
+  await signUp(request, "unread");
 
   const created = await request.post("/api/v1/servers", {
     data: { name: `Unread ${id.slice(0, 8)}` },
@@ -70,11 +83,28 @@ async function seed(request: APIRequestContext): Promise<Fixture> {
     throw new Error("sign-up returned no session cookie");
   }
 
+  const invited = await request.post(`/api/v1/servers/${serverId}/invites`, {
+    data: {},
+  });
+
+  expect(invited.status()).toBe(201);
+
+  const { code } = (await invited.json()) as { code: string };
+
+  const otherContext = await browser.newContext({ baseURL });
+
+  await signUp(otherContext.request, "unreadother");
+
+  const joined = await otherContext.request.post(`/api/v1/invites/${code}`);
+
+  expect(joined.status()).toBe(200);
+
   return {
     cookie: { name: session.name, value: session.value },
     serverId,
     openChannelId: open.id,
     backgroundChannelId,
+    other: otherContext.request,
   };
 }
 
@@ -98,7 +128,7 @@ test("badges a background channel and clears it on visit (flow 6)", async ({
   browser,
   request,
 }) => {
-  const fixture = await seed(request);
+  const fixture = await seed(request, browser);
   const { context, page } = await openWindow(browser, fixture);
 
   const badge = page.getByText(`${BACKGROUND}: unread messages`);
@@ -107,7 +137,15 @@ test("badges a background channel and clears it on visit (flow 6)", async ({
   await expect(link).toBeVisible();
   await expect(badge).toBeHidden();
 
-  const sent = await request.post(
+  const mine = await request.post(
+    `/api/v1/channels/${fixture.backgroundChannelId}/messages`,
+    { data: { content: "written by me", nonce: randomUUID() } },
+  );
+
+  expect(mine.status()).toBe(201);
+  await expect(badge).toBeHidden();
+
+  const sent = await fixture.other.post(
     `/api/v1/channels/${fixture.backgroundChannelId}/messages`,
     { data: { content: "over here", nonce: randomUUID() } },
   );
@@ -121,6 +159,10 @@ test("badges a background channel and clears it on visit (flow 6)", async ({
   await expect(
     page.getByTestId("message-content").getByText("over here"),
   ).toBeVisible();
+
+  await expect(
+    page.locator('[data-slot="new-messages-divider"]'),
+  ).toBeInViewport();
 
   await expect(badge).toBeHidden();
 

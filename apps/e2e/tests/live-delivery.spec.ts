@@ -101,7 +101,9 @@ test("delivers a message live to a second window (flow 2)", async ({
   await expect(
     watcher.page.getByTestId("message-content").getByText(body),
   ).toBeVisible();
-  await expect(watcher.page.getByRole("status")).toHaveText(body);
+  await expect(
+    watcher.page.locator('[data-slot="message-announcer"]'),
+  ).toHaveText(body);
 
   await sender.context.close();
   await watcher.context.close();

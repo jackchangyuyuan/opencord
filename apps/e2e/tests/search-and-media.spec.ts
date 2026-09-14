@@ -1,16 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import {
-  type APIRequestContext,
-  type Browser,
-  type BrowserContext,
-  expect,
-  test,
-} from "@playwright/test";
+import { expect, test } from "@playwright/test";
+
+import { type Account, signUp } from "./fixtures/accounts.js";
 
 const baseURL = process.env["E2E_BASE_URL"] ?? "http://localhost:5173";
-
-const password = "correct horse battery staple";
 
 const VIEW_CHANNEL = 1 << 0;
 
@@ -18,46 +12,6 @@ const PIXEL = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
   "base64",
 );
-
-interface Account {
-  id: string;
-  cookie: { name: string; value: string };
-  request: APIRequestContext;
-  context: BrowserContext;
-}
-
-async function signUp(browser: Browser, prefix: string): Promise<Account> {
-  const context = await browser.newContext({ baseURL });
-  const id = randomUUID();
-
-  const created = await context.request.post("/api/auth/sign-up/email", {
-    data: {
-      email: `${prefix}-${id}@example.com`,
-      name: prefix,
-      password,
-      username: `${prefix}${id.slice(0, 8)}`,
-    },
-  });
-
-  expect(created.status()).toBe(200);
-
-  const { user } = (await created.json()) as { user: { id: string } };
-
-  const session = (await context.request.storageState()).cookies.find(
-    (entry) => entry.name === "better-auth.session_token",
-  );
-
-  if (session === undefined) {
-    throw new Error("sign-up returned no session cookie");
-  }
-
-  return {
-    id: user.id,
-    cookie: { name: session.name, value: session.value },
-    request: context.request,
-    context,
-  };
-}
 
 async function upload(account: Account): Promise<string> {
   const authorized = await account.request.post("/api/v1/uploads", {
@@ -226,8 +180,10 @@ test("search and media stop at the same permission boundary (flow 5)", async ({
   await page.getByRole("combobox", { name: "Search messages" }).fill(term);
   await page.getByRole("button", { name: "Search", exact: true }).click();
 
-  await expect(page.getByText(`a public ${term} note`)).toBeVisible();
-  await expect(page.getByText(`a private ${term} note`)).toBeHidden();
+  const panel = page.getByRole("complementary", { name: "Search" });
+
+  await expect(panel.getByText(`a public ${term} note`)).toBeVisible();
+  await expect(panel.getByText(`a private ${term} note`)).toBeHidden();
 
   await owner.context.close();
   await member.context.close();

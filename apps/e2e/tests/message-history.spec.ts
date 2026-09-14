@@ -108,28 +108,119 @@ async function wheelUpUntil(
     .toBe(true);
 }
 
+async function scrollUpBy(page: Page, pixels: number): Promise<void> {
+  await page
+    .getByTestId("virtuoso-scroller")
+    .evaluate((element, delta: number) => {
+      element.dispatchEvent(
+        new WheelEvent("wheel", { bubbles: true, deltaY: -delta }),
+      );
+      element.scrollTop = Math.max(0, element.scrollTop - delta);
+    }, pixels);
+
+  await page.waitForTimeout(90);
+}
+
+async function settledHeight(page: Page): Promise<void> {
+  const height = () =>
+    page
+      .getByTestId("virtuoso-scroller")
+      .evaluate((element) => element.scrollHeight);
+
+  await expect
+    .poll(
+      async () => {
+        const before = await height();
+
+        await page.waitForTimeout(150);
+
+        return (await height()) === before;
+      },
+      { intervals: [150], timeout: 20_000 },
+    )
+    .toBe(true);
+}
+
 function seededMessage(page: Page, index: number): Locator {
-  return page.getByText(`seeded ${String(index)}`, { exact: true });
+  return page
+    .getByTestId("virtuoso-item-list")
+    .getByText(`seeded ${String(index)}`, { exact: true });
+}
+
+function topmostSeeded(page: Page): Promise<number | null> {
+  return page.evaluate(() => {
+    const scroller = document.querySelector(
+      '[data-testid="virtuoso-scroller"]',
+    );
+
+    if (scroller === null) {
+      return null;
+    }
+
+    const top = scroller.getBoundingClientRect().top;
+
+    for (const paragraph of scroller.querySelectorAll("p")) {
+      const matched = /^seeded (\d+)$/.exec(paragraph.textContent);
+
+      if (
+        matched !== null &&
+        paragraph.getBoundingClientRect().bottom > top + 4
+      ) {
+        return Number(matched[1]);
+      }
+    }
+
+    return null;
+  });
 }
 
 test.describe("the virtualised message history", () => {
-  test("opens at the newest message and holds its place when older history loads", async ({
+  test("opens at the newest message with more than a screenful behind it", async ({
     browser,
     request,
   }) => {
     const fixture = await seed(request);
     const { close, page } = await openChannel(browser, fixture);
 
-    const newest = seededMessage(page, SEEDED - 1);
-    const oldestOfFirstPage = seededMessage(page, SEEDED - PAGE_SIZE);
+    await expect(seededMessage(page, SEEDED - 1)).toBeInViewport();
+    await expect(seededMessage(page, SEEDED - PAGE_SIZE - 1)).toHaveCount(0);
+
+    const screens = await page
+      .getByTestId("virtuoso-scroller")
+      .evaluate((element) => element.scrollHeight / element.clientHeight);
+
+    expect(screens).toBeGreaterThan(3);
+
+    await close();
+  });
+
+  test("holds the reader's place when older history is prepended", async ({
+    browser,
+    request,
+  }) => {
+    const fixture = await seed(request);
+    const { close, page } = await openChannel(browser, fixture);
+
     const olderPage = seededMessage(page, SEEDED - PAGE_SIZE - 1);
 
-    await expect(newest).toBeInViewport();
-    await expect(oldestOfFirstPage).toBeHidden();
+    await expect(seededMessage(page, SEEDED - 1)).toBeInViewport();
+    await expect(olderPage).toHaveCount(0);
 
-    await wheelUpUntil(page, async () => (await olderPage.count()) > 0);
+    let anchor: number | null = null;
 
-    await expect(oldestOfFirstPage).toBeInViewport();
+    for (let step = 0; step < 200; step += 1) {
+      if ((await olderPage.count()) > 0) {
+        break;
+      }
+
+      anchor = await topmostSeeded(page);
+      await scrollUpBy(page, 160);
+    }
+
+    await expect(olderPage).toHaveCount(1);
+    expect(anchor).not.toBeNull();
+    await settledHeight(page);
+    await expect(seededMessage(page, anchor ?? 0)).toBeInViewport();
 
     await close();
   });
@@ -145,6 +236,7 @@ test.describe("the virtualised message history", () => {
 
     await expect(seededMessage(page, SEEDED - 1)).toBeInViewport();
     await wheelUpUntil(page, () => watched.isVisible());
+    await settledHeight(page);
 
     const before = await watched.boundingBox();
 
@@ -153,7 +245,9 @@ test.describe("the virtualised message history", () => {
     });
 
     await expect(
-      page.getByText("live arrival", { exact: true }),
+      page
+        .getByTestId("virtuoso-item-list")
+        .getByText("live arrival", { exact: true }),
     ).toBeAttached();
 
     const after = await watched.boundingBox();

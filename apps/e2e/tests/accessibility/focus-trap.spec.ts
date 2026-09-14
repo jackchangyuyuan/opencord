@@ -117,6 +117,34 @@ test.describe("overlay focus trapping", { tag: "@a11y" }, () => {
     );
   });
 
+  test("opens the profile dialog from the account bar and returns focus", async ({
+    page,
+    enterDemo,
+  }) => {
+    await enterDemo("light");
+
+    const bar = page.locator('[data-slot="user-bar"]');
+    const trigger = bar.getByRole("button", { name: "Edit profile" });
+
+    await expect(trigger).toBeVisible();
+
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+
+    const dialog = page.getByRole("dialog", { name: "Your profile" });
+
+    await expect(dialog).toBeVisible();
+    await expectFocusInside(page, '[role="dialog"]');
+    expect(await escapees(page, '[role="dialog"]')).toEqual([]);
+
+    expect(page.url()).toContain("/app");
+    await expect(
+      dialog.getByRole("button", { name: "Sign out" }),
+    ).toBeVisible();
+
+    await closesBackToTrigger(page, trigger, dialog);
+  });
+
   test("moves focus into a popover and releases it to its trigger", async ({
     page,
     enterDemo,
@@ -184,7 +212,10 @@ test.describe("overlay focus trapping", { tag: "@a11y" }, () => {
   }) => {
     await enterDemo("light");
 
-    await page.locator("[data-message-row]").first().click({ button: "right" });
+    const row = page.locator("[data-message-row]").last();
+
+    await expect(row).toBeVisible();
+    await row.click({ button: "right" });
 
     const menu = page.getByRole("menu");
 
