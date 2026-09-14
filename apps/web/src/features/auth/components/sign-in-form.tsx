@@ -12,6 +12,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { SocialSignIn } from "@/features/auth/components/social-sign-in";
 import { sessionQueryKey } from "@/features/auth/hooks/use-session";
 import { applyFieldErrors } from "@/features/auth/lib/field-errors";
 import { readReturnTo } from "@/features/auth/lib/return-to";
@@ -45,6 +46,8 @@ export function SignInForm() {
   return (
     <form noValidate onSubmit={(event) => void onSubmit(event)}>
       <FieldGroup>
+        <SocialSignIn page="sign-in" />
+
         <Field data-invalid={form.formState.errors.email !== undefined}>
           <FieldLabel htmlFor="sign-in-email">Email</FieldLabel>
           <Input
@@ -71,7 +74,7 @@ export function SignInForm() {
 
         <FieldError errors={[form.formState.errors.root]} />
 
-        <Button disabled={form.formState.isSubmitting} type="submit">
+        <Button disabled={form.formState.isSubmitting} size="lg" type="submit">
           Sign in
         </Button>
       </FieldGroup>

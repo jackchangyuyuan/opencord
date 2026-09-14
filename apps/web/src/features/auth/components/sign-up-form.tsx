@@ -12,6 +12,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { SocialSignIn } from "@/features/auth/components/social-sign-in";
 import { sessionQueryKey } from "@/features/auth/hooks/use-session";
 import { applyFieldErrors } from "@/features/auth/lib/field-errors";
 import { readReturnTo } from "@/features/auth/lib/return-to";
@@ -45,6 +46,8 @@ export function SignUpForm() {
   return (
     <form noValidate onSubmit={(event) => void onSubmit(event)}>
       <FieldGroup>
+        <SocialSignIn page="sign-up" />
+
         <p className="text-sm text-muted-foreground">
           Already exploring the demo? A new account starts empty — use{" "}
           <strong className="font-medium">Save my account</strong> inside the
@@ -99,7 +102,7 @@ export function SignUpForm() {
 
         <FieldError errors={[form.formState.errors.root]} />
 
-        <Button disabled={form.formState.isSubmitting} type="submit">
+        <Button disabled={form.formState.isSubmitting} size="lg" type="submit">
           Create account
         </Button>
       </FieldGroup>
