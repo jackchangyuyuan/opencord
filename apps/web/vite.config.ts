@@ -10,6 +10,7 @@ export default defineConfig({
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
   server: {
+    warmup: { clientFiles: ["./src/main.tsx"] },
     proxy: {
       "/api": { target: "http://127.0.0.1:3000", changeOrigin: false },
       "/socket.io": {
