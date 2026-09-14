@@ -19,6 +19,7 @@ import {
   claimStaleConnection,
   readAggregate,
   readConnections,
+  SEEN_KEY,
   SWEEP_AFTER_MS,
   sweepPresence,
 } from "../../src/socket/presence.js";
@@ -374,11 +375,11 @@ describe("presence aggregation across instances", () => {
     const member = `${ada.id}:${socketId}`;
     const staleAt = Date.now() - SWEEP_AFTER_MS - 10_000;
 
-    await redis.zadd("presence:seen", staleAt, member);
+    await redis.zadd(SEEN_KEY, staleAt, member);
 
     const cutoffMs = Date.now() - SWEEP_AFTER_MS;
 
-    await redis.zadd("presence:seen", Date.now(), member);
+    await redis.zadd(SEEN_KEY, Date.now(), member);
 
     expect(await claimStaleConnection(ada.id, socketId, cutoffMs)).toBe(false);
     expect(await readConnections(ada.id)).toHaveLength(1);
@@ -396,7 +397,7 @@ describe("presence aggregation across instances", () => {
     const member = `${ada.id}:${socketId}`;
     const staleAt = Date.now() - SWEEP_AFTER_MS - 10_000;
 
-    await redis.zadd("presence:seen", staleAt, member);
+    await redis.zadd(SEEN_KEY, staleAt, member);
 
     const cutoffMs = Date.now() - SWEEP_AFTER_MS;
 

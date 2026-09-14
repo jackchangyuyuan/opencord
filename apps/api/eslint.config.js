@@ -68,7 +68,14 @@ export default defineConfig([
     rules: {
       "turbo/no-undeclared-env-vars": [
         "error",
-        { allowList: ["^DATABASE_URL$", "^VITEST_POOL_ID$"] },
+        {
+          allowList: [
+            "^DATABASE_URL$",
+            "^PRESENCE_NAMESPACE$",
+            "^SOCKET_ADAPTER_KEY$",
+            "^VITEST_POOL_ID$",
+          ],
+        },
       ],
     },
   },

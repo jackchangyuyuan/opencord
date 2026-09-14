@@ -9,7 +9,7 @@ import type { AppSocket, SocketServer } from "./types.js";
 export const SWEEP_AFTER_MS = 90_000;
 export const SWEEP_INTERVAL_MS = 30_000;
 
-const SEEN_KEY = "presence:seen";
+export const SEEN_KEY = `${config.PRESENCE_NAMESPACE}:seen`;
 
 const CLAIM_STALE_CONNECTION = `
 local score = redis.call('zscore', KEYS[1], ARGV[1])
@@ -44,7 +44,7 @@ export function aggregate(connections: readonly Connection[]): PresenceStatus {
 }
 
 function connectionsKey(userId: string): string {
-  return `presence:conns:${userId}`;
+  return `${config.PRESENCE_NAMESPACE}:conns:${userId}`;
 }
 
 function seenMember(userId: string, socketId: string): string {

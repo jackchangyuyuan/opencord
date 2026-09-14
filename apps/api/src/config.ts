@@ -51,6 +51,7 @@ const baseSchema = z.object({
     .enum(["development", "test", "production"])
     .default("development"),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  PRESENCE_NAMESPACE: z.string().min(1).default("presence"),
   PUBLIC_ORIGIN: z.url(),
   RATE_LIMIT_AUTH_POINTS: z.coerce.number().int().min(1).default(20),
   RATE_LIMIT_CLAIM_POINTS: z.coerce.number().int().min(1).default(5),

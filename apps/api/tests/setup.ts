@@ -15,6 +15,8 @@ const migrationsFolder = join(import.meta.dirname, "../src/db/migrations");
 
 export const testDatabaseName = `opencord_test_${poolId}`;
 
+process.env["PRESENCE_NAMESPACE"] = `presence-test-${poolId}`;
+
 export function requireTestDatabase(): void {
   if (maintenanceUrl === undefined) {
     throw new Error(

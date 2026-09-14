@@ -17,6 +17,7 @@ import { redis } from "../../src/redis.js";
 import {
   readAggregate,
   readConnections,
+  SEEN_KEY,
   SWEEP_AFTER_MS,
   sweepPresence,
 } from "../../src/socket/presence.js";
@@ -26,8 +27,6 @@ import { requireTestDatabase } from "../setup.js";
 const io = {
   to: () => ({ emit: () => undefined }),
 } as unknown as SocketServer;
-
-const SEEN_KEY = "presence:seen";
 
 interface Fixture {
   guestId: string;
