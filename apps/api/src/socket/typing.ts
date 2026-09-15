@@ -1,7 +1,8 @@
 import { Permissions } from "@opencord/shared/permissions";
 import { typingStartSchema } from "@opencord/shared/schemas";
 
-import { resolveChannelPermissions } from "../access/channels.js";
+import { loadChannelContext } from "../access/context.js";
+import { AppError } from "../lib/errors.js";
 import { typingLimiter } from "../middleware/rate-limit.js";
 import { channelRoom } from "./rooms.js";
 import type { AppSocket } from "./types.js";
@@ -25,12 +26,6 @@ export async function handleTypingStart(
     return;
   }
 
-  const permissions = await resolveChannelPermissions(userId, channelId);
-
-  if (permissions === null || (permissions & REQUIRED) !== REQUIRED) {
-    return;
-  }
-
   const verdict = await typingLimiter.consume(`${userId}:${channelId}`);
 
   if (verdict === "abusive") {
@@ -39,6 +34,20 @@ export async function handleTypingStart(
   }
 
   if (verdict === "limited") {
+    return;
+  }
+
+  const context = await loadChannelContext(channelId, userId).catch(
+    (error: unknown) => {
+      if (error instanceof AppError) {
+        return null;
+      }
+
+      throw error;
+    },
+  );
+
+  if (context === null || (context.permissions & REQUIRED) !== REQUIRED) {
     return;
   }
 
