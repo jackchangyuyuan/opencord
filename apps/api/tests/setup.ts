@@ -17,6 +17,8 @@ export const testDatabaseName = `opencord_test_${poolId}`;
 
 process.env["PRESENCE_NAMESPACE"] = `presence-test-${poolId}`;
 
+process.env["SOCKET_ADAPTER_KEY"] = `socket.io-test-${poolId}`;
+
 export function requireTestDatabase(): void {
   if (maintenanceUrl === undefined) {
     throw new Error(

@@ -1,8 +1,8 @@
 import { Router } from "express";
 
 import { config } from "../../config.js";
-import { countLocalSockets } from "../../socket/emit.js";
 import { countOnlineUsers } from "../../socket/presence.js";
+import { countLocalSockets } from "../../socket/registry.js";
 
 export const statsRouter = Router();
 

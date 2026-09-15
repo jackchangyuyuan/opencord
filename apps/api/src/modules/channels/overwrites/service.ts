@@ -2,22 +2,20 @@ import { SERVER_ONLY_PERMISSIONS } from "@opencord/shared/permissions";
 import type { OverwriteInput } from "@opencord/shared/schemas";
 import { and, eq } from "drizzle-orm";
 
-import type { ChannelRow, ServerContext } from "../../../access/context.js";
+import type { ServerContext } from "../../../access/context.js";
 import { db } from "../../../db/index.js";
 import {
   channelMemberOverwrites,
   channelRoleOverwrites,
+  type ChannelRow,
   roles,
   serverMembers,
 } from "../../../db/schema/index.js";
 import { writeAudit } from "../../../lib/audit.js";
 import { AppError, notFound } from "../../../lib/errors.js";
-import {
-  emitPermissionsChanged,
-  rederiveRoomsFor,
-  serverMemberIds,
-} from "../../../socket/emit.js";
-import { actorPosition, highestPositionOf } from "../../roles/queries.js";
+import { emitPermissionsChanged } from "../../../socket/emit.js";
+import { syncServerRooms } from "../../../socket/rooms.js";
+import { actorPosition, highestPositionFor } from "../../roles/queries.js";
 import {
   requireBelowActor,
   requireHeldPermissions,
@@ -38,7 +36,7 @@ function requireChannelScopedBits(allow: number, deny: number): void {
 }
 
 async function announceOverwriteChange(serverId: string): Promise<void> {
-  await rederiveRoomsFor(await serverMemberIds(serverId));
+  await syncServerRooms(serverId);
 
   emitPermissionsChanged(serverId);
 }
@@ -87,7 +85,7 @@ async function requireEditableMember(
   }
 
   requireBelowActor(
-    await highestPositionOf(context.server.id, userId),
+    await highestPositionFor(context.server.id, userId),
     actorPosition(context, actorId),
   );
 }
@@ -141,15 +139,16 @@ export async function deleteRoleOverwrite(
 ): Promise<void> {
   await requireEditableRole(context, actorId, roleId);
 
-  await db.transaction(async (tx) => {
-    await tx
+  const deleted = await db.transaction(async (tx) => {
+    const removed = await tx
       .delete(channelRoleOverwrites)
       .where(
         and(
           eq(channelRoleOverwrites.channelId, channel.id),
           eq(channelRoleOverwrites.roleId, roleId),
         ),
-      );
+      )
+      .returning({ roleId: channelRoleOverwrites.roleId });
 
     await writeAudit(tx, {
       serverId: context.server.id,
@@ -159,9 +158,13 @@ export async function deleteRoleOverwrite(
       targetId: roleId,
       metadata: { channelId: channel.id },
     });
+
+    return removed.length > 0;
   });
 
-  await announceOverwriteChange(context.server.id);
+  if (deleted) {
+    await announceOverwriteChange(context.server.id);
+  }
 }
 
 export async function putMemberOverwrite(
@@ -216,15 +219,16 @@ export async function deleteMemberOverwrite(
 ): Promise<void> {
   await requireEditableMember(context, actorId, userId);
 
-  await db.transaction(async (tx) => {
-    await tx
+  const deleted = await db.transaction(async (tx) => {
+    const removed = await tx
       .delete(channelMemberOverwrites)
       .where(
         and(
           eq(channelMemberOverwrites.channelId, channel.id),
           eq(channelMemberOverwrites.userId, userId),
         ),
-      );
+      )
+      .returning({ userId: channelMemberOverwrites.userId });
 
     await writeAudit(tx, {
       serverId: context.server.id,
@@ -234,7 +238,11 @@ export async function deleteMemberOverwrite(
       targetId: userId,
       metadata: { channelId: channel.id },
     });
+
+    return removed.length > 0;
   });
 
-  await announceOverwriteChange(context.server.id);
+  if (deleted) {
+    await announceOverwriteChange(context.server.id);
+  }
 }

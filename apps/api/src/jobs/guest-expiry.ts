@@ -22,12 +22,8 @@ import {
   users,
 } from "../db/schema/index.js";
 import { logger } from "../lib/logger.js";
-import {
-  emitPermissionsChanged,
-  emitServerEvent,
-  rederiveRoomsFor,
-  revokeUserEverywhere,
-} from "../socket/emit.js";
+import { emitPermissionsChanged, emitServerEvent } from "../socket/emit.js";
+import { revokeUserEverywhere, syncUserRooms } from "../socket/rooms.js";
 
 export const GUEST_EXPIRY_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -198,7 +194,7 @@ export async function runGuestExpiry(now = new Date()): Promise<ExpiryResult> {
     for (const plan of outcome.transferred) {
       emitServerEvent("server:update", plan.serverId);
       emitPermissionsChanged(plan.serverId);
-      await rederiveRoomsFor([plan.nextOwnerId]);
+      await syncUserRooms([plan.nextOwnerId]);
     }
 
     revokeUserEverywhere(guestId);

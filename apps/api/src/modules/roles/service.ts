@@ -5,17 +5,13 @@ import type {
 } from "@opencord/shared/schemas";
 import { and, asc, eq, not, sql } from "drizzle-orm";
 
-import type { RoleRow, ServerContext } from "../../access/context.js";
+import type { ServerContext } from "../../access/context.js";
 import { db } from "../../db/index.js";
-import { roles } from "../../db/schema/index.js";
+import { type RoleRow, roles } from "../../db/schema/index.js";
 import { writeAudit } from "../../lib/audit.js";
 import { AppError, forbidden, notFound } from "../../lib/errors.js";
-import {
-  emitPermissionsChanged,
-  emitRoleUpdate,
-  rederiveRoomsFor,
-  serverMemberIds,
-} from "../../socket/emit.js";
+import { emitPermissionsChanged, emitRoleUpdate } from "../../socket/emit.js";
+import { syncServerRooms } from "../../socket/rooms.js";
 import {
   actorPosition,
   findServerRole,
@@ -23,32 +19,15 @@ import {
   serializeRole,
 } from "./queries.js";
 
-export async function announceRoleChange(serverId: string): Promise<void> {
-  await rederiveRoomsFor(await serverMemberIds(serverId));
+async function announceAccessChange(serverId: string): Promise<void> {
+  await syncServerRooms(serverId);
 
   emitRoleUpdate(serverId);
   emitPermissionsChanged(serverId);
 }
 
-export function requireBelowActor(position: number, actor: number): void {
-  if (position >= actor) {
-    throw forbidden(
-      "ROLE_HIERARCHY",
-      "That role is at or above your highest role",
-    );
-  }
-}
-
-export function requireHeldPermissions(
-  context: ServerContext,
-  mask: number,
-): void {
-  if ((mask & ~context.permissions) !== 0) {
-    throw forbidden(
-      "PERMISSION_NOT_HELD",
-      "You cannot grant a permission you do not hold",
-    );
-  }
+function changesAccess(input: UpdateRoleInput): boolean {
+  return input.permissions !== undefined;
 }
 
 async function requireRankedBelowActor(
@@ -67,9 +46,6 @@ async function requireRankedBelowActor(
   return role;
 }
 
-// Its permissions, and that is all. `@everyone` has no rank to move -- position
-// 0 is reserved for it by a partial unique index -- and a default role with a
-// colour would paint the whole roster.
 const DEFAULT_ROLE_EDITABLE = new Set(["permissions"]);
 
 function requireDefaultRoleFields(input: UpdateRoleInput): void {
@@ -95,6 +71,27 @@ function requireDefaultRoleFields(input: UpdateRoleInput): void {
 // sort by uuid and the new one lands wherever its id happens to fall.
 const BOTTOM_POSITION = 1;
 
+export function requireBelowActor(position: number, actor: number): void {
+  if (position >= actor) {
+    throw forbidden(
+      "ROLE_HIERARCHY",
+      "That role is at or above your highest role",
+    );
+  }
+}
+
+export function requireHeldPermissions(
+  context: ServerContext,
+  mask: number,
+): void {
+  if ((mask & ~context.permissions) !== 0) {
+    throw forbidden(
+      "PERMISSION_NOT_HELD",
+      "You cannot grant a permission you do not hold",
+    );
+  }
+}
+
 export async function createRole(
   context: ServerContext,
   actorId: string,
@@ -111,8 +108,6 @@ export async function createRole(
 
   const created = await db.transaction(async (tx) => {
     if (atBottom) {
-      // `@everyone` is excluded by name rather than by position: it is pinned at 0 by
-      // a partial unique index, and moving it is refused everywhere else in this file.
       await tx
         .update(roles)
         .set({ position: sql`${roles.position} + 1` })
@@ -148,7 +143,7 @@ export async function createRole(
     return serializeRole(role);
   });
 
-  await announceRoleChange(context.server.id);
+  emitRoleUpdate(context.server.id);
 
   return created;
 }
@@ -196,7 +191,11 @@ export async function updateRole(
     return serializeRole(role);
   });
 
-  await announceRoleChange(context.server.id);
+  if (changesAccess(input)) {
+    await announceAccessChange(context.server.id);
+  } else {
+    emitRoleUpdate(context.server.id);
+  }
 
   return updated;
 }
@@ -312,7 +311,7 @@ export async function reorderRoles(
       .orderBy(asc(roles.position), asc(roles.id));
   });
 
-  await announceRoleChange(serverId);
+  emitRoleUpdate(serverId);
 
   return { roles: ordered.map(serializeRole) };
 }
@@ -341,5 +340,5 @@ export async function deleteRole(
     });
   });
 
-  await announceRoleChange(context.server.id);
+  await announceAccessChange(context.server.id);
 }

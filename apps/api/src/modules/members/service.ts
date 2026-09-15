@@ -1,19 +1,16 @@
 import { and, eq } from "drizzle-orm";
 
-import type { RoleRow, ServerContext } from "../../access/context.js";
+import type { ServerContext } from "../../access/context.js";
 import { db } from "../../db/index.js";
-import { memberRoles } from "../../db/schema/index.js";
+import { memberRoles, type RoleRow } from "../../db/schema/index.js";
 import { writeAudit } from "../../lib/audit.js";
 import { forbidden, notFound } from "../../lib/errors.js";
-import {
-  emitPermissionsChanged,
-  emitRoleUpdate,
-  rederiveRoomsFor,
-} from "../../socket/emit.js";
+import { emitPermissionsChanged, emitRoleUpdate } from "../../socket/emit.js";
+import { syncUserRooms } from "../../socket/rooms.js";
 import {
   actorPosition,
   findServerRole,
-  highestPositionOf,
+  highestPositionFor,
 } from "../roles/queries.js";
 import { requireBelowActor, requireHeldPermissions } from "../roles/service.js";
 import { isServerMember, listMemberRoleIds } from "./queries.js";
@@ -89,7 +86,7 @@ export async function assignRole(
   });
 
   if (assigned) {
-    await rederiveRoomsFor([targetUserId]);
+    await syncUserRooms([targetUserId]);
 
     emitRoleUpdate(context.server.id);
     emitPermissionsChanged(context.server.id);
@@ -107,7 +104,7 @@ export async function unassignRole(
   await requireTargetMember(context, targetUserId);
   await requireAssignableRole(context, actorId, roleId);
 
-  const target = await highestPositionOf(context.server.id, targetUserId);
+  const target = await highestPositionFor(context.server.id, targetUserId);
 
   requireBelowActor(target, actorPosition(context, actorId));
 
@@ -136,7 +133,7 @@ export async function unassignRole(
   });
 
   if (unassigned) {
-    await rederiveRoomsFor([targetUserId]);
+    await syncUserRooms([targetUserId]);
 
     emitRoleUpdate(context.server.id);
     emitPermissionsChanged(context.server.id);

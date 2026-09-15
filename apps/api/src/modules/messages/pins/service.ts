@@ -1,9 +1,9 @@
 import type { Message } from "@opencord/shared/types";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 
-import type { ChannelContext, ChannelRow } from "../../../access/context.js";
+import type { ChannelContext } from "../../../access/context.js";
 import { db } from "../../../db/index.js";
-import { messages } from "../../../db/schema/index.js";
+import { type ChannelRow, messages } from "../../../db/schema/index.js";
 import { lockChannelPins } from "../../../lib/advisory-locks.js";
 import { writeAudit } from "../../../lib/audit.js";
 import { notFound, pinLimitReached } from "../../../lib/errors.js";

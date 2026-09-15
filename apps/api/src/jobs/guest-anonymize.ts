@@ -5,7 +5,7 @@ import { messages, users } from "../db/schema/index.js";
 import { logger } from "../lib/logger.js";
 import { FOREIGN_KEY_VIOLATION, isViolation } from "../lib/postgres-errors.js";
 import { deleteObject } from "../lib/storage.js";
-import { softDeleteMessage } from "../modules/messages/service.js";
+import { softDeleteMessages } from "../modules/messages/service.js";
 
 export const ANONYMIZE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -83,9 +83,7 @@ export async function runGuestAnonymize(): Promise<AnonymizeResult> {
           })
           .where(eq(users.id, guest.id));
 
-        for (const message of live) {
-          await softDeleteMessage(tx, message.channelId, message.id, deletedAt);
-        }
+        await softDeleteMessages(tx, deletedAt, live);
 
         return true;
       });

@@ -6,6 +6,7 @@ import type {
   ServerToClientEvents,
 } from "@opencord/shared/events";
 import { Permissions } from "@opencord/shared/permissions";
+import { eq } from "drizzle-orm";
 import { io as connect, type Socket } from "socket.io-client";
 import request from "supertest";
 import {
@@ -20,14 +21,57 @@ import {
 import { z } from "zod";
 
 import { app } from "../../src/app.js";
+import { config } from "../../src/config.js";
 import { db } from "../../src/db/index.js";
-import { roles, serverMembers } from "../../src/db/schema/index.js";
+import {
+  channelRoleOverwrites,
+  roles,
+  serverMembers,
+} from "../../src/db/schema/index.js";
+import { redis } from "../../src/redis.js";
 import { createSocketServer } from "../../src/socket/index.js";
+import { reconcileLocalRooms, syncUserRooms } from "../../src/socket/rooms.js";
 import type { SocketServer } from "../../src/socket/types.js";
 import { type Account, cookieHeader, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>;
+
+const permissions = vi.hoisted(() => ({
+  afterNextRead: null as (() => Promise<void>) | null,
+  trace: null as string[] | null,
+  readDelayMs: 0,
+}));
+
+vi.mock("../../src/access/channels.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/access/channels.js")>();
+
+  return {
+    ...actual,
+    resolveAccessibleChannelsByUser: async (
+      ...args: Parameters<typeof actual.resolveAccessibleChannelsByUser>
+    ) => {
+      permissions.trace?.push("read:start");
+
+      if (permissions.readDelayMs > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, permissions.readDelayMs),
+        );
+      }
+
+      const answer = await actual.resolveAccessibleChannelsByUser(...args);
+      const hook = permissions.afterNextRead;
+
+      permissions.afterNextRead = null;
+      await hook?.();
+
+      permissions.trace?.push("read:end");
+
+      return answer;
+    },
+  };
+});
 
 interface Instance {
   io: SocketServer;
@@ -41,6 +85,8 @@ const SETTLE_TIMEOUT_MS = 10_000;
 const SETTLE_POLL_MS = 25;
 const TEST_TIMEOUT_MS = 20_000;
 const SILENCE_MS = 250;
+
+const CORRECTED_CONVERGE_READS = 3;
 
 const serverBody = z.object({ id: z.string() });
 const channelList = z.array(z.object({ id: z.string(), name: z.string() }));
@@ -93,6 +139,8 @@ describe("cross-instance permission revocation", () => {
   });
 
   beforeEach(async () => {
+    permissions.trace = null;
+    permissions.readDelayMs = 0;
     holder = await startInstance();
     mutator = await startInstance();
   });
@@ -145,6 +193,28 @@ describe("cross-instance permission revocation", () => {
 
       if (predicate(rooms) || Date.now() > deadline) {
         return rooms;
+      }
+
+      await sleep(SETTLE_POLL_MS);
+    }
+  }
+
+  async function readsSettled(count: number): Promise<void> {
+    const deadline = Date.now() + SETTLE_TIMEOUT_MS;
+
+    for (;;) {
+      const ended = (permissions.trace ?? []).filter(
+        (event) => event === "read:end",
+      ).length;
+
+      if (ended >= count) {
+        return;
+      }
+
+      if (Date.now() > deadline) {
+        throw new Error(
+          `the convergence made ${String(ended)} of ${String(count)} reads`,
+        );
       }
 
       await sleep(SETTLE_POLL_MS);
@@ -388,6 +458,188 @@ describe("cross-instance permission revocation", () => {
 
     expect((await send(fixture.ada, fixture.channelId)).status).toBe(201);
     await expect(quiet).resolves.toBe(true);
+  });
+
+  it("does not leave a room behind when a stale synchronisation writes last", async () => {
+    const fixture = await seed();
+    const client = await open(holder, fixture.grace);
+
+    const stale = syncUserRooms([fixture.grace.id]);
+
+    const denied = await request(app)
+      .put(
+        `/api/v1/channels/${fixture.channelId}/overwrites/roles/${fixture.everyoneRoleId}`,
+      )
+      .set("Cookie", fixture.ada.cookies)
+      .send({ deny: Permissions.VIEW_CHANNEL });
+
+    expect(denied.status).toBeLessThan(300);
+
+    await stale;
+
+    const rooms = await settle(
+      holder,
+      (current) => !current.has(`channel:${fixture.channelId}`),
+    );
+
+    expect(rooms.has(`channel:${fixture.channelId}`)).toBe(false);
+
+    const quiet = silence(client, SILENCE_MS);
+
+    expect((await send(fixture.ada, fixture.channelId)).status).toBe(201);
+    await expect(quiet).resolves.toBe(true);
+  });
+
+  it("never reads a user's permissions while another pass is applying them", async () => {
+    const fixture = await seed();
+
+    await open(holder, fixture.grace);
+
+    permissions.trace = [];
+    permissions.readDelayMs = 25;
+
+    await Promise.all([
+      reconcileLocalRooms(holder.io),
+      reconcileLocalRooms(holder.io),
+    ]);
+
+    const trace = permissions.trace;
+
+    permissions.trace = null;
+    permissions.readDelayMs = 0;
+
+    expect(trace.length).toBeGreaterThan(2);
+
+    let open_ = 0;
+
+    for (const event of trace) {
+      open_ += event === "read:start" ? 1 : -1;
+      expect(open_).toBeLessThanOrEqual(1);
+      expect(open_).toBeGreaterThanOrEqual(0);
+    }
+
+    expect(open_).toBe(0);
+  });
+
+  it("takes back a room a stale pass had just granted", async () => {
+    const fixture = await seed();
+
+    await db.insert(channelRoleOverwrites).values({
+      channelId: fixture.channelId,
+      serverId: fixture.serverId,
+      roleId: fixture.everyoneRoleId,
+      deny: Permissions.VIEW_CHANNEL,
+    });
+
+    const client = await open(holder, fixture.grace);
+
+    expect((await roomsOn(holder)).has(`channel:${fixture.channelId}`)).toBe(
+      false,
+    );
+
+    await db
+      .delete(channelRoleOverwrites)
+      .where(eq(channelRoleOverwrites.channelId, fixture.channelId));
+
+    permissions.trace = [];
+
+    permissions.afterNextRead = async () => {
+      await db.insert(channelRoleOverwrites).values({
+        channelId: fixture.channelId,
+        serverId: fixture.serverId,
+        roleId: fixture.everyoneRoleId,
+        deny: Permissions.VIEW_CHANNEL,
+      });
+    };
+
+    await syncUserRooms([fixture.grace.id]);
+
+    await readsSettled(CORRECTED_CONVERGE_READS);
+
+    permissions.trace = null;
+
+    const rooms = await roomsOn(holder);
+
+    expect(rooms.has(`channel:${fixture.channelId}`)).toBe(false);
+    expect(rooms.has(`server:${fixture.serverId}`)).toBe(true);
+
+    const quiet = silence(client, SILENCE_MS);
+
+    expect((await send(fixture.ada, fixture.channelId)).status).toBe(201);
+    await expect(quiet).resolves.toBe(true);
+  });
+
+  it("revokes on the other instance while a peer answers nothing", async () => {
+    const fixture = await seed();
+    const client = await open(holder, fixture.grace);
+
+    expect((await roomsOn(holder)).has(`channel:${fixture.channelId}`)).toBe(
+      true,
+    );
+
+    const silent = redis.duplicate();
+
+    await silent.subscribe(`${config.SOCKET_ADAPTER_KEY}-request#/#`);
+
+    try {
+      const denied = await request(app)
+        .put(
+          `/api/v1/channels/${fixture.channelId}/overwrites/roles/${fixture.everyoneRoleId}`,
+        )
+        .set("Cookie", fixture.ada.cookies)
+        .send({ deny: Permissions.VIEW_CHANNEL });
+
+      expect(denied.status).toBe(200);
+
+      const rooms = await settle(
+        holder,
+        (current) => !current.has(`channel:${fixture.channelId}`),
+      );
+
+      expect(rooms.has(`channel:${fixture.channelId}`)).toBe(false);
+
+      const quiet = silence(client, SILENCE_MS);
+
+      expect((await send(fixture.ada, fixture.channelId)).status).toBe(201);
+      await expect(quiet).resolves.toBe(true);
+    } finally {
+      await silent.unsubscribe();
+      await silent.quit();
+    }
+  });
+
+  it("answers a created server whose synchronisation failed", async () => {
+    const ada = await signUp("ada");
+
+    await open(mutator, ada);
+
+    permissions.afterNextRead = () =>
+      Promise.reject(new Error("the permission read failed"));
+
+    const created = await request(app)
+      .post("/api/v1/servers")
+      .set("Cookie", ada.cookies)
+      .send({ name: "Analytical Engine" });
+
+    expect(created.status).toBe(201);
+
+    const serverId = serverBody.parse(created.body).id;
+    const stored = await db.query.servers.findFirst({
+      columns: { id: true },
+      where: { id: serverId },
+    });
+
+    expect(stored).toBeDefined();
+
+    expect((await roomsOn(mutator)).has(`server:${serverId}`)).toBe(false);
+
+    await reconcileLocalRooms(mutator.io);
+
+    const rooms = await settle(mutator, (current) =>
+      current.has(`server:${serverId}`),
+    );
+
+    expect(rooms.has(`server:${serverId}`)).toBe(true);
   });
 
   it("keeps the mutating instance's own view consistent", async () => {

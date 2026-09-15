@@ -33,12 +33,7 @@ messagesRouter.post(
   requireChannelPermission(Permissions.SEND_MESSAGES),
   sendMessageRateLimit,
   async (req, res) => {
-    const result = await sendMessage(
-      req.channel,
-      req.channel.channel,
-      req.user,
-      req.body,
-    );
+    const result = await sendMessage(req.channel, req.user, req.body);
 
     res.status(result.created ? 201 : 200).json(result.message);
   },
@@ -66,7 +61,6 @@ messagesRouter.patch(
     res.json(
       await editMessage(
         req.channel,
-        req.channel.channel,
         req.user.id,
         req.params.messageId,
         req.body,
@@ -81,12 +75,7 @@ messagesRouter.delete(
   requireChannelPermission(),
   async (req, res) => {
     res.json(
-      await deleteMessage(
-        req.channel,
-        req.channel.channel,
-        req.user.id,
-        req.params.messageId,
-      ),
+      await deleteMessage(req.channel, req.user.id, req.params.messageId),
     );
   },
 );

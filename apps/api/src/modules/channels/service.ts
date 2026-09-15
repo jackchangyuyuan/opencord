@@ -6,17 +6,13 @@ import type {
 import { asc, eq, sql } from "drizzle-orm";
 
 import { resolveAccessibleChannels } from "../../access/channels.js";
-import type { ChannelRow, ServerContext } from "../../access/context.js";
+import type { ServerContext } from "../../access/context.js";
 import { db, type Transaction } from "../../db/index.js";
-import { channels } from "../../db/schema/index.js";
+import { type ChannelRow, channels } from "../../db/schema/index.js";
 import { writeAudit } from "../../lib/audit.js";
 import { AppError, notFound } from "../../lib/errors.js";
-import {
-  emitChannelEvent,
-  emitPermissionsChanged,
-  rederiveRoomsFor,
-  serverMemberIds,
-} from "../../socket/emit.js";
+import { emitChannelEvent, emitPermissionsChanged } from "../../socket/emit.js";
+import { syncServerRooms } from "../../socket/rooms.js";
 import { type ChannelSummary, serializeChannel } from "./queries.js";
 
 const DEFAULT_CHANNEL_NAMES = ["general", "random"] as const;
@@ -24,20 +20,15 @@ const DEFAULT_CHANNEL_NAMES = ["general", "random"] as const;
 export async function createDefaultChannels(
   tx: Transaction,
   serverId: string,
-): Promise<string[]> {
-  const created = await tx
-    .insert(channels)
-    .values(
-      DEFAULT_CHANNEL_NAMES.map((name, position) => ({
-        serverId,
-        type: "text" as const,
-        name,
-        position,
-      })),
-    )
-    .returning({ id: channels.id });
-
-  return created.map((channel) => channel.id);
+): Promise<void> {
+  await tx.insert(channels).values(
+    DEFAULT_CHANNEL_NAMES.map((name, position) => ({
+      serverId,
+      type: "text" as const,
+      name,
+      position,
+    })),
+  );
 }
 
 export async function createChannel(
@@ -80,7 +71,7 @@ export async function createChannel(
     return serializeChannel(created);
   });
 
-  await rederiveRoomsFor(await serverMemberIds(context.server.id));
+  await syncServerRooms(context.server.id);
 
   emitChannelEvent("channel:create", context.server.id, channel.id);
   emitPermissionsChanged(context.server.id);
@@ -142,7 +133,7 @@ export async function deleteChannel(
 
   emitChannelEvent("channel:delete", context.server.id, channel.id);
 
-  await rederiveRoomsFor(await serverMemberIds(context.server.id));
+  await syncServerRooms(context.server.id);
 
   emitPermissionsChanged(context.server.id);
 }

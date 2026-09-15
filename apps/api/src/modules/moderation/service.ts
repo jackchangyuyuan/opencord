@@ -6,15 +6,11 @@ import { bans, serverMembers } from "../../db/schema/index.js";
 import { lockMembershipPair } from "../../lib/advisory-locks.js";
 import { writeAudit } from "../../lib/audit.js";
 import { forbidden, notFound } from "../../lib/errors.js";
-import {
-  disconnectMemberSockets,
-  emitMemberEvent,
-  rederiveRoomsFor,
-} from "../../socket/emit.js";
-import { lockedServerOwner } from "../members/queries.js";
-import { actorPosition, highestPositionOf } from "../roles/queries.js";
+import { emitMemberEvent } from "../../socket/emit.js";
+import { disconnectUserSockets, syncUserRooms } from "../../socket/rooms.js";
+import { isServerMember, lockedServerOwner } from "../members/queries.js";
+import { actorPosition, highestPositionFor } from "../roles/queries.js";
 import { requireBelowActor } from "../roles/service.js";
-import { isMember } from "./queries.js";
 
 async function requireNotOwner(
   tx: Transaction,
@@ -40,7 +36,7 @@ async function requireRemovable(
   }
 
   requireBelowActor(
-    await highestPositionOf(context.server.id, targetId),
+    await highestPositionFor(context.server.id, targetId),
     actorPosition(context, actorId),
   );
 }
@@ -50,7 +46,7 @@ export async function kickMember(
   actorId: string,
   targetId: string,
 ): Promise<void> {
-  if (!(await isMember(context.server.id, targetId))) {
+  if (!(await isServerMember(context.server.id, targetId))) {
     throw notFound("MEMBER_NOT_FOUND", "That member is not in this server");
   }
 
@@ -77,7 +73,7 @@ export async function kickMember(
     });
   });
 
-  await rederiveRoomsFor([targetId]);
+  await syncUserRooms([targetId]);
 
   emitMemberEvent("member:leave", context.server.id, targetId);
 }
@@ -127,8 +123,9 @@ export async function banMember(
     });
   });
 
-  await rederiveRoomsFor([targetId]);
-  await disconnectMemberSockets(targetId);
+  await syncUserRooms([targetId]);
+
+  disconnectUserSockets(targetId);
 
   emitMemberEvent("member:leave", context.server.id, targetId);
 }

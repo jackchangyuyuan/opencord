@@ -22,8 +22,8 @@ import { z } from "zod";
 
 import { app } from "../../src/app.js";
 import { redis } from "../../src/redis.js";
-import { currentSocketServer } from "../../src/socket/emit.js";
 import { createSocketServer } from "../../src/socket/index.js";
+import { currentSocketServer } from "../../src/socket/registry.js";
 import type { SocketServer } from "../../src/socket/types.js";
 import { requireTestDatabase } from "../setup.js";
 

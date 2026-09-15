@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { config } from "../config.js";
 import { redis } from "../redis.js";
-import { currentSocketServer } from "./emit.js";
+import { currentSocketServer } from "./registry.js";
 import { listPresencePeerIds, listUserAudienceRooms } from "./rooms.js";
 import type { AppSocket, SocketServer } from "./types.js";
 

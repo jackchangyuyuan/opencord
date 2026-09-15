@@ -1,51 +1,42 @@
 import type { Message } from "@opencord/shared/types";
 
 import { logger } from "../lib/logger.js";
+import { currentSocketServer } from "./registry.js";
 import {
   channelRoom,
-  disconnectUser,
-  joinServerRooms,
-  listServerMemberIds,
   listUserAudienceRooms,
-  listViewableChannelRooms,
-  rederiveRooms,
-  revokeSession,
-  revokeUser,
   serverRoom,
   userRoom,
 } from "./rooms.js";
-import type { SocketServer } from "./types.js";
-
-let current: SocketServer | null = null;
-
-export function registerSocketServer(io: SocketServer): void {
-  current = io;
-}
-
-export function unregisterSocketServer(io: SocketServer): void {
-  if (current === io) {
-    current = null;
-  }
-}
-
-export function currentSocketServer(): SocketServer | null {
-  return current;
-}
-
-export function countLocalSockets(): number {
-  return current === null ? 0 : current.of("/").sockets.size;
-}
 
 export function emitMessageCreate(message: Message): void {
-  current?.to(channelRoom(message.channelId)).emit("message:create", {
-    message,
-  });
+  currentSocketServer()
+    ?.to(channelRoom(message.channelId))
+    .emit("message:create", {
+      message,
+    });
+}
+
+function withoutViewerReactions(message: Message): Message {
+  if (message.reactions.length === 0) {
+    return message;
+  }
+
+  return {
+    ...message,
+    reactions: message.reactions.map((reaction) => ({
+      ...reaction,
+      me: false,
+    })),
+  };
 }
 
 export function emitMessageUpdate(message: Message): void {
-  current?.to(channelRoom(message.channelId)).emit("message:update", {
-    message,
-  });
+  currentSocketServer()
+    ?.to(channelRoom(message.channelId))
+    .emit("message:update", {
+      message: withoutViewerReactions(message),
+    });
 }
 
 export function emitMessageDelete(payload: {
@@ -53,7 +44,9 @@ export function emitMessageDelete(payload: {
   messageId: string;
   deletedAt: string;
 }): void {
-  current?.to(channelRoom(payload.channelId)).emit("message:delete", payload);
+  currentSocketServer()
+    ?.to(channelRoom(payload.channelId))
+    .emit("message:delete", payload);
 }
 
 export function emitMessagePin(payload: {
@@ -62,7 +55,9 @@ export function emitMessagePin(payload: {
   pinnedAt: string | null;
   pinnedBy: string | null;
 }): void {
-  current?.to(channelRoom(payload.channelId)).emit("message:pin", payload);
+  currentSocketServer()
+    ?.to(channelRoom(payload.channelId))
+    .emit("message:pin", payload);
 }
 
 export function emitReaction(
@@ -74,14 +69,18 @@ export function emitReaction(
     emoji: string;
   },
 ): void {
-  current?.to(channelRoom(payload.channelId)).emit(event, payload);
+  currentSocketServer()
+    ?.to(channelRoom(payload.channelId))
+    .emit(event, payload);
 }
 
 export function emitTypingStart(payload: {
   channelId: string;
   userId: string;
 }): void {
-  current?.to(channelRoom(payload.channelId)).emit("typing:start", payload);
+  currentSocketServer()
+    ?.to(channelRoom(payload.channelId))
+    .emit("typing:start", payload);
 }
 
 export function emitReadUpdate(
@@ -92,11 +91,13 @@ export function emitReadUpdate(
     mentionCount: number;
   },
 ): void {
-  current?.to(userRoom(userId)).emit("read:update", payload);
+  currentSocketServer()?.to(userRoom(userId)).emit("read:update", payload);
 }
 
 export function emitPermissionsChanged(serverId: string): void {
-  current?.to(serverRoom(serverId)).emit("permissions:changed", { serverId });
+  currentSocketServer()
+    ?.to(serverRoom(serverId))
+    .emit("permissions:changed", { serverId });
 }
 
 export function emitChannelEvent(
@@ -104,14 +105,16 @@ export function emitChannelEvent(
   serverId: string,
   channelId: string,
 ): void {
-  current?.to(serverRoom(serverId)).emit(event, { serverId, channelId });
+  currentSocketServer()
+    ?.to(serverRoom(serverId))
+    .emit(event, { serverId, channelId });
 }
 
 export function emitServerEvent(
   event: "server:update" | "server:delete",
   serverId: string,
 ): void {
-  current?.to(serverRoom(serverId)).emit(event, { serverId });
+  currentSocketServer()?.to(serverRoom(serverId)).emit(event, { serverId });
 }
 
 export function emitMemberEvent(
@@ -119,101 +122,29 @@ export function emitMemberEvent(
   serverId: string,
   userId: string,
 ): void {
-  current?.to(serverRoom(serverId)).emit(event, { serverId, userId });
+  currentSocketServer()
+    ?.to(serverRoom(serverId))
+    .emit(event, { serverId, userId });
 }
 
 export async function emitUserUpdate(userId: string): Promise<void> {
-  if (current === null) {
+  const io = currentSocketServer();
+
+  if (io === null) {
     return;
   }
 
   try {
     const rooms = await listUserAudienceRooms(userId);
 
-    current.to([...rooms, userRoom(userId)]).emit("user:update", { userId });
+    io.to([...rooms, userRoom(userId)]).emit("user:update", { userId });
   } catch (error) {
     logger.error({ err: error, userId }, "Announcing a profile change failed");
   }
 }
 
 export function emitRoleUpdate(serverId: string): void {
-  current?.to(serverRoom(serverId)).emit("role:update", { serverId });
-}
-
-export async function rederiveRoomsFor(
-  userIds: readonly string[],
-): Promise<void> {
-  if (current === null) {
-    return;
-  }
-
-  await rederiveRooms(current, userIds);
-}
-
-export async function joinRedeemedServerRooms(
-  userId: string,
-  serverId: string,
-): Promise<void> {
-  if (current === null) {
-    return;
-  }
-
-  const rooms = await listViewableChannelRooms(userId, serverId);
-
-  current.in(userRoom(userId)).socketsJoin([serverRoom(serverId), ...rooms]);
-}
-
-export function joinCreatedServerRooms(
-  userId: string,
-  serverId: string,
-  channelIds: readonly string[],
-): void {
-  if (current === null) {
-    return;
-  }
-
-  joinServerRooms(current, userId, serverId, channelIds);
-}
-
-export function joinDmRoom(
-  channelId: string,
-  userIds: readonly string[],
-): void {
-  if (current === null) {
-    return;
-  }
-
-  for (const userId of new Set(userIds)) {
-    current.in(userRoom(userId)).socketsJoin(channelRoom(channelId));
-  }
-}
-
-export function serverMemberIds(serverId: string): Promise<string[]> {
-  return listServerMemberIds(serverId);
-}
-
-export async function disconnectMemberSockets(userId: string): Promise<void> {
-  if (current === null) {
-    return;
-  }
-
-  disconnectUser(current, userId);
-
-  await Promise.resolve();
-}
-
-export function revokeUserEverywhere(userId: string): void {
-  if (current === null) {
-    return;
-  }
-
-  revokeUser(current, userId);
-}
-
-export function revokeSessionEverywhere(sessionId: string): void {
-  if (current === null) {
-    return;
-  }
-
-  revokeSession(current, sessionId);
+  currentSocketServer()
+    ?.to(serverRoom(serverId))
+    .emit("role:update", { serverId });
 }

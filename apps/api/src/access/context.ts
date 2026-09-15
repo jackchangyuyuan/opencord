@@ -9,18 +9,15 @@ import { db } from "../db/index.js";
 import {
   channelMemberOverwrites,
   channelRoleOverwrites,
-  channels,
+  type ChannelRow,
   memberRoles,
+  type RoleRow,
   roles,
-  serverMembers,
-  servers,
+  type ServerRow,
 } from "../db/schema/index.js";
 import { forbidden, notFound } from "../lib/errors.js";
+import { isServerMember } from "../modules/members/queries.js";
 import { isDmParticipant } from "./channels.js";
-
-export type ServerRow = typeof servers.$inferSelect;
-export type RoleRow = typeof roles.$inferSelect;
-export type ChannelRow = typeof channels.$inferSelect;
 
 export interface ServerContext {
   server: ServerRow;
@@ -78,17 +75,7 @@ export async function loadServerContext(
     throw notFound("NOT_FOUND", "Server not found");
   }
 
-  const membership = await db
-    .select({ userId: serverMembers.userId })
-    .from(serverMembers)
-    .where(
-      and(
-        eq(serverMembers.serverId, serverId),
-        eq(serverMembers.userId, userId),
-      ),
-    );
-
-  if (membership.length === 0) {
+  if (!(await isServerMember(serverId, userId))) {
     throw forbidden();
   }
 

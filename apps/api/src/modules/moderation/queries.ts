@@ -1,7 +1,7 @@
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
 import { db } from "../../db/index.js";
-import { bans, serverMembers, users } from "../../db/schema/index.js";
+import { bans, users } from "../../db/schema/index.js";
 import {
   profileSelection,
   type PublicUser,
@@ -13,23 +13,6 @@ export interface BanEntry {
   reason: string | null;
   bannedBy: string;
   createdAt: string;
-}
-
-export async function isMember(
-  serverId: string,
-  userId: string,
-): Promise<boolean> {
-  const rows = await db
-    .select({ userId: serverMembers.userId })
-    .from(serverMembers)
-    .where(
-      and(
-        eq(serverMembers.serverId, serverId),
-        eq(serverMembers.userId, userId),
-      ),
-    );
-
-  return rows.length > 0;
 }
 
 export async function listBans(serverId: string): Promise<BanEntry[]> {

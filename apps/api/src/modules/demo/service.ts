@@ -22,7 +22,7 @@ import {
   UNIQUE_VIOLATION,
   violatedConstraint,
 } from "../../lib/postgres-errors.js";
-import { joinCreatedServerRooms } from "../../socket/emit.js";
+import { syncUserRooms } from "../../socket/rooms.js";
 import { openDemoDms } from "./dms.js";
 import { refreshDemoPresence } from "./presence.js";
 import {
@@ -91,11 +91,7 @@ export async function provisionDemoScenario(
     return { ...sandbox, dmCount };
   });
 
-  for (const shape of shapes) {
-    joinCreatedServerRooms(userId, shape.serverId, shape.channelIds);
-  }
-
-  joinCreatedServerRooms(userId, scenario.serverId, scenario.channelIds);
+  await syncUserRooms([userId]);
 
   try {
     await refreshDemoPresence();

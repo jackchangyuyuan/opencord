@@ -1,8 +1,13 @@
 import { and, asc, count, eq } from "drizzle-orm";
 
-import type { RoleRow, ServerContext } from "../../access/context.js";
+import type { ServerContext } from "../../access/context.js";
 import { db } from "../../db/index.js";
-import { memberRoles, roles, serverMembers } from "../../db/schema/index.js";
+import {
+  memberRoles,
+  type RoleRow,
+  roles,
+  serverMembers,
+} from "../../db/schema/index.js";
 
 export interface PublicRole {
   id: string;
@@ -35,7 +40,7 @@ export function actorPosition(context: ServerContext, userId: string): number {
   );
 }
 
-export async function highestPositionOf(
+export async function highestPositionFor(
   serverId: string,
   userId: string,
 ): Promise<number> {

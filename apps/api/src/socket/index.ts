@@ -13,7 +13,6 @@ import {
   revalidateSessions,
   REVALIDATION_INTERVAL_MS,
 } from "./auth.js";
-import { registerSocketServer, unregisterSocketServer } from "./emit.js";
 import {
   dropConnection,
   recordHeartbeat,
@@ -21,11 +20,14 @@ import {
   SWEEP_INTERVAL_MS,
   sweepPresence,
 } from "./presence.js";
-import { joinRooms } from "./rooms.js";
+import { registerSocketServer, unregisterSocketServer } from "./registry.js";
+import {
+  joinRooms,
+  listenForPeerRoomSync,
+  reconcileLocalRooms,
+} from "./rooms.js";
 import type { AppSocket, SocketServer } from "./types.js";
 import { handleTypingStart } from "./typing.js";
-
-const ADAPTER_REQUEST_TIMEOUT_MS = 1000;
 
 async function initializeConnection(
   io: SocketServer,
@@ -69,12 +71,11 @@ export async function createSocketServer(
   await Promise.all([publisher.connect(), subscriber.connect()]);
 
   io.adapter(
-    createAdapter(publisher, subscriber, {
-      requestsTimeout: ADAPTER_REQUEST_TIMEOUT_MS,
-    }),
+    createAdapter(publisher, subscriber, { key: config.SOCKET_ADAPTER_KEY }),
   );
 
   authenticateSockets(io);
+  listenForPeerRoomSync(io);
 
   registerSocketServer(io);
 
@@ -140,9 +141,11 @@ export async function createSocketServer(
   sweeping.unref();
 
   const revalidating = setInterval(() => {
-    revalidateSessions(io).catch((error: unknown) => {
-      logger.error({ err: error }, "Socket session revalidation failed");
-    });
+    revalidateSessions(io)
+      .then(() => reconcileLocalRooms(io))
+      .catch((error: unknown) => {
+        logger.error({ err: error }, "Socket revalidation failed");
+      });
   }, REVALIDATION_INTERVAL_MS);
 
   revalidating.unref();

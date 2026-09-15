@@ -5,10 +5,10 @@ import type {
   SendMessageInput,
 } from "@opencord/shared/schemas";
 import type { Message } from "@opencord/shared/types";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { resolveAccessibleChannels } from "../../access/channels.js";
-import type { ChannelContext, ChannelRow } from "../../access/context.js";
+import type { ChannelContext } from "../../access/context.js";
 import { db, type Transaction } from "../../db/index.js";
 import { channels, mentions, messages } from "../../db/schema/index.js";
 import { writeAudit } from "../../lib/audit.js";
@@ -28,7 +28,7 @@ import {
 import { listOnlineUserIds } from "../../socket/presence.js";
 import { advanceWatermark } from "../channels/read-state/watermark.js";
 import { listMembersAmong } from "../members/queries.js";
-import { actorPosition, highestPositionOf } from "../roles/queries.js";
+import { actorPosition, highestPositionFor } from "../roles/queries.js";
 import { requireBelowActor } from "../roles/service.js";
 import {
   hasAttachments,
@@ -159,28 +159,28 @@ async function authorizeBroadcast(
   };
 }
 
-function writeMentions(
+async function writeMentions(
   tx: Transaction,
   channelId: string,
   messageId: string,
   userIds: string[],
-): Promise<unknown> {
+): Promise<void> {
   if (userIds.length === 0) {
-    return Promise.resolve();
+    return;
   }
 
-  return tx
+  await tx
     .insert(mentions)
     .values(userIds.map((userId) => ({ userId, messageId, channelId })))
     .onConflictDoNothing();
 }
 
-function advanceEveryoneWatermark(
+async function advanceEveryoneWatermark(
   tx: Transaction,
   channelId: string,
   messageId: string,
-): Promise<unknown> {
-  return tx
+): Promise<void> {
+  await tx
     .update(channels)
     .set({
       lastEveryoneMentionId: sql`greatest(${channels.lastEveryoneMentionId}, ${messageId}::uuid)`,
@@ -188,12 +188,12 @@ function advanceEveryoneWatermark(
     .where(eq(channels.id, channelId));
 }
 
-function repairEveryoneWatermark(
+async function repairEveryoneWatermark(
   tx: Transaction,
   channelId: string,
-  affectedMessageId: string,
-): Promise<unknown> {
-  return tx
+  affectedMessageIds: readonly string[],
+): Promise<void> {
+  await tx
     .update(channels)
     .set({
       lastEveryoneMentionId: sql`(select ${messages.id} from ${messages} where ${messages.channelId} = ${channelId} and ${messages.deletedAt} is null and ${messages.mentionsEveryone} order by ${messages.id} desc limit 1)`,
@@ -201,7 +201,7 @@ function repairEveryoneWatermark(
     .where(
       and(
         eq(channels.id, channelId),
-        eq(channels.lastEveryoneMentionId, affectedMessageId),
+        inArray(channels.lastEveryoneMentionId, [...affectedMessageIds]),
       ),
     );
 }
@@ -221,10 +221,10 @@ function isReplay(
 
 export async function sendMessage(
   context: ChannelContext,
-  channel: ChannelRow,
   author: QuotaSubject,
   input: SendMessageInput,
 ): Promise<SendMessageResult> {
+  const channel = context.channel;
   const authorId = author.id;
 
   const replyToId = input.replyToId ?? null;
@@ -359,11 +359,11 @@ async function requireLiveMessage(
 
 export async function editMessage(
   context: ChannelContext,
-  channel: ChannelRow,
   actorId: string,
   messageId: string,
   input: EditMessageInput,
 ): Promise<Message> {
+  const channel = context.channel;
   const message = await requireLiveMessage(channel.id, messageId);
 
   if (message.authorId !== actorId) {
@@ -410,7 +410,7 @@ export async function editMessage(
     if (broadcast.token === "everyone") {
       await advanceEveryoneWatermark(tx, channel.id, message.id);
     } else {
-      await repairEveryoneWatermark(tx, channel.id, message.id);
+      await repairEveryoneWatermark(tx, channel.id, [message.id]);
     }
 
     return row;
@@ -423,37 +423,66 @@ export async function editMessage(
   return serialized;
 }
 
-export async function softDeleteMessage(
+export interface DeletableMessage {
+  channelId: string;
+  id: string;
+}
+
+export async function softDeleteMessages(
+  tx: Transaction,
+  deletedAt: Date,
+  affected: readonly DeletableMessage[],
+): Promise<void> {
+  if (affected.length === 0) {
+    return;
+  }
+
+  const ids = affected.map((message) => message.id);
+
+  await tx
+    .update(messages)
+    .set({ deletedAt, pinnedAt: null, pinnedBy: null })
+    .where(inArray(messages.id, ids));
+
+  await tx.delete(mentions).where(inArray(mentions.messageId, ids));
+
+  for (const [channelId, group] of Map.groupBy(
+    affected,
+    (message) => message.channelId,
+  )) {
+    const groupIds = group.map((message) => message.id);
+
+    await tx
+      .update(channels)
+      .set({
+        lastMessageId: sql`(select ${messages.id} from ${messages} where ${messages.channelId} = ${channelId} and ${messages.deletedAt} is null order by ${messages.id} desc limit 1)`,
+      })
+      .where(
+        and(
+          eq(channels.id, channelId),
+          inArray(channels.lastMessageId, groupIds),
+        ),
+      );
+
+    await repairEveryoneWatermark(tx, channelId, groupIds);
+  }
+}
+
+export function softDeleteMessage(
   tx: Transaction,
   channelId: string,
   messageId: string,
   deletedAt: Date,
 ): Promise<void> {
-  await tx
-    .update(messages)
-    .set({ deletedAt, pinnedAt: null, pinnedBy: null })
-    .where(eq(messages.id, messageId));
-
-  await tx.delete(mentions).where(eq(mentions.messageId, messageId));
-
-  await tx
-    .update(channels)
-    .set({
-      lastMessageId: sql`(select ${messages.id} from ${messages} where ${messages.channelId} = ${channelId} and ${messages.deletedAt} is null order by ${messages.id} desc limit 1)`,
-    })
-    .where(
-      and(eq(channels.id, channelId), eq(channels.lastMessageId, messageId)),
-    );
-
-  await repairEveryoneWatermark(tx, channelId, messageId);
+  return softDeleteMessages(tx, deletedAt, [{ channelId, id: messageId }]);
 }
 
 export async function deleteMessage(
   context: ChannelContext,
-  channel: ChannelRow,
   actorId: string,
   messageId: string,
 ): Promise<DeletedMessage> {
+  const channel = context.channel;
   const message = await requireLiveMessage(channel.id, messageId);
   const byModerator = message.authorId !== actorId;
 
@@ -474,7 +503,7 @@ export async function deleteMessage(
     }
 
     requireBelowActor(
-      await highestPositionOf(context.server.server.id, message.authorId),
+      await highestPositionFor(context.server.server.id, message.authorId),
       actorPosition(context.server, actorId),
     );
   }

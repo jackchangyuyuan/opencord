@@ -103,25 +103,38 @@ export async function resolvePublicChannels(
   return publicChannels;
 }
 
-export async function resolveAccessibleChannels(
-  userId: string,
-): Promise<Set<string>> {
-  const memberships = await db
-    .select({ serverId: serverMembers.serverId })
-    .from(serverMembers)
-    .where(eq(serverMembers.userId, userId));
+export async function resolveAccessibleChannelsByUser(
+  userIds: readonly string[],
+): Promise<Map<string, Set<string>>> {
+  const unique = [...new Set(userIds)];
+  const accessible = new Map<string, Set<string>>(
+    unique.map((userId) => [userId, new Set<string>()]),
+  );
 
-  const serverIds = memberships.map((membership) => membership.serverId);
-  const accessible = new Set<string>();
+  if (unique.length === 0) {
+    return accessible;
+  }
+
+  const memberships = await db
+    .select({ userId: serverMembers.userId, serverId: serverMembers.serverId })
+    .from(serverMembers)
+    .where(inArray(serverMembers.userId, unique));
 
   const dmRows = await db
-    .select({ channelId: channelMembers.channelId })
+    .select({
+      userId: channelMembers.userId,
+      channelId: channelMembers.channelId,
+    })
     .from(channelMembers)
-    .where(eq(channelMembers.userId, userId));
+    .where(inArray(channelMembers.userId, unique));
 
   for (const row of dmRows) {
-    accessible.add(row.channelId);
+    accessible.get(row.userId)?.add(row.channelId);
   }
+
+  const serverIds = [
+    ...new Set(memberships.map((membership) => membership.serverId)),
+  ];
 
   if (serverIds.length === 0) {
     return accessible;
@@ -138,14 +151,19 @@ export async function resolveAccessibleChannels(
       serverId: roles.serverId,
       permissions: roles.permissions,
       isDefault: roles.isDefault,
-      heldBy: memberRoles.userId,
     })
     .from(roles)
-    .leftJoin(
-      memberRoles,
-      and(eq(memberRoles.roleId, roles.id), eq(memberRoles.userId, userId)),
-    )
     .where(inArray(roles.serverId, serverIds));
+
+  const heldRows = await db
+    .select({ userId: memberRoles.userId, roleId: memberRoles.roleId })
+    .from(memberRoles)
+    .where(
+      and(
+        inArray(memberRoles.serverId, serverIds),
+        inArray(memberRoles.userId, unique),
+      ),
+    );
 
   const channelRows = await db
     .select({ id: channels.id, serverId: channels.serverId })
@@ -164,6 +182,7 @@ export async function resolveAccessibleChannels(
 
   const memberOverwriteRows = await db
     .select({
+      userId: channelMemberOverwrites.userId,
       channelId: channelMemberOverwrites.channelId,
       allow: channelMemberOverwrites.allow,
       deny: channelMemberOverwrites.deny,
@@ -172,43 +191,62 @@ export async function resolveAccessibleChannels(
     .where(
       and(
         inArray(channelMemberOverwrites.serverId, serverIds),
-        eq(channelMemberOverwrites.userId, userId),
+        inArray(channelMemberOverwrites.userId, unique),
       ),
     );
 
-  for (const server of serverRows) {
-    const serverRoles = roleRows.filter((role) => role.serverId === server.id);
+  const held = new Set(heldRows.map((row) => `${row.userId}:${row.roleId}`));
+  const serverById = new Map(serverRows.map((row) => [row.id, row]));
+  const rolesByServer = Map.groupBy(roleRows, (row) => row.serverId);
+  const channelsByServer = Map.groupBy(channelRows, (row) => row.serverId);
+  const roleOverwritesByChannel = Map.groupBy(
+    roleOverwriteRows,
+    (row) => row.channelId,
+  );
+  const memberOverwriteByKey = new Map(
+    memberOverwriteRows.map((row) => [`${row.userId}:${row.channelId}`, row]),
+  );
+
+  for (const membership of memberships) {
+    const server = serverById.get(membership.serverId);
+    const serverRoles = rolesByServer.get(membership.serverId) ?? [];
     const everyoneRole = serverRoles.find((role) => role.isDefault);
 
-    if (everyoneRole === undefined) {
+    if (server === undefined || everyoneRole === undefined) {
       continue;
     }
 
-    const memberRoleRows = serverRoles.filter((role) => role.heldBy !== null);
+    const memberRoleRows = serverRoles.filter((role) =>
+      held.has(`${membership.userId}:${role.id}`),
+    );
 
-    for (const channel of channelRows.filter(
-      (row) => row.serverId === server.id,
-    )) {
-      const memberOverwrite = memberOverwriteRows.find(
-        (row) => row.channelId === channel.id,
+    for (const channel of channelsByServer.get(membership.serverId) ?? []) {
+      const memberOverwrite = memberOverwriteByKey.get(
+        `${membership.userId}:${channel.id}`,
       );
 
       const permissions = resolve({
-        userId,
+        userId: membership.userId,
         serverOwnerId: server.ownerId,
         everyoneRole,
         memberRoles: memberRoleRows,
-        roleOverwrites: roleOverwriteRows.filter(
-          (row) => row.channelId === channel.id,
-        ),
+        roleOverwrites: roleOverwritesByChannel.get(channel.id) ?? [],
         ...(memberOverwrite === undefined ? {} : { memberOverwrite }),
       });
 
       if ((permissions & Permissions.VIEW_CHANNEL) !== 0) {
-        accessible.add(channel.id);
+        accessible.get(membership.userId)?.add(channel.id);
       }
     }
   }
 
   return accessible;
+}
+
+export async function resolveAccessibleChannels(
+  userId: string,
+): Promise<Set<string>> {
+  return (
+    (await resolveAccessibleChannelsByUser([userId])).get(userId) ?? new Set()
+  );
 }

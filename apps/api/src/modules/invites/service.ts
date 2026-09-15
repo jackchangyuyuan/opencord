@@ -21,7 +21,8 @@ import {
   violatedConstraint,
 } from "../../lib/postgres-errors.js";
 import { consumeQuota, type QuotaSubject } from "../../lib/quota.js";
-import { emitMemberEvent, joinRedeemedServerRooms } from "../../socket/emit.js";
+import { emitMemberEvent } from "../../socket/emit.js";
+import { syncUserRooms } from "../../socket/rooms.js";
 import {
   findInvite,
   type InvitePreview,
@@ -167,7 +168,7 @@ export async function redeemInvite(
   });
 
   if (!result.alreadyMember) {
-    await joinRedeemedServerRooms(userId, result.serverId);
+    await syncUserRooms([userId]);
 
     emitMemberEvent("member:join", result.serverId, userId);
   }

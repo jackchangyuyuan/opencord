@@ -3,7 +3,7 @@ import type { RequestHandler } from "express";
 
 import { auth, isRevoked, type SessionUser } from "../auth.js";
 import { unauthorized } from "../lib/errors.js";
-import { revokeSessionEverywhere } from "../socket/emit.js";
+import { revokeSessionEverywhere } from "../socket/rooms.js";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace

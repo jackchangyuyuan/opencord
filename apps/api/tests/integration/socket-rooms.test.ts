@@ -13,17 +13,20 @@ import { z } from "zod";
 
 import { resolveAccessibleChannels } from "../../src/access/channels.js";
 import { app } from "../../src/app.js";
+import { config } from "../../src/config.js";
 import { db } from "../../src/db/index.js";
 import {
   channelRoleOverwrites,
   serverMembers,
   users,
 } from "../../src/db/schema/index.js";
+import { redis } from "../../src/redis.js";
 import { revalidateSessions } from "../../src/socket/auth.js";
 import {
   createSocketServer,
   type SocketService,
 } from "../../src/socket/index.js";
+import { reconcileLocalRooms } from "../../src/socket/rooms.js";
 import { type Account, cookieHeader, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
@@ -243,6 +246,33 @@ describe("socket rooms", () => {
     }
   });
 
+  it("still answers a committed change when an instance never responds", async () => {
+    const ada = await signUp("ada");
+    const client = await open(ada);
+
+    const silent = redis.duplicate();
+
+    await silent.subscribe(`${config.SOCKET_ADAPTER_KEY}-request#/#`);
+
+    try {
+      const serverId = await createServerFor(ada, "Analytical Engine");
+      const channels = await listChannels(ada, serverId);
+
+      const rooms = await settle(client, (current) =>
+        current.has(`server:${serverId}`),
+      );
+
+      expect(rooms).toContain(`server:${serverId}`);
+
+      for (const channel of channels) {
+        expect(rooms).toContain(`channel:${channel.id}`);
+      }
+    } finally {
+      await silent.unsubscribe();
+      await silent.quit();
+    }
+  });
+
   it("joins no channel room for a user who has joined nothing", async () => {
     const ada = await signUp("ada");
 
@@ -298,5 +328,44 @@ describe("socket rooms", () => {
     await revalidateSessions(socketServer.io);
 
     expect(client.connected).toBe(true);
+  });
+
+  it("repairs a room the permission change never got to correct", async () => {
+    const ada = await signUp("ada");
+    const grace = await signUp("grace");
+    const serverId = await createServerFor(ada, "Analytical Engine");
+
+    await db.insert(serverMembers).values({ serverId, userId: grace.id });
+
+    const channels = await listChannels(ada, serverId);
+    const hidden = channels[0]?.id ?? "";
+    const everyone = await db.query.roles.findFirst({
+      columns: { id: true },
+      where: { serverId, isDefault: true },
+    });
+
+    const client = await open(grace);
+
+    expect((await roomsOf(client)).has(`channel:${hidden}`)).toBe(true);
+
+    await db.insert(channelRoleOverwrites).values({
+      channelId: hidden,
+      serverId,
+      roleId: everyone?.id ?? "",
+      deny: Permissions.VIEW_CHANNEL,
+    });
+
+    expect((await roomsOf(client)).has(`channel:${hidden}`)).toBe(true);
+
+    await reconcileLocalRooms(socketServer.io);
+
+    const rooms = await settle(
+      client,
+      (held) => !held.has(`channel:${hidden}`),
+    );
+
+    expect(rooms.has(`channel:${hidden}`)).toBe(false);
+    expect(rooms.has(`channel:${channels[1]?.id ?? ""}`)).toBe(true);
+    expect(rooms.has(`server:${serverId}`)).toBe(true);
   });
 });

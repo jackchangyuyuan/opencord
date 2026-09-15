@@ -1,6 +1,7 @@
 import { db } from "../../db/index.js";
 import { channelMembers, channels, dmPairs } from "../../db/schema/index.js";
 import { AppError, dmNotPermitted, notFound } from "../../lib/errors.js";
+import { syncUserRooms } from "../../socket/rooms.js";
 import { sharesAServer } from "../members/queries.js";
 import { canonicalPair, findDmChannelId } from "./queries.js";
 
@@ -95,6 +96,8 @@ export async function openDm(
     const created = await createDm(me, them);
 
     if (created !== null) {
+      await syncUserRooms([me, them]);
+
       return { created: true, channelId: created };
     }
   }

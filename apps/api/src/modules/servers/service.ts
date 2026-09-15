@@ -20,10 +20,8 @@ import {
   emitMemberEvent,
   emitPermissionsChanged,
   emitServerEvent,
-  joinCreatedServerRooms,
-  rederiveRoomsFor,
-  serverMemberIds,
 } from "../../socket/emit.js";
+import { syncServerRooms, syncUserRooms } from "../../socket/rooms.js";
 import { createDefaultChannels } from "../channels/service.js";
 import { isServerMember, lockedServerOwner } from "../members/queries.js";
 import { requireOwnedUpload } from "../uploads/associate.js";
@@ -68,18 +66,18 @@ export async function createServer(
       isDefault: true,
     });
 
-    const channelIds = await createDefaultChannels(tx, server.id);
+    await createDefaultChannels(tx, server.id);
 
     await tx
       .insert(serverMembers)
       .values({ serverId: server.id, userId: ownerId });
 
-    return { channelIds, summary: await serializeServer(server) };
+    return serializeServer(server);
   });
 
-  joinCreatedServerRooms(ownerId, created.summary.id, created.channelIds);
+  await syncUserRooms([ownerId]);
 
-  return created.summary;
+  return created;
 }
 
 export async function updateServer(
@@ -93,8 +91,8 @@ export async function updateServer(
     await requireOwnedUpload("icon", actorId, iconObjectKey);
   }
 
-  const detail = await db.transaction(async (tx) => {
-    const [server] = await tx
+  const server = await db.transaction(async (tx) => {
+    const [updated] = await tx
       .update(servers)
       .set(
         iconObjectKey === undefined
@@ -104,25 +102,25 @@ export async function updateServer(
       .where(eq(servers.id, context.server.id))
       .returning();
 
-    if (server === undefined) {
+    if (updated === undefined) {
       throw new Error("Server update returned no row");
     }
 
     await writeAudit(tx, {
-      serverId: server.id,
+      serverId: updated.id,
       actorId,
       action: "server_update",
       targetType: "server",
-      targetId: server.id,
+      targetId: updated.id,
       metadata: input,
     });
 
-    return serializeServerDetail({ ...context, server });
+    return updated;
   });
 
   emitServerEvent("server:update", context.server.id);
 
-  return detail;
+  return serializeServerDetail({ ...context, server });
 }
 
 export async function transferOwnership(
@@ -134,10 +132,7 @@ export async function transferOwnership(
     throw forbidden();
   }
 
-  // The lock serializes this against every other ownership or membership
-  // change on the server, so the checks below decide on the row as it is now
-  // rather than as the request context read it.
-  const detail = await db.transaction(async (tx) => {
+  const server = await db.transaction(async (tx) => {
     const ownerId = await lockedServerOwner(tx, context.server.id);
 
     if (ownerId !== actorId) {
@@ -155,18 +150,18 @@ export async function transferOwnership(
       );
     }
 
-    const [server] = await tx
+    const [updated] = await tx
       .update(servers)
       .set({ ownerId: targetUserId })
       .where(eq(servers.id, context.server.id))
       .returning();
 
-    if (server === undefined) {
+    if (updated === undefined) {
       throw new Error("Ownership transfer returned no row");
     }
 
     await writeAudit(tx, {
-      serverId: server.id,
+      serverId: updated.id,
       actorId,
       action: "server_transfer",
       targetType: "user",
@@ -174,15 +169,15 @@ export async function transferOwnership(
       metadata: { from: actorId, to: targetUserId },
     });
 
-    return serializeServerDetail({ ...context, server });
+    return updated;
   });
 
-  await rederiveRoomsFor([actorId, targetUserId]);
+  await syncUserRooms([actorId, targetUserId]);
 
   emitServerEvent("server:update", context.server.id);
   emitPermissionsChanged(context.server.id);
 
-  return detail;
+  return serializeServerDetail({ ...context, server });
 }
 
 export async function leaveServer(
@@ -206,7 +201,7 @@ export async function leaveServer(
 
   emitMemberEvent("member:leave", context.server.id, userId);
 
-  await rederiveRoomsFor([userId]);
+  await syncUserRooms([userId]);
 }
 
 export async function deleteServer(
@@ -217,11 +212,15 @@ export async function deleteServer(
     throw forbidden();
   }
 
-  const memberIds = await serverMemberIds(context.server.id);
+  await db.transaction(async (tx) => {
+    if ((await lockedServerOwner(tx, context.server.id)) !== actorId) {
+      throw forbidden();
+    }
 
-  await db.delete(servers).where(eq(servers.id, context.server.id));
+    await tx.delete(servers).where(eq(servers.id, context.server.id));
+  });
 
   emitServerEvent("server:delete", context.server.id);
 
-  await rederiveRoomsFor(memberIds);
+  await syncServerRooms(context.server.id);
 }

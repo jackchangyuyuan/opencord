@@ -76,6 +76,7 @@ const baseSchema = z.object({
   S3_ENDPOINT: z.url().optional(),
   S3_FORCE_PATH_STYLE: z.stringbool().default(false),
   S3_PUBLIC_ENDPOINT: z.url().optional(),
+  SOCKET_ADAPTER_KEY: z.string().min(1).default("socket.io"),
   STORAGE_PUBLIC_ORIGIN: z.url(),
 });
 
