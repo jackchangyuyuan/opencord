@@ -14,10 +14,10 @@ import { emitPermissionsChanged, emitRoleUpdate } from "../../socket/emit.js";
 import { syncServerRooms } from "../../socket/rooms.js";
 import {
   actorPosition,
-  findServerRole,
-  type PublicRole,
-  serializeRole,
-} from "./queries.js";
+  requireBelowActor,
+  requireHeldPermissions,
+} from "./policy.js";
+import { findServerRole, type PublicRole, serializeRole } from "./queries.js";
 
 async function announceAccessChange(serverId: string): Promise<void> {
   await syncServerRooms(serverId);
@@ -32,7 +32,6 @@ function changesAccess(input: UpdateRoleInput): boolean {
 
 async function requireRankedBelowActor(
   context: ServerContext,
-  actorId: string,
   roleId: string,
 ): Promise<RoleRow> {
   const role = await findServerRole(context.server.id, roleId);
@@ -41,7 +40,7 @@ async function requireRankedBelowActor(
     throw notFound("ROLE_NOT_FOUND", "That role is not part of this server");
   }
 
-  requireBelowActor(role.position, actorPosition(context, actorId));
+  requireBelowActor(role.position, actorPosition(context));
 
   return role;
 }
@@ -71,33 +70,11 @@ function requireDefaultRoleFields(input: UpdateRoleInput): void {
 // sort by uuid and the new one lands wherever its id happens to fall.
 const BOTTOM_POSITION = 1;
 
-export function requireBelowActor(position: number, actor: number): void {
-  if (position >= actor) {
-    throw forbidden(
-      "ROLE_HIERARCHY",
-      "That role is at or above your highest role",
-    );
-  }
-}
-
-export function requireHeldPermissions(
-  context: ServerContext,
-  mask: number,
-): void {
-  if ((mask & ~context.permissions) !== 0) {
-    throw forbidden(
-      "PERMISSION_NOT_HELD",
-      "You cannot grant a permission you do not hold",
-    );
-  }
-}
-
 export async function createRole(
   context: ServerContext,
-  actorId: string,
   input: CreateRoleInput,
 ): Promise<PublicRole> {
-  const actor = actorPosition(context, actorId);
+  const actor = actorPosition(context);
   const atBottom = input.position === undefined;
 
   requireBelowActor(
@@ -133,7 +110,7 @@ export async function createRole(
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "role_create",
       targetType: "role",
       targetId: role.id,
@@ -150,11 +127,10 @@ export async function createRole(
 
 export async function updateRole(
   context: ServerContext,
-  actorId: string,
   roleId: string,
   input: UpdateRoleInput,
 ): Promise<PublicRole> {
-  const role = await requireRankedBelowActor(context, actorId, roleId);
+  const role = await requireRankedBelowActor(context, roleId);
 
   if (role.isDefault) {
     requireDefaultRoleFields(input);
@@ -165,7 +141,7 @@ export async function updateRole(
   }
 
   if (input.position !== undefined) {
-    requireBelowActor(input.position, actorPosition(context, actorId));
+    requireBelowActor(input.position, actorPosition(context));
   }
 
   const updated = await db.transaction(async (tx) => {
@@ -181,7 +157,7 @@ export async function updateRole(
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "role_update",
       targetType: "role",
       targetId: role.id,
@@ -226,7 +202,6 @@ export interface ReorderRolesResult {
 
 export async function reorderRoles(
   context: ServerContext,
-  actorId: string,
   input: ReorderRolesInput,
 ): Promise<ReorderRolesResult> {
   const serverId = context.server.id;
@@ -279,7 +254,7 @@ export async function reorderRoles(
       moving.has(role.id) ? (queue.shift() ?? role.id) : role.id,
     );
 
-    requireSlotsBelowActor(rankable, merged, actorPosition(context, actorId));
+    requireSlotsBelowActor(rankable, merged, actorPosition(context));
 
     if (merged.length > 0) {
       await tx.execute(sql`
@@ -297,7 +272,7 @@ export async function reorderRoles(
 
     await writeAudit(tx, {
       serverId,
-      actorId,
+      actorId: context.userId,
       action: "role_update",
       targetType: "role",
       targetId: merged[0] ?? serverId,
@@ -318,10 +293,9 @@ export async function reorderRoles(
 
 export async function deleteRole(
   context: ServerContext,
-  actorId: string,
   roleId: string,
 ): Promise<void> {
-  const role = await requireRankedBelowActor(context, actorId, roleId);
+  const role = await requireRankedBelowActor(context, roleId);
 
   if (role.isDefault) {
     throw forbidden("ROLE_IS_DEFAULT", "The @everyone role cannot be deleted");
@@ -332,7 +306,7 @@ export async function deleteRole(
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "role_delete",
       targetType: "role",
       targetId: role.id,

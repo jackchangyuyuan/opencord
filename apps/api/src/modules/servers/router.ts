@@ -51,7 +51,7 @@ serversRouter.patch(
   validate({ params: serverParamsSchema, body: updateServerSchema }),
   requireServerPermission(Permissions.MANAGE_SERVER),
   async (req, res) => {
-    res.json(await updateServer(req.server, req.user.id, req.body));
+    res.json(await updateServer(req.server, req.body));
   },
 );
 
@@ -78,7 +78,7 @@ serversRouter.post(
   validate({ params: serverParamsSchema, body: transferOwnershipSchema }),
   requireServerPermission(),
   async (req, res) => {
-    res.json(await transferOwnership(req.server, req.user.id, req.body.userId));
+    res.json(await transferOwnership(req.server, req.body.userId));
   },
 );
 
@@ -87,7 +87,7 @@ serversRouter.delete(
   validate({ params: serverParamsSchema }),
   requireServerPermission(),
   async (req, res) => {
-    await deleteServer(req.server, req.user.id);
+    await deleteServer(req.server);
     res.status(204).end();
   },
 );

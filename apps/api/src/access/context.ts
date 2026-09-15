@@ -20,6 +20,7 @@ import { isServerMember } from "../modules/members/queries.js";
 import { isDmParticipant } from "./channels.js";
 
 export interface ServerContext {
+  userId: string;
   server: ServerRow;
   everyoneRole: RoleRow;
   memberRoles: RoleRow[];
@@ -103,6 +104,7 @@ export async function loadServerContext(
       : await loadChannelOverwrites(channelId, userId);
 
   return {
+    userId,
     server,
     everyoneRole: everyoneRole.role,
     memberRoles: held,

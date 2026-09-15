@@ -9,8 +9,8 @@ import { forbidden, notFound } from "../../lib/errors.js";
 import { emitMemberEvent } from "../../socket/emit.js";
 import { disconnectUserSockets, syncUserRooms } from "../../socket/rooms.js";
 import { isServerMember, lockedServerOwner } from "../members/queries.js";
-import { actorPosition, highestPositionFor } from "../roles/queries.js";
-import { requireBelowActor } from "../roles/service.js";
+import { actorPosition, requireBelowActor } from "../roles/policy.js";
+import { highestPositionFor } from "../roles/queries.js";
 
 async function requireNotOwner(
   tx: Transaction,
@@ -24,33 +24,31 @@ async function requireNotOwner(
 
 async function requireRemovable(
   context: ServerContext,
-  actorId: string,
   targetId: string,
 ): Promise<void> {
   if (context.server.ownerId === targetId) {
     throw forbidden("TARGET_IS_OWNER", "The owner is outside the hierarchy");
   }
 
-  if (actorId === targetId) {
+  if (context.userId === targetId) {
     throw forbidden("TARGET_IS_SELF", "Leave the server instead");
   }
 
   requireBelowActor(
     await highestPositionFor(context.server.id, targetId),
-    actorPosition(context, actorId),
+    actorPosition(context),
   );
 }
 
 export async function kickMember(
   context: ServerContext,
-  actorId: string,
   targetId: string,
 ): Promise<void> {
   if (!(await isServerMember(context.server.id, targetId))) {
     throw notFound("MEMBER_NOT_FOUND", "That member is not in this server");
   }
 
-  await requireRemovable(context, actorId, targetId);
+  await requireRemovable(context, targetId);
 
   await db.transaction(async (tx) => {
     await requireNotOwner(tx, context.server.id, targetId);
@@ -66,7 +64,7 @@ export async function kickMember(
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "member_kick",
       targetType: "user",
       targetId,
@@ -80,11 +78,10 @@ export async function kickMember(
 
 export async function banMember(
   context: ServerContext,
-  actorId: string,
   targetId: string,
   reason: string | null,
 ): Promise<void> {
-  await requireRemovable(context, actorId, targetId);
+  await requireRemovable(context, targetId);
 
   await db.transaction(async (tx) => {
     await requireNotOwner(tx, context.server.id, targetId);
@@ -97,11 +94,11 @@ export async function banMember(
         serverId: context.server.id,
         userId: targetId,
         reason,
-        bannedBy: actorId,
+        bannedBy: context.userId,
       })
       .onConflictDoUpdate({
         target: [bans.serverId, bans.userId],
-        set: { reason, bannedBy: actorId },
+        set: { reason, bannedBy: context.userId },
       });
 
     await tx
@@ -115,7 +112,7 @@ export async function banMember(
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "member_ban",
       targetType: "user",
       targetId,
@@ -132,7 +129,6 @@ export async function banMember(
 
 export async function unbanMember(
   context: ServerContext,
-  actorId: string,
   targetId: string,
 ): Promise<void> {
   const removed = await db.transaction(async (tx) => {
@@ -149,7 +145,7 @@ export async function unbanMember(
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "member_unban",
       targetType: "user",
       targetId,

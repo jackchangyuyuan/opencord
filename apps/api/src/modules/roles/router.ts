@@ -33,7 +33,7 @@ serverRolesRouter.post(
   requireServerPermission(Permissions.MANAGE_ROLES),
   createResourceRateLimit,
   async (req, res) => {
-    res.status(201).json(await createRole(req.server, req.user.id, req.body));
+    res.status(201).json(await createRole(req.server, req.body));
   },
 );
 
@@ -42,7 +42,7 @@ serverRolesRouter.patch(
   validate({ params: serverParamsSchema, body: reorderRolesSchema }),
   requireServerPermission(Permissions.MANAGE_ROLES),
   async (req, res) => {
-    res.json(await reorderRoles(req.server, req.user.id, req.body));
+    res.json(await reorderRoles(req.server, req.body));
   },
 );
 
@@ -51,9 +51,7 @@ serverRolesRouter.patch(
   validate({ params: roleParamsSchema, body: updateRoleSchema }),
   requireServerPermission(Permissions.MANAGE_ROLES),
   async (req, res) => {
-    res.json(
-      await updateRole(req.server, req.user.id, req.params.roleId, req.body),
-    );
+    res.json(await updateRole(req.server, req.params.roleId, req.body));
   },
 );
 
@@ -62,7 +60,7 @@ serverRolesRouter.delete(
   validate({ params: roleParamsSchema }),
   requireServerPermission(Permissions.MANAGE_ROLES),
   async (req, res) => {
-    await deleteRole(req.server, req.user.id, req.params.roleId);
+    await deleteRole(req.server, req.params.roleId);
     res.status(204).end();
   },
 );

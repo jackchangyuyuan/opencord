@@ -82,13 +82,12 @@ export async function createServer(
 
 export async function updateServer(
   context: ServerContext,
-  actorId: string,
   input: UpdateServerInput,
 ): Promise<ServerDetail> {
   const { iconObjectKey, ...rest } = input;
 
   if (iconObjectKey !== undefined) {
-    await requireOwnedUpload("icon", actorId, iconObjectKey);
+    await requireOwnedUpload("icon", context.userId, iconObjectKey);
   }
 
   const server = await db.transaction(async (tx) => {
@@ -108,7 +107,7 @@ export async function updateServer(
 
     await writeAudit(tx, {
       serverId: updated.id,
-      actorId,
+      actorId: context.userId,
       action: "server_update",
       targetType: "server",
       targetId: updated.id,
@@ -125,17 +124,16 @@ export async function updateServer(
 
 export async function transferOwnership(
   context: ServerContext,
-  actorId: string,
   targetUserId: string,
 ): Promise<ServerDetail> {
-  if (context.server.ownerId !== actorId) {
+  if (context.server.ownerId !== context.userId) {
     throw forbidden();
   }
 
   const server = await db.transaction(async (tx) => {
     const ownerId = await lockedServerOwner(tx, context.server.id);
 
-    if (ownerId !== actorId) {
+    if (ownerId !== context.userId) {
       throw forbidden();
     }
 
@@ -162,17 +160,17 @@ export async function transferOwnership(
 
     await writeAudit(tx, {
       serverId: updated.id,
-      actorId,
+      actorId: context.userId,
       action: "server_transfer",
       targetType: "user",
       targetId: targetUserId,
-      metadata: { from: actorId, to: targetUserId },
+      metadata: { from: context.userId, to: targetUserId },
     });
 
     return updated;
   });
 
-  await syncUserRooms([actorId, targetUserId]);
+  await syncUserRooms([context.userId, targetUserId]);
 
   emitServerEvent("server:update", context.server.id);
   emitPermissionsChanged(context.server.id);
@@ -204,16 +202,13 @@ export async function leaveServer(
   await syncUserRooms([userId]);
 }
 
-export async function deleteServer(
-  context: ServerContext,
-  actorId: string,
-): Promise<void> {
-  if (context.server.ownerId !== actorId) {
+export async function deleteServer(context: ServerContext): Promise<void> {
+  if (context.server.ownerId !== context.userId) {
     throw forbidden();
   }
 
   await db.transaction(async (tx) => {
-    if ((await lockedServerOwner(tx, context.server.id)) !== actorId) {
+    if ((await lockedServerOwner(tx, context.server.id)) !== context.userId) {
       throw forbidden();
     }
 

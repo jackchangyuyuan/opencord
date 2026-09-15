@@ -28,8 +28,8 @@ import {
 import { listOnlineUserIds } from "../../socket/presence.js";
 import { advanceWatermark } from "../channels/read-state/watermark.js";
 import { listMembersAmong } from "../members/queries.js";
-import { actorPosition, highestPositionFor } from "../roles/queries.js";
-import { requireBelowActor } from "../roles/service.js";
+import { actorPosition, requireBelowActor } from "../roles/policy.js";
+import { highestPositionFor } from "../roles/queries.js";
 import {
   hasAttachments,
   prepareAttachments,
@@ -504,7 +504,7 @@ export async function deleteMessage(
 
     requireBelowActor(
       await highestPositionFor(context.server.server.id, message.authorId),
-      actorPosition(context.server, actorId),
+      actorPosition(context.server),
     );
   }
 

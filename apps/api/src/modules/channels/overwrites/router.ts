@@ -43,7 +43,6 @@ overwritesRouter.put(
       await putRoleOverwrite(
         req.server,
         req.channel.channel,
-        req.user.id,
         req.params.roleId,
         req.body,
       ),
@@ -59,7 +58,6 @@ overwritesRouter.delete(
     await deleteRoleOverwrite(
       req.server,
       req.channel.channel,
-      req.user.id,
       req.params.roleId,
     );
     res.status(204).end();
@@ -75,7 +73,6 @@ overwritesRouter.put(
       await putMemberOverwrite(
         req.server,
         req.channel.channel,
-        req.user.id,
         req.params.userId,
         req.body,
       ),
@@ -91,7 +88,6 @@ overwritesRouter.delete(
     await deleteMemberOverwrite(
       req.server,
       req.channel.channel,
-      req.user.id,
       req.params.userId,
     );
     res.status(204).end();

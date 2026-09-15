@@ -3,7 +3,7 @@ import { and, eq, isNotNull, isNull } from "drizzle-orm";
 
 import type { ChannelContext } from "../../../access/context.js";
 import { db } from "../../../db/index.js";
-import { type ChannelRow, messages } from "../../../db/schema/index.js";
+import { messages } from "../../../db/schema/index.js";
 import { lockChannelPins } from "../../../lib/advisory-locks.js";
 import { writeAudit } from "../../../lib/audit.js";
 import { notFound, pinLimitReached } from "../../../lib/errors.js";
@@ -14,8 +14,8 @@ import { countPins, listPinnedMessages, PIN_LIMIT } from "./queries.js";
 
 export { PIN_LIMIT };
 
-async function requireLive(channel: ChannelRow, messageId: string) {
-  const message = await findLiveMessage(channel.id, messageId);
+async function requireLive(channelId: string, messageId: string) {
+  const message = await findLiveMessage(channelId, messageId);
 
   if (message === undefined) {
     throw notFound("MESSAGE_NOT_FOUND", "Message not found");
@@ -26,14 +26,15 @@ async function requireLive(channel: ChannelRow, messageId: string) {
 
 export async function pinMessage(
   context: ChannelContext,
-  channel: ChannelRow,
   actorId: string,
   messageId: string,
 ): Promise<Message> {
-  await requireLive(channel, messageId);
+  const channelId = context.channel.id;
+
+  await requireLive(channelId, messageId);
 
   const pinned = await db.transaction(async (tx) => {
-    await lockChannelPins(tx, channel.id);
+    await lockChannelPins(tx, channelId);
 
     const [row] = await tx
       .update(messages)
@@ -45,7 +46,7 @@ export async function pinMessage(
       throw notFound("MESSAGE_NOT_FOUND", "Message not found");
     }
 
-    if ((await countPins(tx, channel.id)) > PIN_LIMIT) {
+    if ((await countPins(tx, channelId)) > PIN_LIMIT) {
       throw pinLimitReached();
     }
 
@@ -56,7 +57,7 @@ export async function pinMessage(
         action: "message_pin",
         targetType: "message",
         targetId: row.id,
-        metadata: { channelId: channel.id },
+        metadata: { channelId },
       });
     }
 
@@ -66,7 +67,7 @@ export async function pinMessage(
   const serialized = await serializeOneMessage(pinned, actorId);
 
   emitMessagePin({
-    channelId: channel.id,
+    channelId,
     messageId: serialized.id,
     pinnedAt: serialized.pinnedAt,
     pinnedBy: serialized.pinnedBy,
@@ -77,11 +78,11 @@ export async function pinMessage(
 
 export async function unpinMessage(
   context: ChannelContext,
-  channel: ChannelRow,
   actorId: string,
   messageId: string,
 ): Promise<Message> {
-  const message = await requireLive(channel, messageId);
+  const channelId = context.channel.id;
+  const message = await requireLive(channelId, messageId);
 
   const unpinned = await db.transaction(async (tx) => {
     const [row] = await tx
@@ -101,7 +102,7 @@ export async function unpinMessage(
         action: "message_unpin",
         targetType: "message",
         targetId: row.id,
-        metadata: { channelId: channel.id },
+        metadata: { channelId },
       });
     }
 
@@ -115,7 +116,7 @@ export async function unpinMessage(
   const serialized = await serializeOneMessage(unpinned, actorId);
 
   emitMessagePin({
-    channelId: channel.id,
+    channelId,
     messageId: serialized.id,
     pinnedAt: serialized.pinnedAt,
     pinnedBy: serialized.pinnedBy,
@@ -125,8 +126,8 @@ export async function unpinMessage(
 }
 
 export async function listPins(
-  channel: ChannelRow,
+  channelId: string,
   viewerId: string,
 ): Promise<Message[]> {
-  return serializeMessages(await listPinnedMessages(channel.id), viewerId);
+  return serializeMessages(await listPinnedMessages(channelId), viewerId);
 }

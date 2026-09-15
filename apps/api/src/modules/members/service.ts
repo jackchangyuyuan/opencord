@@ -9,15 +9,14 @@ import { emitPermissionsChanged, emitRoleUpdate } from "../../socket/emit.js";
 import { syncUserRooms } from "../../socket/rooms.js";
 import {
   actorPosition,
-  findServerRole,
-  highestPositionFor,
-} from "../roles/queries.js";
-import { requireBelowActor, requireHeldPermissions } from "../roles/service.js";
+  requireBelowActor,
+  requireHeldPermissions,
+} from "../roles/policy.js";
+import { findServerRole, highestPositionFor } from "../roles/queries.js";
 import { isServerMember, listMemberRoleIds } from "./queries.js";
 
 async function requireAssignableRole(
   context: ServerContext,
-  actorId: string,
   roleId: string,
 ): Promise<RoleRow> {
   const role = await findServerRole(context.server.id, roleId);
@@ -33,7 +32,7 @@ async function requireAssignableRole(
     );
   }
 
-  requireBelowActor(role.position, actorPosition(context, actorId));
+  requireBelowActor(role.position, actorPosition(context));
 
   return role;
 }
@@ -56,13 +55,12 @@ async function requireTargetMember(
 
 export async function assignRole(
   context: ServerContext,
-  actorId: string,
   targetUserId: string,
   roleId: string,
 ): Promise<string[]> {
   await requireTargetMember(context, targetUserId);
 
-  const role = await requireAssignableRole(context, actorId, roleId);
+  const role = await requireAssignableRole(context, roleId);
 
   requireHeldPermissions(context, role.permissions);
 
@@ -75,7 +73,7 @@ export async function assignRole(
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "role_assign",
       targetType: "member",
       targetId: targetUserId,
@@ -97,16 +95,15 @@ export async function assignRole(
 
 export async function unassignRole(
   context: ServerContext,
-  actorId: string,
   targetUserId: string,
   roleId: string,
 ): Promise<string[]> {
   await requireTargetMember(context, targetUserId);
-  await requireAssignableRole(context, actorId, roleId);
+  await requireAssignableRole(context, roleId);
 
   const target = await highestPositionFor(context.server.id, targetUserId);
 
-  requireBelowActor(target, actorPosition(context, actorId));
+  requireBelowActor(target, actorPosition(context));
 
   const unassigned = await db.transaction(async (tx) => {
     const removed = await tx
@@ -122,7 +119,7 @@ export async function unassignRole(
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "role_unassign",
       targetType: "member",
       targetId: targetUserId,

@@ -334,27 +334,6 @@ describe("message pins", () => {
     expect(res.status).toBe(404);
   });
 
-  it("keeps one audit row per action even for a repeated pin", async () => {
-    const fixture = await seed();
-    const messageId = await send(fixture.ada, fixture.channelId, "keep this");
-
-    await pin(fixture.ada, fixture.channelId, messageId);
-    await pin(fixture.ada, fixture.channelId, messageId);
-
-    const rows = await db
-      .select({ action: auditLog.action })
-      .from(auditLog)
-      .where(
-        and(
-          eq(auditLog.serverId, fixture.serverId),
-          eq(auditLog.action, "message_pin"),
-        ),
-      );
-
-    expect(rows).toHaveLength(2);
-    expect(await pins(fixture.ada, fixture.channelId)).toHaveLength(1);
-  });
-
   it("records nothing for an unpin that had nothing to undo", async () => {
     const fixture = await seed();
     const messageId = await send(fixture.ada, fixture.channelId, "keep this");
@@ -381,6 +360,27 @@ describe("message pins", () => {
       );
 
     expect(rows).toHaveLength(1);
+  });
+
+  it("keeps one audit row per action even for a repeated pin", async () => {
+    const fixture = await seed();
+    const messageId = await send(fixture.ada, fixture.channelId, "keep this");
+
+    await pin(fixture.ada, fixture.channelId, messageId);
+    await pin(fixture.ada, fixture.channelId, messageId);
+
+    const rows = await db
+      .select({ action: auditLog.action })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.serverId, fixture.serverId),
+          eq(auditLog.action, "message_pin"),
+        ),
+      );
+
+    expect(rows).toHaveLength(2);
+    expect(await pins(fixture.ada, fixture.channelId)).toHaveLength(1);
   });
 
   it("keeps the cap when two pins land on the last slot together", async () => {

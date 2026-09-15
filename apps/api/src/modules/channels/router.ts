@@ -54,9 +54,7 @@ serverChannelsRouter.post(
   requireServerPermission(Permissions.MANAGE_CHANNELS),
   createResourceRateLimit,
   async (req, res) => {
-    res
-      .status(201)
-      .json(await createChannel(req.server, req.user.id, req.body));
+    res.status(201).json(await createChannel(req.server, req.body));
   },
 );
 
@@ -65,7 +63,7 @@ serverChannelsRouter.patch(
   validate({ params: serverParamsSchema, body: reorderChannelsSchema }),
   requireServerPermission(Permissions.MANAGE_CHANNELS),
   async (req, res) => {
-    res.json(await reorderChannels(req.server, req.user.id, req.body));
+    res.json(await reorderChannels(req.server, req.body));
   },
 );
 
@@ -102,14 +100,7 @@ channelsRouter.patch(
   validate({ params: channelParamsSchema, body: updateChannelSchema }),
   requireServerChannel(Permissions.MANAGE_CHANNELS),
   async (req, res) => {
-    res.json(
-      await updateChannel(
-        req.server,
-        req.channel.channel,
-        req.user.id,
-        req.body,
-      ),
-    );
+    res.json(await updateChannel(req.server, req.channel.channel, req.body));
   },
 );
 
@@ -118,7 +109,7 @@ channelsRouter.delete(
   validate({ params: channelParamsSchema }),
   requireServerChannel(Permissions.MANAGE_CHANNELS),
   async (req, res) => {
-    await deleteChannel(req.server, req.channel.channel, req.user.id);
+    await deleteChannel(req.server, req.channel.channel);
     res.status(204).end();
   },
 );

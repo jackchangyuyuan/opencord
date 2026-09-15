@@ -19,7 +19,7 @@ channelPinsRouter.get(
   validate({ params: channelParamsSchema }),
   requireChannelPermission(),
   async (req, res) => {
-    res.json(await listPins(req.channel.channel, req.user.id));
+    res.json(await listPins(req.channel.channel.id, req.user.id));
   },
 );
 
@@ -30,14 +30,7 @@ messagePinRouter.put(
   validate({ params: messageParamsSchema }),
   requireChannelPermission(Permissions.MANAGE_MESSAGES),
   async (req, res) => {
-    res.json(
-      await pinMessage(
-        req.channel,
-        req.channel.channel,
-        req.user.id,
-        req.params.messageId,
-      ),
-    );
+    res.json(await pinMessage(req.channel, req.user.id, req.params.messageId));
   },
 );
 
@@ -47,12 +40,7 @@ messagePinRouter.delete(
   requireChannelPermission(Permissions.MANAGE_MESSAGES),
   async (req, res) => {
     res.json(
-      await unpinMessage(
-        req.channel,
-        req.channel.channel,
-        req.user.id,
-        req.params.messageId,
-      ),
+      await unpinMessage(req.channel, req.user.id, req.params.messageId),
     );
   },
 );

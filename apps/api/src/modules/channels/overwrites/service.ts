@@ -15,11 +15,12 @@ import { writeAudit } from "../../../lib/audit.js";
 import { AppError, notFound } from "../../../lib/errors.js";
 import { emitPermissionsChanged } from "../../../socket/emit.js";
 import { syncServerRooms } from "../../../socket/rooms.js";
-import { actorPosition, highestPositionFor } from "../../roles/queries.js";
 import {
+  actorPosition,
   requireBelowActor,
   requireHeldPermissions,
-} from "../../roles/service.js";
+} from "../../roles/policy.js";
+import { highestPositionFor } from "../../roles/queries.js";
 import { type ChannelOverwrites, listChannelOverwrites } from "./queries.js";
 
 function requireChannelScopedBits(allow: number, deny: number): void {
@@ -43,7 +44,6 @@ async function announceOverwriteChange(serverId: string): Promise<void> {
 
 async function requireEditableRole(
   context: ServerContext,
-  actorId: string,
   roleId: string,
 ): Promise<void> {
   const [role] = await db
@@ -55,12 +55,11 @@ async function requireEditableRole(
     throw notFound("ROLE_NOT_FOUND", "That role is not part of this server");
   }
 
-  requireBelowActor(role.position, actorPosition(context, actorId));
+  requireBelowActor(role.position, actorPosition(context));
 }
 
 async function requireEditableMember(
   context: ServerContext,
-  actorId: string,
   userId: string,
 ): Promise<void> {
   const rows = await db
@@ -80,24 +79,23 @@ async function requireEditableMember(
     );
   }
 
-  if (userId === actorId || context.server.ownerId === userId) {
+  if (userId === context.userId || context.server.ownerId === userId) {
     return;
   }
 
   requireBelowActor(
     await highestPositionFor(context.server.id, userId),
-    actorPosition(context, actorId),
+    actorPosition(context),
   );
 }
 
 export async function putRoleOverwrite(
   context: ServerContext,
   channel: ChannelRow,
-  actorId: string,
   roleId: string,
   input: OverwriteInput,
 ): Promise<ChannelOverwrites> {
-  await requireEditableRole(context, actorId, roleId);
+  await requireEditableRole(context, roleId);
   requireChannelScopedBits(input.allow, input.deny);
   requireHeldPermissions(context, input.allow | input.deny);
 
@@ -118,7 +116,7 @@ export async function putRoleOverwrite(
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "overwrite_update",
       targetType: "role",
       targetId: roleId,
@@ -134,10 +132,9 @@ export async function putRoleOverwrite(
 export async function deleteRoleOverwrite(
   context: ServerContext,
   channel: ChannelRow,
-  actorId: string,
   roleId: string,
 ): Promise<void> {
-  await requireEditableRole(context, actorId, roleId);
+  await requireEditableRole(context, roleId);
 
   const deleted = await db.transaction(async (tx) => {
     const removed = await tx
@@ -152,7 +149,7 @@ export async function deleteRoleOverwrite(
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "overwrite_delete",
       targetType: "role",
       targetId: roleId,
@@ -170,11 +167,10 @@ export async function deleteRoleOverwrite(
 export async function putMemberOverwrite(
   context: ServerContext,
   channel: ChannelRow,
-  actorId: string,
   userId: string,
   input: OverwriteInput,
 ): Promise<ChannelOverwrites> {
-  await requireEditableMember(context, actorId, userId);
+  await requireEditableMember(context, userId);
   requireChannelScopedBits(input.allow, input.deny);
   requireHeldPermissions(context, input.allow | input.deny);
 
@@ -198,7 +194,7 @@ export async function putMemberOverwrite(
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "overwrite_update",
       targetType: "member",
       targetId: userId,
@@ -214,10 +210,9 @@ export async function putMemberOverwrite(
 export async function deleteMemberOverwrite(
   context: ServerContext,
   channel: ChannelRow,
-  actorId: string,
   userId: string,
 ): Promise<void> {
-  await requireEditableMember(context, actorId, userId);
+  await requireEditableMember(context, userId);
 
   const deleted = await db.transaction(async (tx) => {
     const removed = await tx
@@ -232,7 +227,7 @@ export async function deleteMemberOverwrite(
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "overwrite_delete",
       targetType: "member",
       targetId: userId,

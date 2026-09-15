@@ -66,7 +66,7 @@ serverMembersRouter.delete(
   validate({ params: memberParamsSchema }),
   requireServerPermission(Permissions.KICK_MEMBERS),
   async (req, res) => {
-    await kickMember(req.server, req.user.id, req.params.userId);
+    await kickMember(req.server, req.params.userId);
     res.status(204).end();
   },
 );
@@ -79,7 +79,6 @@ serverMembersRouter.put(
     res.json({
       roleIds: await assignRole(
         req.server,
-        req.user.id,
         req.params.userId,
         req.params.roleId,
       ),
@@ -95,7 +94,6 @@ serverMembersRouter.delete(
     res.json({
       roleIds: await unassignRole(
         req.server,
-        req.user.id,
         req.params.userId,
         req.params.roleId,
       ),

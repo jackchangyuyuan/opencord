@@ -33,12 +33,7 @@ serverBansRouter.put(
   validate({ params: targetParamsSchema, body: banBodySchema }),
   requireServerPermission(Permissions.BAN_MEMBERS),
   async (req, res) => {
-    await banMember(
-      req.server,
-      req.user.id,
-      req.params.userId,
-      req.body.reason ?? null,
-    );
+    await banMember(req.server, req.params.userId, req.body.reason ?? null);
 
     res.status(204).end();
   },
@@ -49,7 +44,7 @@ serverBansRouter.delete(
   validate({ params: targetParamsSchema }),
   requireServerPermission(Permissions.BAN_MEMBERS),
   async (req, res) => {
-    await unbanMember(req.server, req.user.id, req.params.userId);
+    await unbanMember(req.server, req.params.userId);
     res.status(204).end();
   },
 );

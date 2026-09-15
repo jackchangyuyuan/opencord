@@ -33,7 +33,6 @@ export async function createDefaultChannels(
 
 export async function createChannel(
   context: ServerContext,
-  actorId: string,
   input: CreateChannelInput,
 ): Promise<ChannelSummary> {
   const channel = await db.transaction(async (tx) => {
@@ -61,7 +60,7 @@ export async function createChannel(
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "channel_create",
       targetType: "channel",
       targetId: created.id,
@@ -82,7 +81,6 @@ export async function createChannel(
 export async function updateChannel(
   context: ServerContext,
   channel: ChannelRow,
-  actorId: string,
   input: UpdateChannelInput,
 ): Promise<ChannelSummary> {
   const summary = await db.transaction(async (tx) => {
@@ -98,7 +96,7 @@ export async function updateChannel(
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "channel_update",
       targetType: "channel",
       targetId: channel.id,
@@ -116,14 +114,13 @@ export async function updateChannel(
 export async function deleteChannel(
   context: ServerContext,
   channel: ChannelRow,
-  actorId: string,
 ): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.delete(channels).where(eq(channels.id, channel.id));
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "channel_delete",
       targetType: "channel",
       targetId: channel.id,
@@ -156,7 +153,6 @@ function merge(
 
 export async function reorderChannels(
   context: ServerContext,
-  actorId: string,
   input: ReorderChannelsInput,
 ): Promise<ReorderResult> {
   const serverId = context.server.id;
@@ -207,7 +203,7 @@ export async function reorderChannels(
 
     await writeAudit(tx, {
       serverId,
-      actorId,
+      actorId: context.userId,
       action: "channel_update",
       targetType: "channel",
       targetId: ordered[0] ?? serverId,
@@ -229,7 +225,7 @@ export async function reorderChannels(
 
   // The reorder is applied to the whole server, but the answer is the actor's
   // own view of it: a channel they cannot see is not named back to them.
-  const accessible = await resolveAccessibleChannels(actorId);
+  const accessible = await resolveAccessibleChannels(context.userId);
 
   return {
     channels: summaries

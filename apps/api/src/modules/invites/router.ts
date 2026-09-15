@@ -46,7 +46,7 @@ serverInvitesRouter.delete(
   validate({ params: serverCodeParamsSchema }),
   requireServerPermission(Permissions.CREATE_INVITE),
   async (req, res) => {
-    await revokeInvite(req.server, req.user.id, req.params.code);
+    await revokeInvite(req.server, req.params.code);
     res.status(204).end();
   },
 );

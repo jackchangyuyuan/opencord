@@ -1,6 +1,5 @@
 import { and, asc, count, eq } from "drizzle-orm";
 
-import type { ServerContext } from "../../access/context.js";
 import { db } from "../../db/index.js";
 import {
   memberRoles,
@@ -27,17 +26,6 @@ export function serializeRole(role: PublicRole): PublicRole {
     permissions: role.permissions,
     isDefault: role.isDefault,
   };
-}
-
-export function actorPosition(context: ServerContext, userId: string): number {
-  if (context.server.ownerId === userId) {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  return context.memberRoles.reduce(
-    (highest, role) => Math.max(highest, role.position),
-    0,
-  );
 }
 
 export async function highestPositionFor(

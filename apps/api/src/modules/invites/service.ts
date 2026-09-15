@@ -178,7 +178,6 @@ export async function redeemInvite(
 
 export async function revokeInvite(
   context: ServerContext,
-  actorId: string,
   code: string,
 ): Promise<void> {
   const [invite] = await db
@@ -196,7 +195,7 @@ export async function revokeInvite(
     (context.permissions & Permissions.MANAGE_SERVER) ===
     Permissions.MANAGE_SERVER;
 
-  if (!mayManage && invite.inviterId !== actorId) {
+  if (!mayManage && invite.inviterId !== context.userId) {
     throw forbidden(
       "NOT_THE_INVITER",
       "You can only revoke invites you created",
@@ -208,7 +207,7 @@ export async function revokeInvite(
 
     await writeAudit(tx, {
       serverId: context.server.id,
-      actorId,
+      actorId: context.userId,
       action: "invite_delete",
       targetType: "invite",
       targetId: code,
