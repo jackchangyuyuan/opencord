@@ -5,7 +5,7 @@ import type {
 } from "@opencord/shared/schemas";
 import { asc, eq, sql } from "drizzle-orm";
 
-import { resolveAccessibleChannels } from "../../access/channels.js";
+import { resolveAccessibleServerChannels } from "../../access/channels.js";
 import type { ServerContext } from "../../access/context.js";
 import { db, type Transaction } from "../../db/index.js";
 import { type ChannelRow, channels } from "../../db/schema/index.js";
@@ -225,7 +225,10 @@ export async function reorderChannels(
 
   // The reorder is applied to the whole server, but the answer is the actor's
   // own view of it: a channel they cannot see is not named back to them.
-  const accessible = await resolveAccessibleChannels(context.userId);
+  const accessible = await resolveAccessibleServerChannels(
+    context.userId,
+    serverId,
+  );
 
   return {
     channels: summaries

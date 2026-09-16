@@ -7,7 +7,7 @@ import type {
 import type { Message } from "@opencord/shared/types";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
-import { resolveAccessibleChannels } from "../../access/channels.js";
+import { resolveAccessibleServerChannels } from "../../access/channels.js";
 import type { ChannelContext } from "../../access/context.js";
 import { db, type Transaction } from "../../db/index.js";
 import { channels, mentions, messages } from "../../db/schema/index.js";
@@ -97,7 +97,7 @@ async function prepareContent(
   const accessible =
     candidates.channels.length === 0
       ? new Set<string>()
-      : await resolveAccessibleChannels(authorId);
+      : await resolveAccessibleServerChannels(authorId, serverId);
 
   const { resolution, roleMemberIds } = await resolveServerMentions(
     serverId,

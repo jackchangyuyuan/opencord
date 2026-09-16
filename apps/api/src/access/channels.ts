@@ -109,8 +109,13 @@ export async function resolveChannelsEveryoneCanRead(
   return readable;
 }
 
+export interface ChannelScope {
+  serverId?: string;
+}
+
 export async function resolveAccessibleChannelsByUser(
   userIds: readonly string[],
+  scope: ChannelScope = {},
 ): Promise<Map<string, Set<string>>> {
   const unique = [...new Set(userIds)];
   const accessible = new Map<string, Set<string>>(
@@ -124,18 +129,27 @@ export async function resolveAccessibleChannelsByUser(
   const memberships = await db
     .select({ userId: serverMembers.userId, serverId: serverMembers.serverId })
     .from(serverMembers)
-    .where(inArray(serverMembers.userId, unique));
+    .where(
+      scope.serverId === undefined
+        ? inArray(serverMembers.userId, unique)
+        : and(
+            inArray(serverMembers.userId, unique),
+            eq(serverMembers.serverId, scope.serverId),
+          ),
+    );
 
-  const dmRows = await db
-    .select({
-      userId: channelMembers.userId,
-      channelId: channelMembers.channelId,
-    })
-    .from(channelMembers)
-    .where(inArray(channelMembers.userId, unique));
+  if (scope.serverId === undefined) {
+    const dmRows = await db
+      .select({
+        userId: channelMembers.userId,
+        channelId: channelMembers.channelId,
+      })
+      .from(channelMembers)
+      .where(inArray(channelMembers.userId, unique));
 
-  for (const row of dmRows) {
-    accessible.get(row.userId)?.add(row.channelId);
+    for (const row of dmRows) {
+      accessible.get(row.userId)?.add(row.channelId);
+    }
   }
 
   const serverIds = [
@@ -254,5 +268,16 @@ export async function resolveAccessibleChannels(
 ): Promise<Set<string>> {
   return (
     (await resolveAccessibleChannelsByUser([userId])).get(userId) ?? new Set()
+  );
+}
+
+export async function resolveAccessibleServerChannels(
+  userId: string,
+  serverId: string,
+): Promise<Set<string>> {
+  return (
+    (await resolveAccessibleChannelsByUser([userId], { serverId })).get(
+      userId,
+    ) ?? new Set()
   );
 }

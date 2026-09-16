@@ -7,7 +7,7 @@ import {
 import { Router } from "express";
 import { z } from "zod";
 
-import { resolveAccessibleChannels } from "../../access/channels.js";
+import { resolveAccessibleServerChannels } from "../../access/channels.js";
 import { notADirectMessage } from "../../lib/errors.js";
 import {
   requireChannelPermission,
@@ -42,7 +42,10 @@ serverChannelsRouter.get(
       await listServerChannels(
         req.server.server.id,
         req.user.id,
-        await resolveAccessibleChannels(req.user.id),
+        await resolveAccessibleServerChannels(
+          req.user.id,
+          req.server.server.id,
+        ),
       ),
     );
   },
