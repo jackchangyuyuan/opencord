@@ -25,6 +25,15 @@ export async function lockChannelPins(
   );
 }
 
+export async function lockChannelOverwrites(
+  tx: Transaction,
+  channelId: string,
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended('overwrites:' || ${channelId}, 0))`,
+  );
+}
+
 export async function tryLockAmbientActivity(
   tx: Transaction,
 ): Promise<boolean> {

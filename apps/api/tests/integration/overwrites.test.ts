@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { Permissions } from "@opencord/shared/permissions";
 import { and, DrizzleQueryError, eq } from "drizzle-orm";
 import postgres from "postgres";
@@ -124,13 +126,16 @@ function putMemberOverwrite(
     .send(body);
 }
 
-async function promoteToModerator(fixture: Fixture): Promise<void> {
+async function promoteToModerator(
+  fixture: Fixture,
+  permissions = Permissions.VIEW_CHANNEL | Permissions.MANAGE_ROLES,
+): Promise<string> {
   const [role] = await db
     .insert(roles)
     .values({
       serverId: fixture.serverId,
       name: "Moderator",
-      permissions: Permissions.VIEW_CHANNEL | Permissions.MANAGE_ROLES,
+      permissions,
       position: 5,
     })
     .returning();
@@ -144,6 +149,8 @@ async function promoteToModerator(fixture: Fixture): Promise<void> {
     userId: fixture.grace.id,
     roleId: role.id,
   });
+
+  return role.id;
 }
 
 function getChannel(account: Account, channelId: string) {
@@ -390,6 +397,174 @@ describe("the overwrite routes", () => {
     );
 
     expect(res.status).toBe(200);
+  });
+
+  it("refuses to clear a denial that is what withholds the permission", async () => {
+    const fixture = await seed();
+
+    await promoteToModerator(
+      fixture,
+      Permissions.VIEW_CHANNEL |
+        Permissions.MANAGE_ROLES |
+        Permissions.MANAGE_MESSAGES,
+    );
+
+    expect(
+      (
+        await putMemberOverwrite(
+          fixture.ada,
+          fixture.channelId,
+          fixture.grace.id,
+          { deny: Permissions.MANAGE_MESSAGES },
+        )
+      ).status,
+    ).toBe(200);
+
+    const emptied = await putMemberOverwrite(
+      fixture.grace,
+      fixture.channelId,
+      fixture.grace.id,
+      { allow: 0, deny: 0 },
+    );
+
+    expect(emptied.status).toBe(403);
+    expect(emptied.body).toMatchObject({
+      error: { code: "PERMISSION_NOT_HELD" },
+    });
+
+    const removed = await request(app)
+      .delete(
+        `/api/v1/channels/${fixture.channelId}/overwrites/members/${fixture.grace.id}`,
+      )
+      .set("Cookie", fixture.grace.cookies);
+
+    expect(removed.status).toBe(403);
+    expect(removed.body).toMatchObject({
+      error: { code: "PERMISSION_NOT_HELD" },
+    });
+
+    expect(await db.select().from(channelMemberOverwrites)).toEqual([
+      {
+        channelId: fixture.channelId,
+        serverId: fixture.serverId,
+        userId: fixture.grace.id,
+        allow: 0,
+        deny: Permissions.MANAGE_MESSAGES,
+      },
+    ]);
+  });
+
+  it("refuses to clear a role denial the caller is subject to", async () => {
+    const fixture = await seed();
+
+    await promoteToModerator(
+      fixture,
+      Permissions.VIEW_CHANNEL |
+        Permissions.MANAGE_ROLES |
+        Permissions.MANAGE_MESSAGES,
+    );
+
+    const [muted] = await db
+      .insert(roles)
+      .values({ serverId: fixture.serverId, name: "Muted", position: 1 })
+      .returning({ id: roles.id });
+
+    if (muted === undefined) {
+      throw new Error("the fixture is incomplete");
+    }
+
+    const mutedId = muted.id;
+
+    await db.insert(memberRoles).values({
+      serverId: fixture.serverId,
+      userId: fixture.grace.id,
+      roleId: mutedId,
+    });
+
+    expect(
+      (
+        await putRoleOverwrite(fixture.ada, fixture.channelId, mutedId, {
+          deny: Permissions.MANAGE_MESSAGES,
+        })
+      ).status,
+    ).toBe(200);
+
+    const removed = await request(app)
+      .delete(
+        `/api/v1/channels/${fixture.channelId}/overwrites/roles/${mutedId}`,
+      )
+      .set("Cookie", fixture.grace.cookies);
+
+    expect(removed.status).toBe(403);
+    expect(removed.body).toMatchObject({
+      error: { code: "PERMISSION_NOT_HELD" },
+    });
+
+    expect(
+      (
+        await putRoleOverwrite(fixture.ada, fixture.channelId, mutedId, {
+          allow: Permissions.ADD_REACTIONS,
+          deny: 0,
+        })
+      ).status,
+    ).toBe(200);
+
+    expect(
+      (
+        await request(app)
+          .delete(
+            `/api/v1/channels/${fixture.channelId}/overwrites/roles/${mutedId}`,
+          )
+          .set("Cookie", fixture.grace.cookies)
+      ).status,
+    ).toBe(204);
+  });
+
+  it("keeps a denied moderator from clearing the denial and moderating", async () => {
+    const fixture = await seed();
+    const hopper = await signUp("hopper-denied");
+
+    await db
+      .insert(serverMembers)
+      .values({ serverId: fixture.serverId, userId: hopper.id });
+
+    await promoteToModerator(
+      fixture,
+      Permissions.VIEW_CHANNEL |
+        Permissions.SEND_MESSAGES |
+        Permissions.MANAGE_ROLES |
+        Permissions.MANAGE_MESSAGES,
+    );
+
+    await putMemberOverwrite(fixture.ada, fixture.channelId, fixture.grace.id, {
+      deny: Permissions.MANAGE_MESSAGES,
+    });
+
+    const posted = await request(app)
+      .post(`/api/v1/channels/${fixture.channelId}/messages`)
+      .set("Cookie", hopper.cookies)
+      .send({ content: "a line to moderate", nonce: randomUUID() });
+
+    expect(posted.status).toBe(201);
+
+    const messageId = z.object({ id: z.string() }).parse(posted.body).id;
+
+    expect(
+      (
+        await putMemberOverwrite(
+          fixture.grace,
+          fixture.channelId,
+          fixture.grace.id,
+          { allow: 0, deny: 0 },
+        )
+      ).status,
+    ).toBe(403);
+
+    const deleted = await request(app)
+      .delete(`/api/v1/channels/${fixture.channelId}/messages/${messageId}`)
+      .set("Cookie", fixture.grace.cookies);
+
+    expect(deleted.status).toBe(403);
   });
 
   it("refuses an overwrite for a role at or above the caller's own", async () => {

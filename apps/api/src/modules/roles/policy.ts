@@ -21,11 +21,8 @@ export function requireBelowActor(position: number, actor: number): void {
   }
 }
 
-export function requireHeldPermissions(
-  context: ServerContext,
-  mask: number,
-): void {
-  if ((mask & ~context.permissions) !== 0) {
+export function requireHeldPermissions(held: number, mask: number): void {
+  if ((mask & ~held) !== 0) {
     throw forbidden(
       "PERMISSION_NOT_HELD",
       "You cannot grant a permission you do not hold",

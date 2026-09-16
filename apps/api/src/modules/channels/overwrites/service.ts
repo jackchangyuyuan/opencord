@@ -1,9 +1,12 @@
-import { SERVER_ONLY_PERMISSIONS } from "@opencord/shared/permissions";
+import { resolve, SERVER_ONLY_PERMISSIONS } from "@opencord/shared/permissions";
 import type { OverwriteInput } from "@opencord/shared/schemas";
 import { and, eq } from "drizzle-orm";
 
-import type { ServerContext } from "../../../access/context.js";
-import { db } from "../../../db/index.js";
+import {
+  loadChannelOverwrites,
+  type ServerContext,
+} from "../../../access/context.js";
+import { db, type Transaction } from "../../../db/index.js";
 import {
   channelMemberOverwrites,
   channelRoleOverwrites,
@@ -11,6 +14,7 @@ import {
   roles,
   serverMembers,
 } from "../../../db/schema/index.js";
+import { lockChannelOverwrites } from "../../../lib/advisory-locks.js";
 import { writeAudit } from "../../../lib/audit.js";
 import { AppError, notFound } from "../../../lib/errors.js";
 import { emitPermissionsChanged } from "../../../socket/emit.js";
@@ -89,6 +93,77 @@ async function requireEditableMember(
   );
 }
 
+async function heldInChannel(
+  tx: Transaction,
+  context: ServerContext,
+  channelId: string,
+): Promise<number> {
+  const overwrites = await loadChannelOverwrites(channelId, context.userId, tx);
+
+  return resolve({
+    userId: context.userId,
+    serverOwnerId: context.server.ownerId,
+    everyoneRole: context.everyoneRole,
+    memberRoles: context.memberRoles,
+    ...overwrites,
+  });
+}
+
+type StoredOverwrite = { allow: number; deny: number } | undefined;
+
+function requireChangeIsHeld(
+  held: number,
+  before: StoredOverwrite,
+  after: OverwriteInput | null,
+): void {
+  const restored = before === undefined ? 0 : before.allow | before.deny;
+  const written = after === null ? 0 : after.allow | after.deny;
+
+  requireHeldPermissions(held, restored | written);
+}
+
+async function findRoleOverwrite(
+  tx: Transaction,
+  channelId: string,
+  roleId: string,
+): Promise<StoredOverwrite> {
+  const [row] = await tx
+    .select({
+      allow: channelRoleOverwrites.allow,
+      deny: channelRoleOverwrites.deny,
+    })
+    .from(channelRoleOverwrites)
+    .where(
+      and(
+        eq(channelRoleOverwrites.channelId, channelId),
+        eq(channelRoleOverwrites.roleId, roleId),
+      ),
+    );
+
+  return row;
+}
+
+async function findMemberOverwrite(
+  tx: Transaction,
+  channelId: string,
+  userId: string,
+): Promise<StoredOverwrite> {
+  const [row] = await tx
+    .select({
+      allow: channelMemberOverwrites.allow,
+      deny: channelMemberOverwrites.deny,
+    })
+    .from(channelMemberOverwrites)
+    .where(
+      and(
+        eq(channelMemberOverwrites.channelId, channelId),
+        eq(channelMemberOverwrites.userId, userId),
+      ),
+    );
+
+  return row;
+}
+
 export async function putRoleOverwrite(
   context: ServerContext,
   channel: ChannelRow,
@@ -97,9 +172,16 @@ export async function putRoleOverwrite(
 ): Promise<ChannelOverwrites> {
   await requireEditableRole(context, roleId);
   requireChannelScopedBits(input.allow, input.deny);
-  requireHeldPermissions(context, input.allow | input.deny);
 
   await db.transaction(async (tx) => {
+    await lockChannelOverwrites(tx, channel.id);
+
+    requireChangeIsHeld(
+      await heldInChannel(tx, context, channel.id),
+      await findRoleOverwrite(tx, channel.id, roleId),
+      input,
+    );
+
     await tx
       .insert(channelRoleOverwrites)
       .values({
@@ -137,15 +219,26 @@ export async function deleteRoleOverwrite(
   await requireEditableRole(context, roleId);
 
   const deleted = await db.transaction(async (tx) => {
-    const removed = await tx
-      .delete(channelRoleOverwrites)
-      .where(
-        and(
-          eq(channelRoleOverwrites.channelId, channel.id),
-          eq(channelRoleOverwrites.roleId, roleId),
-        ),
-      )
-      .returning({ roleId: channelRoleOverwrites.roleId });
+    await lockChannelOverwrites(tx, channel.id);
+
+    const existing = await findRoleOverwrite(tx, channel.id, roleId);
+
+    requireChangeIsHeld(
+      await heldInChannel(tx, context, channel.id),
+      existing,
+      null,
+    );
+
+    if (existing !== undefined) {
+      await tx
+        .delete(channelRoleOverwrites)
+        .where(
+          and(
+            eq(channelRoleOverwrites.channelId, channel.id),
+            eq(channelRoleOverwrites.roleId, roleId),
+          ),
+        );
+    }
 
     await writeAudit(tx, {
       serverId: context.server.id,
@@ -156,7 +249,7 @@ export async function deleteRoleOverwrite(
       metadata: { channelId: channel.id },
     });
 
-    return removed.length > 0;
+    return existing !== undefined;
   });
 
   if (deleted) {
@@ -172,9 +265,16 @@ export async function putMemberOverwrite(
 ): Promise<ChannelOverwrites> {
   await requireEditableMember(context, userId);
   requireChannelScopedBits(input.allow, input.deny);
-  requireHeldPermissions(context, input.allow | input.deny);
 
   await db.transaction(async (tx) => {
+    await lockChannelOverwrites(tx, channel.id);
+
+    requireChangeIsHeld(
+      await heldInChannel(tx, context, channel.id),
+      await findMemberOverwrite(tx, channel.id, userId),
+      input,
+    );
+
     await tx
       .insert(channelMemberOverwrites)
       .values({
@@ -215,15 +315,26 @@ export async function deleteMemberOverwrite(
   await requireEditableMember(context, userId);
 
   const deleted = await db.transaction(async (tx) => {
-    const removed = await tx
-      .delete(channelMemberOverwrites)
-      .where(
-        and(
-          eq(channelMemberOverwrites.channelId, channel.id),
-          eq(channelMemberOverwrites.userId, userId),
-        ),
-      )
-      .returning({ userId: channelMemberOverwrites.userId });
+    await lockChannelOverwrites(tx, channel.id);
+
+    const existing = await findMemberOverwrite(tx, channel.id, userId);
+
+    requireChangeIsHeld(
+      await heldInChannel(tx, context, channel.id),
+      existing,
+      null,
+    );
+
+    if (existing !== undefined) {
+      await tx
+        .delete(channelMemberOverwrites)
+        .where(
+          and(
+            eq(channelMemberOverwrites.channelId, channel.id),
+            eq(channelMemberOverwrites.userId, userId),
+          ),
+        );
+    }
 
     await writeAudit(tx, {
       serverId: context.server.id,
@@ -234,7 +345,7 @@ export async function deleteMemberOverwrite(
       metadata: { channelId: channel.id },
     });
 
-    return removed.length > 0;
+    return existing !== undefined;
   });
 
   if (deleted) {

@@ -5,7 +5,7 @@ import {
 } from "@opencord/shared/permissions";
 import { and, eq } from "drizzle-orm";
 
-import { db } from "../db/index.js";
+import { db, type Transaction } from "../db/index.js";
 import {
   channelMemberOverwrites,
   channelRoleOverwrites,
@@ -33,11 +33,12 @@ export interface ChannelContext {
   server: ServerContext | null;
 }
 
-async function loadChannelOverwrites(
+export async function loadChannelOverwrites(
   channelId: string,
   userId: string,
+  executor: Transaction | typeof db = db,
 ): Promise<Pick<ResolveInput, "roleOverwrites" | "memberOverwrite">> {
-  const roleOverwrites = await db
+  const roleOverwrites = await executor
     .select({
       roleId: channelRoleOverwrites.roleId,
       allow: channelRoleOverwrites.allow,
@@ -46,7 +47,7 @@ async function loadChannelOverwrites(
     .from(channelRoleOverwrites)
     .where(eq(channelRoleOverwrites.channelId, channelId));
 
-  const [memberOverwrite] = await db
+  const [memberOverwrite] = await executor
     .select({
       allow: channelMemberOverwrites.allow,
       deny: channelMemberOverwrites.deny,

@@ -81,7 +81,7 @@ export async function createRole(
     input.position ?? BOTTOM_POSITION,
     atBottom ? actor + 1 : actor,
   );
-  requireHeldPermissions(context, input.permissions);
+  requireHeldPermissions(context.permissions, input.permissions);
 
   const created = await db.transaction(async (tx) => {
     if (atBottom) {
@@ -137,7 +137,7 @@ export async function updateRole(
   }
 
   if (input.permissions !== undefined) {
-    requireHeldPermissions(context, input.permissions);
+    requireHeldPermissions(context.permissions, input.permissions);
   }
 
   if (input.position !== undefined) {

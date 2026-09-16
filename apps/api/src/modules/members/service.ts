@@ -62,7 +62,7 @@ export async function assignRole(
 
   const role = await requireAssignableRole(context, roleId);
 
-  requireHeldPermissions(context, role.permissions);
+  requireHeldPermissions(context.permissions, role.permissions);
 
   const assigned = await db.transaction(async (tx) => {
     const written = await tx
