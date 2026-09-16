@@ -94,6 +94,25 @@ export function emitReadUpdate(
   currentSocketServer()?.to(userRoom(userId)).emit("read:update", payload);
 }
 
+export function emitUnreadStale(
+  channelId: string,
+  userIds: readonly string[],
+): void {
+  if (userIds.length === 0) {
+    return;
+  }
+
+  currentSocketServer()
+    ?.to(userIds.map(userRoom))
+    .emit("unread:stale", { channelId });
+}
+
+export function emitChannelUnreadStale(channelId: string): void {
+  currentSocketServer()
+    ?.to(channelRoom(channelId))
+    .emit("unread:stale", { channelId });
+}
+
 export function emitPermissionsChanged(serverId: string): void {
   currentSocketServer()
     ?.to(serverRoom(serverId))

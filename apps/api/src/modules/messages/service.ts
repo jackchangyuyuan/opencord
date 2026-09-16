@@ -21,9 +21,11 @@ import {
 import type { QuotaSubject } from "../../lib/quota.js";
 import { consumeQuota } from "../../lib/quota.js";
 import {
+  emitChannelUnreadStale,
   emitMessageCreate,
   emitMessageDelete,
   emitMessageUpdate,
+  emitUnreadStale,
 } from "../../socket/emit.js";
 import { listOnlineUserIds } from "../../socket/presence.js";
 import { advanceWatermark } from "../channels/read-state/watermark.js";
@@ -333,6 +335,12 @@ export async function sendMessage(
 
   if (result.created) {
     emitMessageCreate(serialized);
+
+    emitUnreadStale(channel.id, broadcast.mentionedUserIds);
+
+    if (broadcast.token === "everyone") {
+      emitChannelUnreadStale(channel.id);
+    }
   }
 
   return { created: result.created, message: serialized };
@@ -387,6 +395,11 @@ export async function editMessage(
   const broadcast = await authorizeBroadcast(context, prepared, actorId);
 
   const edited = await db.transaction(async (tx) => {
+    const named = await tx
+      .select({ userId: mentions.userId })
+      .from(mentions)
+      .where(eq(mentions.messageId, message.id));
+
     const [row] = await tx
       .update(messages)
       .set({
@@ -413,12 +426,30 @@ export async function editMessage(
       await repairEveryoneWatermark(tx, channel.id, [message.id]);
     }
 
-    return row;
+    const before = new Set(named.map((entry) => entry.userId));
+    const after = new Set(broadcast.mentionedUserIds);
+
+    return {
+      row,
+      renamed: [
+        ...new Set([
+          ...[...before].filter((userId) => !after.has(userId)),
+          ...[...after].filter((userId) => !before.has(userId)),
+        ]),
+      ],
+      broadcastChanged:
+        message.mentionsEveryone !== (broadcast.token === "everyone"),
+    };
   });
 
-  const serialized = await hydrateOneMessage(edited, actorId);
+  const serialized = await hydrateOneMessage(edited.row, actorId);
 
   emitMessageUpdate(serialized);
+  emitUnreadStale(channel.id, edited.renamed);
+
+  if (edited.broadcastChanged) {
+    emitChannelUnreadStale(channel.id);
+  }
 
   return serialized;
 }
@@ -510,7 +541,12 @@ export async function deleteMessage(
 
   const deletedAt = new Date();
 
-  await db.transaction(async (tx) => {
+  const named = await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({ userId: mentions.userId })
+      .from(mentions)
+      .where(eq(mentions.messageId, message.id));
+
     await softDeleteMessage(tx, channel.id, message.id, deletedAt);
 
     if (byModerator && context.server !== null) {
@@ -523,6 +559,8 @@ export async function deleteMessage(
         metadata: { channelId: channel.id, authorId: message.authorId },
       });
     }
+
+    return rows.map((row) => row.userId);
   });
 
   const payload = {
@@ -532,6 +570,9 @@ export async function deleteMessage(
   };
 
   emitMessageDelete(payload);
+
+  emitUnreadStale(channel.id, named);
+  emitChannelUnreadStale(channel.id);
 
   return payload;
 }

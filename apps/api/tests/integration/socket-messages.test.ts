@@ -249,6 +249,84 @@ describe("message broadcasts", () => {
     });
   });
 
+  it("tells a mentioned member that their unread state moved", async () => {
+    const fixture = await seed();
+    const listener = await open(fixture.grace);
+
+    const stale = nextEvent(listener, "unread:stale");
+
+    expect(
+      (await send(fixture.ada, fixture.channelId, "@grace look")).status,
+    ).toBe(201);
+
+    await expect(stale).resolves.toEqual({ channelId: fixture.channelId });
+  });
+
+  it("says nothing about the badge of somebody the message did not name", async () => {
+    const fixture = await seed();
+    const listener = await open(fixture.grace);
+
+    const quiet = silence(listener, "unread:stale", 250);
+
+    expect((await send(fixture.ada, fixture.channelId, "hello")).status).toBe(
+      201,
+    );
+
+    await expect(quiet).resolves.toBe(true);
+  });
+
+  it("tells the channel when an @everyone watermark moves", async () => {
+    const fixture = await seed();
+    const listener = await open(fixture.grace);
+
+    const stale = nextEvent(listener, "unread:stale");
+
+    expect(
+      (await send(fixture.ada, fixture.channelId, "@everyone look")).status,
+    ).toBe(201);
+
+    await expect(stale).resolves.toEqual({ channelId: fixture.channelId });
+  });
+
+  it("tells the channel when a message is deleted", async () => {
+    const fixture = await seed();
+
+    const posted = messageBody.parse(
+      (await send(fixture.ada, fixture.channelId, "hello")).body,
+    );
+
+    const listener = await open(fixture.grace);
+    const stale = nextEvent(listener, "unread:stale");
+
+    await request(app)
+      .delete(`/api/v1/channels/${fixture.channelId}/messages/${posted.id}`)
+      .set("Cookie", fixture.ada.cookies);
+
+    await expect(stale).resolves.toEqual({ channelId: fixture.channelId });
+  });
+
+  it("tells somebody an edit has stopped naming", async () => {
+    const fixture = await seed();
+    const listener = await open(fixture.grace);
+
+    const named = nextEvent(listener, "unread:stale");
+
+    const posted = messageBody.parse(
+      (await send(fixture.ada, fixture.channelId, "@grace look")).body,
+    );
+
+    await named;
+
+    const stale = nextEvent(listener, "unread:stale");
+
+    await request(app)
+      .patch(`/api/v1/channels/${fixture.channelId}/messages/${posted.id}`)
+      .set("Cookie", fixture.ada.cookies)
+      .send({ content: "never mind" });
+
+    await expect(stale).resolves.toEqual({ channelId: fixture.channelId });
+  });
+
   it("sends nothing to a client without VIEW_CHANNEL — the room is the filter", async () => {
     const fixture = await seed();
 

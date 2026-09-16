@@ -388,3 +388,66 @@ describe("GET /api/v1/servers/:serverId/channels", () => {
     );
   });
 });
+
+describe("GET /api/v1/channels/:channelId/read", () => {
+  beforeAll(() => {
+    requireTestDatabase();
+  });
+
+  it("answers one channel as its list entry, for this viewer", async () => {
+    const fixture = await seed();
+    const named = await send(fixture.ada, fixture.channelId, "@grace look");
+
+    const mine = await request(app)
+      .get(`/api/v1/channels/${fixture.channelId}/read`)
+      .set("Cookie", fixture.grace.cookies);
+
+    expect(mine.status).toBe(200);
+    expect(mine.body).toMatchObject({
+      id: fixture.channelId,
+      lastMessageId: named,
+      lastReadMessageId: null,
+      hasUnread: true,
+      hasEveryone: false,
+      mentionCount: 1,
+    });
+
+    const theirs = await request(app)
+      .get(`/api/v1/channels/${fixture.channelId}/read`)
+      .set("Cookie", fixture.ada.cookies);
+
+    expect(theirs.body).toMatchObject({ mentionCount: 0, hasUnread: false });
+  });
+
+  it("follows the watermark once the channel has been read", async () => {
+    const fixture = await seed();
+    const named = await send(fixture.ada, fixture.channelId, "@grace look");
+
+    expect(
+      (await markRead(fixture.grace, fixture.channelId, named)).status,
+    ).toBe(200);
+
+    const res = await request(app)
+      .get(`/api/v1/channels/${fixture.channelId}/read`)
+      .set("Cookie", fixture.grace.cookies);
+
+    expect(res.body).toMatchObject({
+      lastReadMessageId: named,
+      hasUnread: false,
+      mentionCount: 0,
+    });
+  });
+
+  it("refuses a channel the caller cannot read", async () => {
+    const fixture = await seed();
+    const outsider = await signUp("hopper");
+
+    expect(
+      (
+        await request(app)
+          .get(`/api/v1/channels/${fixture.channelId}/read`)
+          .set("Cookie", outsider.cookies)
+      ).status,
+    ).toBe(403);
+  });
+});
