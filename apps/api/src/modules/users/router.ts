@@ -4,7 +4,11 @@ import { z } from "zod";
 
 import { notFound } from "../../lib/errors.js";
 import { validate } from "../../middleware/validate.js";
-import { findUserById, findUsersByIds, serializeUser } from "./queries.js";
+import {
+  findUserById,
+  findUsersByIds,
+  serializeSessionUser,
+} from "./queries.js";
 import { updateProfile } from "./service.js";
 
 const MAX_USER_IDS = 100;
@@ -19,7 +23,7 @@ const usersQuerySchema = z.object({
 export const usersRouter = Router();
 
 usersRouter.get("/@me", async (req, res) => {
-  res.json(await serializeUser(req.user));
+  res.json(await serializeSessionUser(req.user));
 });
 
 usersRouter.patch(

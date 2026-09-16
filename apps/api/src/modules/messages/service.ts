@@ -48,7 +48,7 @@ import {
   resolveDmMentions,
   resolveServerMentions,
 } from "./queries.js";
-import { serializeOneMessage } from "./serialize.js";
+import { hydrateOneMessage } from "./serialize.js";
 
 export interface SendMessageResult {
   created: boolean;
@@ -248,7 +248,7 @@ export async function sendMessage(
 
     return {
       created: false,
-      message: await serializeOneMessage(replayed, authorId),
+      message: await hydrateOneMessage(replayed, authorId),
     };
   }
 
@@ -329,7 +329,7 @@ export async function sendMessage(
     return { created: true, row: inserted };
   });
 
-  const serialized = await serializeOneMessage(result.row, authorId);
+  const serialized = await hydrateOneMessage(result.row, authorId);
 
   if (result.created) {
     emitMessageCreate(serialized);
@@ -416,7 +416,7 @@ export async function editMessage(
     return row;
   });
 
-  const serialized = await serializeOneMessage(edited, actorId);
+  const serialized = await hydrateOneMessage(edited, actorId);
 
   emitMessageUpdate(serialized);
 

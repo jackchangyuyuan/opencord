@@ -1,34 +1,25 @@
 import type { PublicUser } from "@opencord/shared/types";
+import { eq, inArray } from "drizzle-orm";
 
+import type { SessionUser } from "../../auth.js";
 import { db } from "../../db/index.js";
 import { users } from "../../db/schema/index.js";
 import { signMediaUrl } from "../../lib/storage.js";
 
 export type { PublicUser };
 
-export interface UserRow {
-  id: string;
-  username: string;
-  name: string;
-  image?: string | null | undefined;
-  avatarObjectKey?: string | null | undefined;
-  description?: string | null | undefined;
-  customStatus?: string | null | undefined;
-  customStatusEmoji?: string | null | undefined;
-  isAnonymous?: boolean | null | undefined;
-}
-
-export const PROFILE_COLUMNS = {
-  id: true,
-  username: true,
-  name: true,
-  image: true,
-  avatarObjectKey: true,
-  description: true,
-  customStatus: true,
-  customStatusEmoji: true,
-  isAnonymous: true,
-} as const;
+export type UserRow = Pick<
+  typeof users.$inferSelect,
+  | "id"
+  | "username"
+  | "name"
+  | "image"
+  | "avatarObjectKey"
+  | "description"
+  | "customStatus"
+  | "customStatusEmoji"
+  | "isAnonymous"
+>;
 
 export const profileSelection = {
   id: users.id,
@@ -43,21 +34,33 @@ export const profileSelection = {
 };
 
 export async function serializeUser(user: UserRow): Promise<PublicUser> {
-  const key = user.avatarObjectKey ?? null;
-
   return {
     id: user.id,
     username: user.username,
     name: user.name,
     avatarUrl:
-      key === null
-        ? (user.image ?? null)
-        : await signMediaUrl(key, "cacheable"),
+      user.avatarObjectKey === null
+        ? user.image
+        : await signMediaUrl(user.avatarObjectKey, "cacheable"),
+    description: user.description,
+    customStatus: user.customStatus,
+    customStatusEmoji: user.customStatusEmoji,
+    isGuest: user.isAnonymous ?? false,
+  };
+}
+
+export function serializeSessionUser(user: SessionUser): Promise<PublicUser> {
+  return serializeUser({
+    id: user.id,
+    username: user.username,
+    name: user.name,
+    image: user.image ?? null,
+    avatarObjectKey: user.avatarObjectKey ?? null,
     description: user.description ?? null,
     customStatus: user.customStatus ?? null,
     customStatusEmoji: user.customStatusEmoji ?? null,
-    isGuest: user.isAnonymous ?? false,
-  };
+    isAnonymous: user.isAnonymous ?? false,
+  });
 }
 
 export function serializeUsers(
@@ -69,10 +72,10 @@ export function serializeUsers(
 export async function findUserById(
   userId: string,
 ): Promise<PublicUser | undefined> {
-  const user = await db.query.users.findFirst({
-    columns: PROFILE_COLUMNS,
-    where: { id: userId },
-  });
+  const [user] = await db
+    .select(profileSelection)
+    .from(users)
+    .where(eq(users.id, userId));
 
   return user === undefined ? undefined : serializeUser(user);
 }
@@ -84,10 +87,10 @@ export async function findUsersByIds(
     return [];
   }
 
-  const rows = await db.query.users.findMany({
-    columns: PROFILE_COLUMNS,
-    where: { id: { in: [...userIds] } },
-  });
+  const rows = await db
+    .select(profileSelection)
+    .from(users)
+    .where(inArray(users.id, [...userIds]));
 
   return serializeUsers(rows);
 }

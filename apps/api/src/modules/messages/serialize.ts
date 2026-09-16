@@ -1,16 +1,41 @@
-import type { Message, MessagePreview } from "@opencord/shared/types";
+import type {
+  Message,
+  MessagePreview,
+  MessageReaction,
+} from "@opencord/shared/types";
 import { inArray } from "drizzle-orm";
 
 import { resolveChannelsEveryoneCanRead } from "../../access/channels.js";
 import { db } from "../../db/index.js";
 import { messages } from "../../db/schema/index.js";
-import { loadAttachments, signAttachments } from "./attachments.js";
 import {
-  messageColumns,
-  type MessageRow,
-  serializeMessage,
-} from "./queries.js";
+  type AttachmentRow,
+  loadAttachments,
+  signAttachments,
+} from "./attachments.js";
+import { messageColumns, type MessageRow } from "./queries.js";
 import { loadReactions } from "./reactions/queries.js";
+
+export type MessageBase = Omit<
+  Message,
+  "attachments" | "reactions" | "replyTo"
+>;
+
+export function serializeMessage(message: MessageRow): MessageBase {
+  return {
+    id: message.id,
+    channelId: message.channelId,
+    authorId: message.authorId,
+    content: message.content,
+    nonce: message.nonce,
+    replyToId: message.replyToId,
+    pinnedAt: message.pinnedAt?.toISOString() ?? null,
+    pinnedBy: message.pinnedBy,
+    editedAt: message.editedAt?.toISOString() ?? null,
+    deletedAt: message.deletedAt?.toISOString() ?? null,
+    createdAt: message.createdAt.toISOString(),
+  };
+}
 
 function preview(row: MessageRow): MessagePreview {
   return {
@@ -21,59 +46,72 @@ function preview(row: MessageRow): MessagePreview {
   };
 }
 
-export async function serializeMessages(
-  rows: MessageRow[],
-  viewerId: string,
-): Promise<Message[]> {
-  const quotedIds = [
+function quotedIdsOf(rows: readonly MessageRow[]): string[] {
+  return [
     ...new Set(
       rows
         .map((row) => row.replyToId)
         .filter((id): id is string => id !== null),
     ),
   ];
+}
 
-  const quoted =
-    quotedIds.length === 0
-      ? []
-      : await db
-          .select(messageColumns)
-          .from(messages)
-          .where(inArray(messages.id, quotedIds));
+async function loadQuoted(
+  rows: readonly MessageRow[],
+): Promise<Map<string, MessagePreview>> {
+  const ids = quotedIdsOf(rows);
 
-  const reactions = await loadReactions(
-    rows.map((row) => row.id),
-    viewerId,
-  );
+  if (ids.length === 0) {
+    return new Map();
+  }
 
-  const attachments = await loadAttachments(rows.map((row) => row.id));
+  const quoted = await db
+    .select(messageColumns)
+    .from(messages)
+    .where(inArray(messages.id, ids));
 
-  const publicChannels = await resolveChannelsEveryoneCanRead([
-    ...new Set(rows.map((row) => row.channelId)),
-  ]);
+  return new Map(quoted.map((row) => [row.id, preview(row)]));
+}
+
+export async function hydrateMessages(
+  rows: MessageRow[],
+  viewerId: string,
+): Promise<Message[]> {
+  const [quoted, reactions, attachments, readableByEveryone] =
+    await Promise.all([
+      loadQuoted(rows),
+      loadReactions(
+        rows.map((row) => row.id),
+        viewerId,
+      ),
+      loadAttachments(rows.map((row) => row.id)),
+      resolveChannelsEveryoneCanRead([
+        ...new Set(rows.map((row) => row.channelId)),
+      ]),
+    ]);
+
+  const empty: MessageReaction[] = [];
+  const noFiles: AttachmentRow[] = [];
 
   return Promise.all(
-    rows.map(async (row) => {
-      const target = quoted.find((candidate) => candidate.id === row.replyToId);
-
-      return {
-        ...serializeMessage(row),
-        replyTo: target === undefined ? null : preview(target),
-        reactions: reactions.get(row.id) ?? [],
-        attachments: await signAttachments(
-          attachments.get(row.id) ?? [],
-          publicChannels.has(row.channelId) ? "cacheable" : "no-store",
-        ),
-      };
-    }),
+    rows.map(async (row) => ({
+      ...serializeMessage(row),
+      replyTo:
+        row.replyToId === null ? null : (quoted.get(row.replyToId) ?? null),
+      reactions: reactions.get(row.id) ?? empty,
+      attachments: await signAttachments(
+        attachments.get(row.id) ?? noFiles,
+        readableByEveryone.has(row.channelId) ? "cacheable" : "no-store",
+      ),
+    })),
   );
 }
 
-export async function serializeOneMessage(
+export async function hydrateOneMessage(
   row: MessageRow,
   viewerId: string,
 ): Promise<Message> {
-  const [message] = await serializeMessages([row], viewerId);
+  const [message] = await hydrateMessages([row], viewerId);
 
   if (message === undefined) {
     throw new Error("the serializer returned no message");

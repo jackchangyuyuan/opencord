@@ -1,8 +1,9 @@
 import type { Message } from "@opencord/shared/types";
-import { type SQL, sql } from "drizzle-orm";
+import { and, eq, isNull, type SQL, sql } from "drizzle-orm";
 
 import { resolveChannelsEveryoneCanRead } from "../../access/channels.js";
 import { db } from "../../db/index.js";
+import { channels, messages, users } from "../../db/schema/index.js";
 import { AppError } from "../../lib/errors.js";
 import {
   knownTimeZone,
@@ -11,7 +12,8 @@ import {
   zonedDayStart,
 } from "../../lib/time-window.js";
 import { loadAttachments, signAttachments } from "../messages/attachments.js";
-import { serializeMessage } from "../messages/queries.js";
+import { messageColumns } from "../messages/queries.js";
+import { serializeMessage } from "../messages/serialize.js";
 import { parseSearchQuery } from "./query.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -29,21 +31,6 @@ export interface SearchRequest {
   offset: number;
 }
 
-interface SearchRow extends Record<string, unknown> {
-  id: string;
-  channelId: string;
-  authorId: string;
-  content: string;
-  nonce: string | null;
-  replyToId: string | null;
-  mentionsEveryone: boolean;
-  pinnedAt: string | null;
-  pinnedBy: string | null;
-  editedAt: string | null;
-  deletedAt: string | null;
-  createdAt: string;
-}
-
 export interface SearchResult {
   data: Message[];
   degraded: boolean;
@@ -51,11 +38,11 @@ export interface SearchResult {
   offset: number;
 }
 
-export function clampLimit(limit: number): number {
+function clampLimit(limit: number): number {
   return Math.min(Math.max(limit, 1), SEARCH_MAX_LIMIT);
 }
 
-export function windowFor(
+function windowFor(
   limit: number,
   offset: number,
 ): { limit: number; offset: number } {
@@ -67,19 +54,19 @@ export function windowFor(
   };
 }
 
-function literalArray(values: readonly string[], type: string): SQL {
+function boundArray(values: readonly string[], type: string): SQL {
   return sql`array[${sql.join(
     values.map((value) => sql`${value}`),
     sql`, `,
   )}]::${sql.raw(type)}[]`;
 }
 
-async function reducesToNothing(text: string): Promise<boolean> {
+async function hasSearchableTerms(text: string): Promise<boolean> {
   const rows = await db.execute<{ empty: boolean }>(
     sql`select websearch_to_tsquery('english', ${text})::text = '' as empty`,
   );
 
-  return rows[0]?.empty ?? true;
+  return rows[0]?.empty === false;
 }
 
 export async function searchMessages(
@@ -114,7 +101,8 @@ export async function searchMessages(
     return empty;
   }
 
-  const degraded = parsed.text !== "" && (await reducesToNothing(parsed.text));
+  const degraded =
+    parsed.text !== "" && !(await hasSearchableTerms(parsed.text));
   const ranked = parsed.text !== "" && !degraded;
 
   if (
@@ -127,18 +115,18 @@ export async function searchMessages(
   }
 
   const where: SQL[] = [
-    sql`m.channel_id = any(${literalArray(request.accessibleChannelIds, "uuid")})`,
-    sql`m.deleted_at is null`,
+    sql`${messages.channelId} = any(${boundArray(request.accessibleChannelIds, "uuid")})`,
+    isNull(messages.deletedAt),
   ];
 
   if (ranked) {
     where.push(
-      sql`m.search_vector @@ websearch_to_tsquery('english', ${parsed.text})`,
+      sql`${messages.searchVector} @@ websearch_to_tsquery('english', ${parsed.text})`,
     );
   }
 
   if (request.serverId !== undefined) {
-    where.push(sql`c.server_id = ${request.serverId}::uuid`);
+    where.push(eq(channels.serverId, request.serverId));
   }
 
   // Answered by id where the caller resolved one and by name where it did not.
@@ -154,13 +142,13 @@ export async function searchMessages(
 
     if (channelIds.length > 0) {
       alternatives.push(
-        sql`m.channel_id = any(${literalArray(channelIds, "uuid")})`,
+        sql`${messages.channelId} = any(${boundArray(channelIds, "uuid")})`,
       );
     }
 
     if (channelNames.length > 0) {
       alternatives.push(
-        sql`c.name = any(${literalArray(channelNames, "text")})`,
+        sql`${channels.name} = any(${boundArray(channelNames, "text")})`,
       );
     }
 
@@ -169,7 +157,7 @@ export async function searchMessages(
 
   if (parsed.filters.from.length > 0) {
     where.push(
-      sql`u.username = any(${literalArray(parsed.filters.from, "text")})`,
+      sql`${users.username} = any(${boundArray(parsed.filters.from, "text")})`,
     );
   }
 
@@ -179,62 +167,45 @@ export async function searchMessages(
 
   if (from !== null) {
     where.push(
-      sql`m.id >= ${uuidV7LowerBound(zonedDayStart(from, timeZone))}::uuid`,
+      sql`${messages.id} >= ${uuidV7LowerBound(zonedDayStart(from, timeZone))}::uuid`,
     );
   }
 
   if (until !== null) {
     where.push(
-      sql`m.id < ${uuidV7LowerBound(zonedDayEnd(until, timeZone))}::uuid`,
+      sql`${messages.id} < ${uuidV7LowerBound(zonedDayEnd(until, timeZone))}::uuid`,
     );
   }
 
   const order = ranked
-    ? sql`ts_rank_cd(m.search_vector, websearch_to_tsquery('english', ${parsed.text})) desc, m.id desc`
-    : sql`m.id desc`;
+    ? sql`ts_rank_cd(${messages.searchVector}, websearch_to_tsquery('english', ${parsed.text})) desc, ${messages.id} desc`
+    : sql`${messages.id} desc`;
 
-  const rows = await db.execute<SearchRow>(sql`
-    select m.id,
-           m.channel_id as "channelId",
-           m.author_id as "authorId",
-           m.content,
-           m.nonce,
-           m.reply_to_id as "replyToId",
-           m.mentions_everyone as "mentionsEveryone",
-           m.pinned_at as "pinnedAt",
-           m.pinned_by as "pinnedBy",
-           m.edited_at as "editedAt",
-           m.deleted_at as "deletedAt",
-           m.created_at as "createdAt"
-      from messages m
-      join channels c on c.id = m.channel_id
-      join users u on u.id = m.author_id
-     where ${sql.join(where, sql` and `)}
-     order by ${order}
-     limit ${limit} offset ${offset}
-  `);
+  const rows = await db
+    .select(messageColumns)
+    .from(messages)
+    .innerJoin(channels, eq(channels.id, messages.channelId))
+    .innerJoin(users, eq(users.id, messages.authorId))
+    .where(and(...where))
+    .orderBy(order)
+    .limit(limit)
+    .offset(offset);
 
   const attachments = await loadAttachments(rows.map((row) => row.id));
 
-  const publicChannels = await resolveChannelsEveryoneCanRead([
+  const readableByEveryone = await resolveChannelsEveryoneCanRead([
     ...new Set(rows.map((row) => row.channelId)),
   ]);
 
   return {
     data: await Promise.all(
       rows.map(async (row) => ({
-        ...serializeMessage({
-          ...row,
-          pinnedAt: row.pinnedAt === null ? null : new Date(row.pinnedAt),
-          editedAt: row.editedAt === null ? null : new Date(row.editedAt),
-          deletedAt: row.deletedAt === null ? null : new Date(row.deletedAt),
-          createdAt: new Date(row.createdAt),
-        }),
+        ...serializeMessage(row),
         replyTo: null,
         reactions: [],
         attachments: await signAttachments(
           attachments.get(row.id) ?? [],
-          publicChannels.has(row.channelId) ? "cacheable" : "no-store",
+          readableByEveryone.has(row.channelId) ? "cacheable" : "no-store",
         ),
       })),
     ),

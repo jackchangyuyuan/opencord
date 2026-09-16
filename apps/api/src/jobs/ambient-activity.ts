@@ -33,7 +33,7 @@ import {
   messageColumns,
   type MessageRow,
 } from "../modules/messages/queries.js";
-import { serializeOneMessage } from "../modules/messages/serialize.js";
+import { hydrateOneMessage } from "../modules/messages/serialize.js";
 import {
   emitMessageCreate,
   emitReaction,
@@ -355,7 +355,7 @@ export async function runAmbientActivity(
   }
 
   for (const message of written.posted) {
-    emitMessageCreate(await serializeOneMessage(message.row, message.authorId));
+    emitMessageCreate(await hydrateOneMessage(message.row, message.authorId));
   }
 
   for (const reaction of written.reacted) {

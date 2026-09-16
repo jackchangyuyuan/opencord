@@ -13,7 +13,7 @@ import { validate } from "../../middleware/validate.js";
 import { messagePinRouter } from "./pins/router.js";
 import { listChannelMessages } from "./queries.js";
 import { reactionsRouter } from "./reactions/router.js";
-import { serializeMessages } from "./serialize.js";
+import { hydrateMessages } from "./serialize.js";
 import { deleteMessage, editMessage, sendMessage } from "./service.js";
 
 const channelParamsSchema = z.object({ channelId: z.uuid() });
@@ -47,7 +47,7 @@ messagesRouter.get(
     const page = await listChannelMessages(req.channel.channel.id, req.query);
 
     res.json({
-      data: await serializeMessages(page.rows, req.user.id),
+      data: await hydrateMessages(page.rows, req.user.id),
       nextCursor: page.nextCursor,
     });
   },

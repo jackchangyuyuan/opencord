@@ -1,5 +1,4 @@
 import type { MessagePageQuery } from "@opencord/shared/schemas";
-import type { Message } from "@opencord/shared/types";
 import {
   and,
   asc,
@@ -44,27 +43,6 @@ export const messageColumns = {
 };
 
 export type MessageRow = Omit<typeof messages.$inferSelect, "searchVector">;
-
-export type MessageBase = Omit<
-  Message,
-  "attachments" | "reactions" | "replyTo"
->;
-
-export function serializeMessage(message: MessageRow): MessageBase {
-  return {
-    id: message.id,
-    channelId: message.channelId,
-    authorId: message.authorId,
-    content: message.content,
-    nonce: message.nonce,
-    replyToId: message.replyToId,
-    pinnedAt: message.pinnedAt?.toISOString() ?? null,
-    pinnedBy: message.pinnedBy,
-    editedAt: message.editedAt?.toISOString() ?? null,
-    deletedAt: message.deletedAt?.toISOString() ?? null,
-    createdAt: message.createdAt.toISOString(),
-  };
-}
 
 export async function findMessageByNonce(
   authorId: string,

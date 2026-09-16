@@ -9,7 +9,7 @@ import { writeAudit } from "../../../lib/audit.js";
 import { notFound, pinLimitReached } from "../../../lib/errors.js";
 import { emitMessagePin } from "../../../socket/emit.js";
 import { findLiveMessage, messageColumns } from "../queries.js";
-import { serializeMessages, serializeOneMessage } from "../serialize.js";
+import { hydrateMessages, hydrateOneMessage } from "../serialize.js";
 import { countPins, listPinnedMessages, PIN_LIMIT } from "./queries.js";
 
 export { PIN_LIMIT };
@@ -64,7 +64,7 @@ export async function pinMessage(
     return row;
   });
 
-  const serialized = await serializeOneMessage(pinned, actorId);
+  const serialized = await hydrateOneMessage(pinned, actorId);
 
   emitMessagePin({
     channelId,
@@ -110,10 +110,10 @@ export async function unpinMessage(
   });
 
   if (unpinned === null) {
-    return serializeOneMessage(message, actorId);
+    return hydrateOneMessage(message, actorId);
   }
 
-  const serialized = await serializeOneMessage(unpinned, actorId);
+  const serialized = await hydrateOneMessage(unpinned, actorId);
 
   emitMessagePin({
     channelId,
@@ -129,5 +129,5 @@ export async function listPins(
   channelId: string,
   viewerId: string,
 ): Promise<Message[]> {
-  return serializeMessages(await listPinnedMessages(channelId), viewerId);
+  return hydrateMessages(await listPinnedMessages(channelId), viewerId);
 }
