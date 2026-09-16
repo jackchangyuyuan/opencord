@@ -226,7 +226,7 @@ export function MembersPage({ serverId }: { serverId: string }) {
 
   const total = roles?.find((role) => role.isDefault)?.memberCount;
 
-  const myRoleIds = (server?.roles ?? []).map((role) => role.id);
+  const myRoleIds = (server?.viewerRoles ?? []).map((role) => role.id);
 
   return (
     <SettingsPage

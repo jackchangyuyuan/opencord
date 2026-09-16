@@ -90,7 +90,7 @@ function seed(everyonePermissions: number) {
       permissions: everyonePermissions,
       isDefault: true,
     },
-    roles: [],
+    viewerRoles: [],
   });
 }
 

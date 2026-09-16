@@ -117,7 +117,7 @@ describe("requireServerPermission on GET /api/v1/servers/:serverId", () => {
           Permissions.ADD_REACTIONS |
           Permissions.CREATE_INVITE,
       },
-      roles: [
+      viewerRoles: [
         { id: roleId, name: "granted", permissions: Permissions.KICK_MEMBERS },
       ],
     });

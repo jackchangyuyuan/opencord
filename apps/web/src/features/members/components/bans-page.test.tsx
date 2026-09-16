@@ -80,7 +80,7 @@ beforeEach(() => {
                     permissions,
                     isDefault: true,
                   },
-                  roles: [],
+                  viewerRoles: [],
                 }
               : {};
 

@@ -89,7 +89,7 @@ export function UserProfileCard({
     roles !== undefined &&
     permitted &&
     outranks(
-      { id: me?.id, roleIds: server?.roles.map((role) => role.id) ?? [] },
+      { id: me?.id, roleIds: server?.viewerRoles.map((role) => role.id) ?? [] },
       member,
       roles,
       server?.ownerId,

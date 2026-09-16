@@ -71,7 +71,7 @@ export function RolesPage({ serverId }: { serverId: string }) {
   });
 
   const actorPosition = positionOf(
-    server?.roles ?? [],
+    server?.viewerRoles ?? [],
     server?.ownerId,
     me?.id,
   );

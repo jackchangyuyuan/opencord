@@ -100,7 +100,7 @@ beforeEach(() => {
                 ownerId,
                 createdAt: "2026-09-11T10:00:00.000Z",
                 everyoneRole: roles()[0],
-                roles: [],
+                viewerRoles: [],
               }
             : url.includes("/overwrites")
               ? { roles: [], members: [] }

@@ -44,7 +44,7 @@ function stubApi(roles: (typeof MANAGER)[]) {
             ownerId: "u-owner",
             createdAt: "2026-09-01T00:00:00.000Z",
             everyoneRole: EVERYONE,
-            roles,
+            viewerRoles: roles,
           };
 
       return Promise.resolve(

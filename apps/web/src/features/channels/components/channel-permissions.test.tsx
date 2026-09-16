@@ -108,7 +108,7 @@ function stubFetch() {
                 permissions: actorPermissions,
                 isDefault: true,
               },
-              roles: [],
+              viewerRoles: [],
             }),
           ),
         );

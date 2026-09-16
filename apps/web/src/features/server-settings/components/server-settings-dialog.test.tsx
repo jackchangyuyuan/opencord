@@ -39,7 +39,7 @@ function detail() {
   return {
     ...summary(),
     everyoneRole: { ...EVERYONE, permissions: everyonePermissions },
-    roles: [],
+    viewerRoles: [],
   };
 }
 

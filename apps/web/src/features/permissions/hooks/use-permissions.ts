@@ -30,7 +30,7 @@ function resolveServer(
     userId,
     serverOwnerId: server.ownerId,
     everyoneRole: server.everyoneRole,
-    memberRoles: server.roles,
+    memberRoles: server.viewerRoles,
   });
 }
 
@@ -77,7 +77,7 @@ export function useChannelPermissions(channelId: string | undefined): number {
     userId: me.id,
     serverOwnerId: server.ownerId,
     everyoneRole: server.everyoneRole,
-    memberRoles: server.roles,
+    memberRoles: server.viewerRoles,
     roleOverwrites: overwrites.roles,
     ...(memberOverwrite === undefined ? {} : { memberOverwrite }),
   });

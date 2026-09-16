@@ -44,7 +44,7 @@ const SERVER_DETAIL = {
     permissions: Permissions.VIEW_CHANNEL,
     isDefault: true,
   },
-  roles: [],
+  viewerRoles: [],
 };
 
 function stubFetch(

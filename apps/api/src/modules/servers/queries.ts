@@ -71,7 +71,7 @@ export async function listServersForUser(
 
 export interface ServerDetail extends ServerSummary {
   everyoneRole: PublicRole;
-  roles: PublicRole[];
+  viewerRoles: PublicRole[];
 }
 
 export interface ServerMemberEntry {
@@ -92,25 +92,8 @@ export async function serializeServerDetail(
   return {
     ...(await serializeServer(context.server)),
     everyoneRole: serializeRole(context.everyoneRole),
-    roles: context.memberRoles.map(serializeRole),
+    viewerRoles: context.memberRoles.map(serializeRole),
   };
-}
-
-export async function isServerMember(
-  serverId: string,
-  userId: string,
-): Promise<boolean> {
-  const rows = await db
-    .select({ userId: serverMembers.userId })
-    .from(serverMembers)
-    .where(
-      and(
-        eq(serverMembers.serverId, serverId),
-        eq(serverMembers.userId, userId),
-      ),
-    );
-
-  return rows.length > 0;
 }
 
 function escapeLike(term: string): string {
@@ -211,15 +194,22 @@ export async function listServerMembers(
           )
           .orderBy(memberRoles.roleId);
 
+  const roleIdsByUser = new Map<string, string[]>();
+
+  for (const assignment of assignments) {
+    const held = roleIdsByUser.get(assignment.userId) ?? [];
+
+    held.push(assignment.roleId);
+    roleIdsByUser.set(assignment.userId, held);
+  }
+
   return {
     data: await Promise.all(
       visible.map(async (row) => ({
         user: await serializeUser(row),
         nickname: row.nickname,
         joinedAt: row.joinedAt.toISOString(),
-        roleIds: assignments
-          .filter((assignment) => assignment.userId === row.id)
-          .map((assignment) => assignment.roleId),
+        roleIds: roleIdsByUser.get(row.id) ?? [],
       })),
     ),
     nextCursor: next === undefined ? null : next.id,

@@ -74,7 +74,7 @@ const SERVER_DETAIL = {
   ownerId: "u-owner",
   createdAt: "2026-09-01T00:00:00.000Z",
   everyoneRole: ROLES[0],
-  roles: [],
+  viewerRoles: [],
 };
 
 const ME = {

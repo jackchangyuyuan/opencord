@@ -123,7 +123,7 @@ function stubFetch() {
                 position: 0,
                 isDefault: true,
               },
-              roles: [],
+              viewerRoles: [],
             }),
           ),
         );

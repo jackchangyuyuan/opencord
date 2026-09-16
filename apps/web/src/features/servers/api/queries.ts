@@ -22,7 +22,7 @@ export const serversQuery = queryOptions({
 
 export interface ServerDetail extends ServerSummary {
   everyoneRole: PublicRole;
-  roles: PublicRole[];
+  viewerRoles: PublicRole[];
 }
 
 export function serverQueryKey(serverId: string) {
