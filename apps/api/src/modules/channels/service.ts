@@ -12,7 +12,7 @@ import { type ChannelRow, channels } from "../../db/schema/index.js";
 import { writeAudit } from "../../lib/audit.js";
 import { AppError, notFound } from "../../lib/errors.js";
 import { emitChannelEvent, emitPermissionsChanged } from "../../socket/emit.js";
-import { syncServerRooms } from "../../socket/rooms.js";
+import { revokeServerRooms, syncServerRooms } from "../../socket/rooms.js";
 import { type ChannelSummary, serializeChannel } from "./queries.js";
 
 const DEFAULT_CHANNEL_NAMES = ["general", "random"] as const;
@@ -130,7 +130,7 @@ export async function deleteChannel(
 
   emitChannelEvent("channel:delete", context.server.id, channel.id);
 
-  await syncServerRooms(context.server.id);
+  await revokeServerRooms(context.server.id);
 
   emitPermissionsChanged(context.server.id);
 }

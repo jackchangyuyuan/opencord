@@ -16,6 +16,10 @@ export type RoomSyncRequest =
 
 export interface InterServerEvents {
   "rooms:sync": (request: RoomSyncRequest) => void;
+  "rooms:revoke": (
+    request: RoomSyncRequest,
+    applied: (converged: boolean) => void,
+  ) => void;
 }
 
 export type SocketServer = Server<

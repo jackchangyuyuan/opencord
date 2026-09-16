@@ -249,18 +249,72 @@ export async function reconcileLocalRooms(io: SocketServer): Promise<void> {
 }
 
 export function listenForPeerRoomSync(io: SocketServer): void {
-  io.on("rooms:sync", (request) => {
+  const apply = async (request: RoomSyncRequest): Promise<boolean> => {
     const parsed = roomSyncRequestSchema.safeParse(request);
 
     if (!parsed.success) {
       logger.warn({ request }, "Ignoring an unreadable room sync request");
-      return;
+
+      return false;
     }
 
-    converge(selectedSockets(io, parsed.data)).catch((error: unknown) => {
+    try {
+      await converge(selectedSockets(io, parsed.data));
+
+      return true;
+    } catch (error) {
       logger.error({ err: error }, "Peer room synchronisation failed");
-    });
+
+      return false;
+    }
+  };
+
+  io.on("rooms:sync", (request) => {
+    void apply(request);
   });
+
+  io.on("rooms:revoke", (request, applied) => {
+    void apply(request).then(applied);
+  });
+}
+
+function affectedRooms(request: RoomSyncRequest): string[] {
+  return request.scope === "users"
+    ? request.userIds.map(userRoom)
+    : [serverRoom(request.serverId)];
+}
+
+async function convergeLocally(
+  io: SocketServer,
+  request: RoomSyncRequest,
+): Promise<boolean> {
+  try {
+    await converge(selectedSockets(io, request));
+
+    return true;
+  } catch (error) {
+    logger.error({ err: error, request }, "Room synchronisation failed");
+
+    return false;
+  }
+}
+
+async function confirmPeers(
+  io: SocketServer,
+  request: RoomSyncRequest,
+): Promise<boolean> {
+  try {
+    const answers = await io.serverSideEmitWithAck("rooms:revoke", request);
+
+    return answers.every((converged) => converged);
+  } catch (error) {
+    logger.error(
+      { err: error, request },
+      "Peers did not confirm a room synchronisation",
+    );
+
+    return false;
+  }
 }
 
 async function sync(request: RoomSyncRequest): Promise<void> {
@@ -270,30 +324,69 @@ async function sync(request: RoomSyncRequest): Promise<void> {
     return;
   }
 
-  try {
-    io.serverSideEmit("rooms:sync", request);
+  io.serverSideEmit("rooms:sync", request);
 
-    await converge(selectedSockets(io, request));
-  } catch (error) {
-    logger.error(
-      { err: error, request },
-      "Room synchronisation failed after the change it reflects was committed",
-    );
-  }
+  await convergeLocally(io, request);
 }
 
-export async function syncUserRooms(userIds: readonly string[]): Promise<void> {
-  const unique = [...new Set(userIds)];
+async function revoke(request: RoomSyncRequest): Promise<void> {
+  const io = currentSocketServer();
 
-  if (unique.length === 0) {
+  if (io === null) {
     return;
   }
 
-  await sync({ scope: "users", userIds: unique });
+  const [peers, local] = await Promise.all([
+    confirmPeers(io, request),
+    convergeLocally(io, request),
+  ]);
+
+  if (peers && local) {
+    return;
+  }
+
+  logger.error(
+    { request, peers, local },
+    "Closing the sockets of a revocation the cluster did not confirm",
+  );
+
+  if (currentSocketServer() !== io) {
+    return;
+  }
+
+  io.in(affectedRooms(request)).disconnectSockets(true);
+}
+
+function usersRequest(userIds: readonly string[]): RoomSyncRequest | null {
+  const unique = [...new Set(userIds)];
+
+  return unique.length === 0 ? null : { scope: "users", userIds: unique };
+}
+
+export async function syncUserRooms(userIds: readonly string[]): Promise<void> {
+  const request = usersRequest(userIds);
+
+  if (request !== null) {
+    await sync(request);
+  }
+}
+
+export async function revokeUserRooms(
+  userIds: readonly string[],
+): Promise<void> {
+  const request = usersRequest(userIds);
+
+  if (request !== null) {
+    await revoke(request);
+  }
 }
 
 export async function syncServerRooms(serverId: string): Promise<void> {
   await sync({ scope: "server", serverId });
+}
+
+export async function revokeServerRooms(serverId: string): Promise<void> {
+  await revoke({ scope: "server", serverId });
 }
 
 export function disconnectUserSockets(userId: string): void {

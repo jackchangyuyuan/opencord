@@ -569,7 +569,7 @@ describe("cross-instance permission revocation", () => {
     await expect(quiet).resolves.toBe(true);
   });
 
-  it("revokes on the other instance while a peer answers nothing", async () => {
+  it("answers a revocation only once the other instance has applied it", async () => {
     const fixture = await seed();
     const client = await open(holder, fixture.grace);
 
@@ -577,36 +577,102 @@ describe("cross-instance permission revocation", () => {
       true,
     );
 
-    const silent = redis.duplicate();
+    let reached = (): void => undefined;
+    let release = (): void => undefined;
 
-    await silent.subscribe(`${config.SOCKET_ADAPTER_KEY}-request#/#`);
+    const arrived = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
 
-    try {
-      const denied = await request(app)
-        .put(
-          `/api/v1/channels/${fixture.channelId}/overwrites/roles/${fixture.everyoneRoleId}`,
-        )
-        .set("Cookie", fixture.ada.cookies)
-        .send({ deny: Permissions.VIEW_CHANNEL });
+    permissions.afterNextRead = async () => {
+      reached();
+      await held;
+    };
 
-      expect(denied.status).toBe(200);
+    const denied = request(app)
+      .put(
+        `/api/v1/channels/${fixture.channelId}/overwrites/roles/${fixture.everyoneRoleId}`,
+      )
+      .set("Cookie", fixture.ada.cookies)
+      .send({ deny: Permissions.VIEW_CHANNEL })
+      .then((res) => res);
 
-      const rooms = await settle(
-        holder,
-        (current) => !current.has(`channel:${fixture.channelId}`),
+    await arrived;
+
+    const answeredEarly = await Promise.race([
+      denied.then(() => true),
+      sleep(SILENCE_MS).then(() => false),
+    ]);
+
+    expect(answeredEarly).toBe(false);
+
+    release();
+
+    expect((await denied).status).toBe(200);
+
+    expect((await roomsOn(holder)).has(`channel:${fixture.channelId}`)).toBe(
+      false,
+    );
+
+    const quiet = silence(client, SILENCE_MS);
+
+    expect((await send(fixture.ada, fixture.channelId)).status).toBe(201);
+    await expect(quiet).resolves.toBe(true);
+  });
+
+  it(
+    "revokes on the other instance while a peer answers nothing",
+    async () => {
+      const fixture = await seed();
+      const client = await open(holder, fixture.grace);
+
+      expect((await roomsOn(holder)).has(`channel:${fixture.channelId}`)).toBe(
+        true,
       );
 
-      expect(rooms.has(`channel:${fixture.channelId}`)).toBe(false);
+      const silent = redis.duplicate();
 
-      const quiet = silence(client, SILENCE_MS);
+      await silent.subscribe(`${config.SOCKET_ADAPTER_KEY}-request#/#`);
 
-      expect((await send(fixture.ada, fixture.channelId)).status).toBe(201);
-      await expect(quiet).resolves.toBe(true);
-    } finally {
-      await silent.unsubscribe();
-      await silent.quit();
-    }
-  });
+      const closed = new Promise<boolean>((resolve) => {
+        client.once("disconnect", () => {
+          resolve(true);
+        });
+      });
+
+      try {
+        const denied = request(app)
+          .put(
+            `/api/v1/channels/${fixture.channelId}/overwrites/roles/${fixture.everyoneRoleId}`,
+          )
+          .set("Cookie", fixture.ada.cookies)
+          .send({ deny: Permissions.VIEW_CHANNEL })
+          .then((res) => res);
+
+        const rooms = await settle(
+          holder,
+          (current) => !current.has(`channel:${fixture.channelId}`),
+        );
+
+        expect(rooms.has(`channel:${fixture.channelId}`)).toBe(false);
+
+        const quiet = silence(client, SILENCE_MS);
+
+        expect((await send(fixture.ada, fixture.channelId)).status).toBe(201);
+        await expect(quiet).resolves.toBe(true);
+
+        expect((await denied).status).toBe(200);
+        await expect(closed).resolves.toBe(true);
+      } finally {
+        await silent.unsubscribe();
+        await silent.quit();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
 
   it("answers a created server whose synchronisation failed", async () => {
     const ada = await signUp("ada");

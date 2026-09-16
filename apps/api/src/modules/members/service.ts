@@ -6,7 +6,7 @@ import { memberRoles, type RoleRow } from "../../db/schema/index.js";
 import { writeAudit } from "../../lib/audit.js";
 import { forbidden, notFound } from "../../lib/errors.js";
 import { emitPermissionsChanged, emitRoleUpdate } from "../../socket/emit.js";
-import { syncUserRooms } from "../../socket/rooms.js";
+import { revokeUserRooms, syncUserRooms } from "../../socket/rooms.js";
 import {
   actorPosition,
   requireBelowActor,
@@ -130,7 +130,7 @@ export async function unassignRole(
   });
 
   if (unassigned) {
-    await syncUserRooms([targetUserId]);
+    await revokeUserRooms([targetUserId]);
 
     emitRoleUpdate(context.server.id);
     emitPermissionsChanged(context.server.id);

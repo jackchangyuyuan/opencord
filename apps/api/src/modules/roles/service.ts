@@ -11,7 +11,7 @@ import { type RoleRow, roles } from "../../db/schema/index.js";
 import { writeAudit } from "../../lib/audit.js";
 import { AppError, forbidden, notFound } from "../../lib/errors.js";
 import { emitPermissionsChanged, emitRoleUpdate } from "../../socket/emit.js";
-import { syncServerRooms } from "../../socket/rooms.js";
+import { revokeServerRooms } from "../../socket/rooms.js";
 import {
   actorPosition,
   requireBelowActor,
@@ -20,7 +20,7 @@ import {
 import { findServerRole, type PublicRole, serializeRole } from "./queries.js";
 
 async function announceAccessChange(serverId: string): Promise<void> {
-  await syncServerRooms(serverId);
+  await revokeServerRooms(serverId);
 
   emitRoleUpdate(serverId);
   emitPermissionsChanged(serverId);

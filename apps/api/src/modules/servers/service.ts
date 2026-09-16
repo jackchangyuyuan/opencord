@@ -21,7 +21,11 @@ import {
   emitPermissionsChanged,
   emitServerEvent,
 } from "../../socket/emit.js";
-import { syncServerRooms, syncUserRooms } from "../../socket/rooms.js";
+import {
+  revokeServerRooms,
+  revokeUserRooms,
+  syncUserRooms,
+} from "../../socket/rooms.js";
 import { createDefaultChannels } from "../channels/service.js";
 import { isServerMember, lockedServerOwner } from "../members/queries.js";
 import { requireOwnedUpload } from "../uploads/associate.js";
@@ -170,7 +174,7 @@ export async function transferOwnership(
     return updated;
   });
 
-  await syncUserRooms([context.userId, targetUserId]);
+  await revokeUserRooms([context.userId, targetUserId]);
 
   emitServerEvent("server:update", context.server.id);
   emitPermissionsChanged(context.server.id);
@@ -197,9 +201,9 @@ export async function leaveServer(
       );
   });
 
-  emitMemberEvent("member:leave", context.server.id, userId);
+  await revokeUserRooms([userId]);
 
-  await syncUserRooms([userId]);
+  emitMemberEvent("member:leave", context.server.id, userId);
 }
 
 export async function deleteServer(context: ServerContext): Promise<void> {
@@ -217,5 +221,5 @@ export async function deleteServer(context: ServerContext): Promise<void> {
 
   emitServerEvent("server:delete", context.server.id);
 
-  await syncServerRooms(context.server.id);
+  await revokeServerRooms(context.server.id);
 }

@@ -14,7 +14,7 @@ import {
 import { writeAudit } from "../../../lib/audit.js";
 import { AppError, notFound } from "../../../lib/errors.js";
 import { emitPermissionsChanged } from "../../../socket/emit.js";
-import { syncServerRooms } from "../../../socket/rooms.js";
+import { revokeServerRooms } from "../../../socket/rooms.js";
 import {
   actorPosition,
   requireBelowActor,
@@ -37,7 +37,7 @@ function requireChannelScopedBits(allow: number, deny: number): void {
 }
 
 async function announceOverwriteChange(serverId: string): Promise<void> {
-  await syncServerRooms(serverId);
+  await revokeServerRooms(serverId);
 
   emitPermissionsChanged(serverId);
 }
