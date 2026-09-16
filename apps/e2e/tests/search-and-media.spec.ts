@@ -114,11 +114,7 @@ test("search and media stop at the same permission boundary (flow 5)", async ({
 
   const { id: secretId } = (await secret.json()) as { id: string };
 
-  const publicKey = await postWithImage(
-    owner,
-    general.id,
-    `a public ${term} note`,
-  );
+  await postWithImage(owner, general.id, `a public ${term} note`);
   const secretKey = await postWithImage(
     owner,
     secretId,
@@ -158,9 +154,13 @@ test("search and media stop at the same permission boundary (flow 5)", async ({
 
   expect(results).toHaveLength(1);
   expect(results[0]?.channelId).toBe(general.id);
+  expect(payload).not.toContain(secretId);
   expect(payload).not.toContain(secretKey);
-  expect(payload).toContain(publicKey);
-  expect(results[0]?.attachments[0]?.url).toContain(publicKey);
+
+  expect(results[0]?.attachments[0]?.url).toContain(
+    `/api/v1/channels/${general.id}/attachments/`,
+  );
+  expect(results[0]?.attachments[0]?.url).not.toContain("X-Amz-Signature");
 
   await member.context.addCookies([
     { name: member.cookie.name, value: member.cookie.value, url: baseURL },
@@ -174,7 +174,16 @@ test("search and media stop at the same permission boundary (flow 5)", async ({
   const image = page.getByRole("img", { name: "pixel.png" });
 
   await expect(image).toBeVisible();
-  await expect(image).toHaveAttribute("src", new RegExp(publicKey));
+  await expect(image).toHaveAttribute(
+    "src",
+    new RegExp(`/api/v1/channels/${general.id}/attachments/`),
+  );
+
+  await expect
+    .poll(() =>
+      image.evaluate((node) => (node as HTMLImageElement).naturalWidth),
+    )
+    .toBeGreaterThan(0);
 
   await page.getByRole("button", { name: "Search" }).first().click();
   await page.getByRole("combobox", { name: "Search messages" }).fill(term);

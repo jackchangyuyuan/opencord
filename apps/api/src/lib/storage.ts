@@ -1,4 +1,5 @@
 import {
+  CopyObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
@@ -104,6 +105,20 @@ export async function headObject(
 
     throw error;
   }
+}
+
+export async function copyObject(
+  fromKey: string,
+  toKey: string,
+): Promise<void> {
+  await s3.send(
+    new CopyObjectCommand({
+      Bucket: config.S3_BUCKET,
+      CopySource: encodeURI(`${config.S3_BUCKET}/${fromKey}`),
+      Key: toKey,
+      MetadataDirective: "COPY",
+    }),
+  );
 }
 
 export async function deleteObject(objectKey: string): Promise<void> {

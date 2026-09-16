@@ -2,6 +2,7 @@ import {
   UPLOAD_ASSOCIATION_WINDOW_MS,
   UPLOAD_CONTENT_TYPES,
   UPLOAD_PREFIX,
+  type UploadContentType,
   type UploadKind,
 } from "@opencord/shared/constants";
 
@@ -12,12 +13,29 @@ import {
 } from "../../lib/errors.js";
 import { headObject, type StoredObject } from "../../lib/storage.js";
 
+function isGrantedKey(kind: UploadKind, userId: string, objectKey: string) {
+  const prefix = `${UPLOAD_PREFIX[kind]}/${userId}/`;
+
+  return (
+    objectKey.startsWith(prefix) &&
+    !objectKey.slice(prefix.length).includes("/")
+  );
+}
+
+function isAcceptedType(value: string): value is UploadContentType {
+  return (UPLOAD_CONTENT_TYPES as readonly string[]).includes(value);
+}
+
+export interface OwnedUpload extends StoredObject {
+  contentType: UploadContentType;
+}
+
 export async function requireOwnedUpload(
   kind: UploadKind,
   userId: string,
   objectKey: string,
-): Promise<StoredObject> {
-  if (!objectKey.startsWith(`${UPLOAD_PREFIX[kind]}/${userId}/`)) {
+): Promise<OwnedUpload> {
+  if (!isGrantedKey(kind, userId, objectKey)) {
     throw uploadKeyForbidden();
   }
 
@@ -27,21 +45,24 @@ export async function requireOwnedUpload(
     throw uploadNotFound();
   }
 
-  const expired =
-    Date.now() - stored.lastModified.getTime() > UPLOAD_ASSOCIATION_WINDOW_MS;
-
   if (
-    expired ||
-    !(UPLOAD_CONTENT_TYPES as readonly string[]).includes(stored.contentType)
+    Date.now() - stored.lastModified.getTime() >
+    UPLOAD_ASSOCIATION_WINDOW_MS
   ) {
     throw new AppError(
       400,
       "UPLOAD_REJECTED",
-      expired
-        ? "That upload is too old to attach"
-        : "That upload is not an accepted image type",
+      "That upload is too old to attach",
     );
   }
 
-  return stored;
+  if (!isAcceptedType(stored.contentType)) {
+    throw new AppError(
+      400,
+      "UPLOAD_REJECTED",
+      "That upload is not an accepted image type",
+    );
+  }
+
+  return { ...stored, contentType: stored.contentType };
 }

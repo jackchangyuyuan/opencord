@@ -2,7 +2,15 @@ import { randomUUID } from "node:crypto";
 
 import { count, eq } from "drizzle-orm";
 import request from "supertest";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { z } from "zod";
 
 import { app } from "../../src/app.js";
@@ -75,6 +83,8 @@ function stubStorage(size = 2048, contentType = "image/png") {
     size,
     lastModified: new Date(),
   });
+
+  vi.spyOn(storage, "copyObject").mockResolvedValue();
 
   return vi.spyOn(storage, "deleteObject").mockResolvedValue();
 }
@@ -349,5 +359,111 @@ describe("message attachments", () => {
 
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: { code: "CONTENT_REQUIRED" } });
+  });
+});
+
+describe("finalising an attachment against the real object store", () => {
+  const written: string[] = [];
+
+  beforeAll(requireTestDatabase);
+
+  afterAll(async () => {
+    await Promise.all(
+      written.map((key) => storage.deleteObject(key).catch(() => undefined)),
+    );
+  });
+
+  async function post(
+    grant: { url: string; fields: Record<string, string> },
+    bytes: number,
+  ): Promise<number> {
+    const form = new FormData();
+
+    for (const [name, value] of Object.entries(grant.fields)) {
+      form.append(name, value);
+    }
+
+    form.append("file", new Blob([new Uint8Array(bytes)]), "image.png");
+
+    const res = await fetch(grant.url, { method: "POST", body: form });
+
+    return res.status;
+  }
+
+  it("keeps the bytes it measured when the grant is used again", async () => {
+    const { ada, channelId } = await seed();
+
+    const authorized = await request(app)
+      .post("/api/v1/uploads")
+      .set("Cookie", ada.cookies)
+      .send({
+        kind: "attachment",
+        filename: "shot.png",
+        contentType: "image/png",
+        size: 512,
+      });
+
+    expect(authorized.status).toBe(201);
+
+    const grant = z
+      .object({
+        objectKey: z.string(),
+        upload: z.object({
+          url: z.string(),
+          fields: z.record(z.string(), z.string()),
+        }),
+      })
+      .parse(authorized.body);
+
+    written.push(grant.objectKey);
+
+    expect(await post(grant.upload, 512)).toBe(204);
+
+    const sent = await send(ada, channelId, {
+      content: "look",
+      nonce: randomUUID(),
+      attachments: [{ objectKey: grant.objectKey, filename: "shot.png" }],
+    });
+
+    expect(sent.status).toBe(201);
+
+    const [row] = await db
+      .select({ objectKey: attachments.objectKey, size: attachments.size })
+      .from(attachments);
+
+    if (row === undefined) {
+      throw new Error("the attachment was not written");
+    }
+
+    written.push(row.objectKey);
+
+    expect(row.objectKey).not.toBe(grant.objectKey);
+    expect(row.objectKey.startsWith(`attachments/${ada.id}/stored/`)).toBe(
+      true,
+    );
+    expect(row.size).toBe(512);
+
+    expect(await post(grant.upload, 2048)).toBe(204);
+
+    expect((await storage.headObject(grant.objectKey))?.size).toBe(2048);
+    expect((await storage.headObject(row.objectKey))?.size).toBe(512);
+  });
+
+  it("refuses to associate a key this API derived rather than granted", async () => {
+    const { ada, channelId } = await seed();
+
+    const res = await send(ada, channelId, {
+      content: "look",
+      nonce: randomUUID(),
+      attachments: [
+        {
+          objectKey: `attachments/${ada.id}/stored/${randomUUID()}.png`,
+          filename: "shot.png",
+        },
+      ],
+    });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: { code: "UPLOAD_KEY_FORBIDDEN" } });
   });
 });

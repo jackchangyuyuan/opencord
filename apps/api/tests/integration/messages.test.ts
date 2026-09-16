@@ -366,6 +366,8 @@ describe("nonce idempotency", () => {
       lastModified: new Date(),
     });
 
+    vi.spyOn(storage, "copyObject").mockResolvedValue();
+
     const body = {
       content: "with a file",
       nonce,

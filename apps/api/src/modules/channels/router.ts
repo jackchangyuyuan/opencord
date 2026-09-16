@@ -7,8 +7,13 @@ import {
 import { Router } from "express";
 import { z } from "zod";
 
-import { resolveAccessibleServerChannels } from "../../access/channels.js";
-import { notADirectMessage } from "../../lib/errors.js";
+import {
+  resolveAccessibleServerChannels,
+  resolveChannelsEveryoneCanRead,
+} from "../../access/channels.js";
+import { config } from "../../config.js";
+import { notADirectMessage, notFound } from "../../lib/errors.js";
+import { signMediaUrl } from "../../lib/storage.js";
 import {
   requireChannelPermission,
   requireServerChannel,
@@ -17,6 +22,7 @@ import {
 import { createResourceRateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
 import { listDmParticipants } from "../dms/queries.js";
+import { findChannelAttachment } from "../messages/attachments.js";
 import { channelPinsRouter } from "../messages/pins/router.js";
 import { overwritesRouter } from "./overwrites/router.js";
 import { listServerChannels, serializeChannel } from "./queries.js";
@@ -30,6 +36,10 @@ import {
 
 const serverParamsSchema = z.object({ serverId: z.uuid() });
 const channelParamsSchema = z.object({ channelId: z.uuid() });
+const attachmentParamsSchema = z.object({
+  channelId: z.uuid(),
+  attachmentId: z.uuid(),
+});
 
 export const serverChannelsRouter = Router({ mergeParams: true });
 
@@ -95,6 +105,42 @@ channelsRouter.get(
     }
 
     res.json(await listDmParticipants(req.channel.channel.id));
+  },
+);
+
+channelsRouter.get(
+  "/:channelId/attachments/:attachmentId",
+  validate({ params: attachmentParamsSchema }),
+  requireChannelPermission(),
+  async (req, res) => {
+    const channelId = req.channel.channel.id;
+    const attachment = await findChannelAttachment(
+      channelId,
+      req.params.attachmentId,
+    );
+
+    if (attachment === undefined) {
+      throw notFound("NOT_FOUND", "Attachment not found");
+    }
+
+    const cacheable = (await resolveChannelsEveryoneCanRead([channelId])).has(
+      channelId,
+    );
+
+    res.setHeader(
+      "Cache-Control",
+      cacheable
+        ? `private, max-age=${String(config.MEDIA_URL_SIGNING_BUCKET)}`
+        : "private, no-store",
+    );
+
+    res.redirect(
+      302,
+      await signMediaUrl(
+        attachment.objectKey,
+        cacheable ? "cacheable" : "no-store",
+      ),
+    );
   },
 );
 

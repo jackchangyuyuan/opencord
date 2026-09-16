@@ -1,12 +1,20 @@
-import { DIMENSION_MAX, DIMENSION_MIN } from "@opencord/shared/constants";
+import { randomUUID } from "node:crypto";
+
+import {
+  DIMENSION_MAX,
+  DIMENSION_MIN,
+  UPLOAD_EXTENSION,
+  UPLOAD_PREFIX,
+  type UploadContentType,
+} from "@opencord/shared/constants";
 import type { MessageAttachmentInput } from "@opencord/shared/schemas";
 import type { MessageAttachment } from "@opencord/shared/types";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 
 import type { Transaction } from "../../db/index.js";
 import { db } from "../../db/index.js";
-import { attachments } from "../../db/schema/index.js";
-import { type MediaCaching, signMediaUrl } from "../../lib/storage.js";
+import { attachments, messages } from "../../db/schema/index.js";
+import { copyObject } from "../../lib/storage.js";
 import { requireOwnedUpload } from "../uploads/associate.js";
 
 export interface PreparedAttachment {
@@ -24,6 +32,10 @@ function dimension(value: number | undefined): number | null {
     : null;
 }
 
+function storedKey(authorId: string, contentType: UploadContentType): string {
+  return `${UPLOAD_PREFIX.attachment}/${authorId}/stored/${randomUUID()}.${UPLOAD_EXTENSION[contentType]}`;
+}
+
 export async function prepareAttachments(
   authorId: string,
   inputs: readonly MessageAttachmentInput[],
@@ -37,8 +49,12 @@ export async function prepareAttachments(
       input.objectKey,
     );
 
+    const objectKey = storedKey(authorId, stored.contentType);
+
+    await copyObject(input.objectKey, objectKey);
+
     prepared.push({
-      objectKey: input.objectKey,
+      objectKey,
       filename: input.filename,
       contentType: stored.contentType,
       size: stored.size,
@@ -109,14 +125,32 @@ export async function loadAttachments(
   return byMessage;
 }
 
-export function signAttachments(
+export async function findChannelAttachment(
+  channelId: string,
+  attachmentId: string,
+): Promise<{ objectKey: string } | undefined> {
+  const [row] = await db
+    .select({ objectKey: attachments.objectKey })
+    .from(attachments)
+    .innerJoin(messages, eq(messages.id, attachments.messageId))
+    .where(
+      and(
+        eq(attachments.id, attachmentId),
+        eq(messages.channelId, channelId),
+        isNull(messages.deletedAt),
+      ),
+    );
+
+  return row;
+}
+
+export function attachmentUrl(channelId: string, attachmentId: string): string {
+  return `/api/v1/channels/${channelId}/attachments/${attachmentId}`;
+}
+
+export function serializeAttachments(
+  channelId: string,
   rows: readonly AttachmentRow[],
-  caching: MediaCaching,
-): Promise<MessageAttachment[]> {
-  return Promise.all(
-    rows.map(async (row) => ({
-      ...row,
-      url: await signMediaUrl(row.objectKey, caching),
-    })),
-  );
+): MessageAttachment[] {
+  return rows.map((row) => ({ ...row, url: attachmentUrl(channelId, row.id) }));
 }

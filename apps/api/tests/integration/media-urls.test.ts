@@ -23,7 +23,9 @@ const serverBody = z.object({ id: z.string() });
 const channelList = z.array(z.object({ id: z.string(), name: z.string() }));
 const messageBody = z.object({
   id: z.string(),
-  attachments: z.array(z.object({ url: z.url(), objectKey: z.string() })),
+  attachments: z.array(
+    z.object({ id: z.string(), url: z.string(), objectKey: z.string() }),
+  ),
 });
 const messagePage = z.object({ data: z.array(messageBody) });
 
@@ -77,6 +79,8 @@ function stubHead() {
     size: 2048,
     lastModified: new Date(),
   });
+
+  vi.spyOn(storage, "copyObject").mockResolvedValue();
 }
 
 async function attach(account: Account, channelId: string): Promise<string> {
@@ -105,6 +109,24 @@ function history(account: Account, channelId: string) {
     .set("Cookie", account.cookies);
 }
 
+function media(account: Account, url: string) {
+  return request(app).get(url).set("Cookie", account.cookies).redirects(0);
+}
+
+async function firstAttachment(
+  account: Account,
+  channelId: string,
+): Promise<{ id: string; url: string }> {
+  const page = messagePage.parse((await history(account, channelId)).body);
+  const file = page.data[0]?.attachments[0];
+
+  if (file === undefined) {
+    throw new Error("the fixture is incomplete");
+  }
+
+  return file;
+}
+
 describe("media URLs", () => {
   beforeAll(requireTestDatabase);
 
@@ -118,20 +140,71 @@ describe("media URLs", () => {
     stubHead();
     await attach(fixture.ada, fixture.general);
 
-    const page = messagePage.parse(
-      (await history(fixture.grace, fixture.general)).body,
-    );
+    const file = await firstAttachment(fixture.grace, fixture.general);
+    const res = await media(fixture.grace, file.url);
 
-    const url = page.data[0]?.attachments[0]?.url ?? "";
-
-    expect(url).toContain(
+    expect(res.status).toBe(302);
+    expect(res.headers["location"]).toContain(
       encodeURIComponent(`max-age=${String(config.MEDIA_URL_TTL_PUBLIC)}`),
     );
-    expect(url).toContain(
+    expect(res.headers["location"]).toContain(
       `X-Amz-Expires=${String(
         config.MEDIA_URL_TTL_PUBLIC + config.MEDIA_URL_SIGNING_BUCKET,
       )}`,
     );
+
+    expect(res.headers["cache-control"]).toBe(
+      `private, max-age=${String(config.MEDIA_URL_SIGNING_BUCKET)}`,
+    );
+  });
+
+  it("carries a URL that does not expire and is re-signed on each request", async () => {
+    const fixture = await seed();
+
+    stubHead();
+    await attach(fixture.ada, fixture.general);
+
+    await db
+      .update(roles)
+      .set({ permissions: Permissions.SEND_MESSAGES })
+      .where(eq(roles.id, fixture.everyoneRoleId));
+
+    const first = await firstAttachment(fixture.ada, fixture.general);
+
+    expect(first.url).toBe(
+      `/api/v1/channels/${fixture.general}/attachments/${first.id}`,
+    );
+    expect(first.url).not.toContain("X-Amz-Signature");
+
+    const early = await media(fixture.ada, first.url);
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(
+      new Date(Date.now() + (config.MEDIA_URL_TTL_PRIVATE + 60) * 1000),
+    );
+
+    const late = await media(fixture.ada, first.url);
+
+    vi.useRealTimers();
+
+    expect((await firstAttachment(fixture.ada, fixture.general)).url).toBe(
+      first.url,
+    );
+    expect(early.status).toBe(302);
+    expect(late.status).toBe(302);
+    expect(late.headers["location"]).not.toBe(early.headers["location"]);
+  });
+
+  it("refuses the media of a channel the caller cannot read", async () => {
+    const fixture = await seed();
+
+    stubHead();
+    await attach(fixture.ada, fixture.general);
+
+    const file = await firstAttachment(fixture.ada, fixture.general);
+    const outsider = await signUp("hopper");
+
+    expect((await media(outsider, file.url)).status).toBe(403);
   });
 
   it("treats a channel @everyone cannot see as private with no overwrite at all", async () => {
@@ -152,17 +225,15 @@ describe("media URLs", () => {
     stubHead();
     await attach(fixture.ada, fixture.general);
 
-    const page = messagePage.parse(
-      (await history(fixture.ada, fixture.general)).body,
-    );
+    const file = await firstAttachment(fixture.ada, fixture.general);
+    const res = await media(fixture.ada, file.url);
 
-    const url = page.data[0]?.attachments[0]?.url ?? "";
-
-    expect(url).toContain(encodeURIComponent("no-store"));
-    expect(url).toContain(
+    expect(res.headers["location"]).toContain(encodeURIComponent("no-store"));
+    expect(res.headers["location"]).toContain(
       `X-Amz-Expires=${String(config.MEDIA_URL_TTL_PRIVATE)}`,
     );
-    expect(url).not.toContain("max-age");
+    expect(res.headers["location"]).not.toContain("max-age");
+    expect(res.headers["cache-control"]).toBe("private, no-store");
   });
 
   it("treats a direct message as private", async () => {
@@ -178,13 +249,11 @@ describe("media URLs", () => {
     stubHead();
     await attach(fixture.ada, channelId);
 
-    const page = messagePage.parse(
-      (await history(fixture.grace, channelId)).body,
-    );
+    const file = await firstAttachment(fixture.grace, channelId);
 
-    expect(page.data[0]?.attachments[0]?.url).toContain(
-      encodeURIComponent("no-store"),
-    );
+    expect(
+      (await media(fixture.grace, file.url)).headers["location"],
+    ).toContain(encodeURIComponent("no-store"));
   });
 
   it("stops issuing URLs the moment the channel stops being visible", async () => {

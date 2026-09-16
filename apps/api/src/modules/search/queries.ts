@@ -1,7 +1,6 @@
 import type { Message } from "@opencord/shared/types";
 import { and, eq, isNull, type SQL, sql } from "drizzle-orm";
 
-import { resolveChannelsEveryoneCanRead } from "../../access/channels.js";
 import { db } from "../../db/index.js";
 import { channels, messages, users } from "../../db/schema/index.js";
 import { AppError } from "../../lib/errors.js";
@@ -11,7 +10,10 @@ import {
   zonedDayEnd,
   zonedDayStart,
 } from "../../lib/time-window.js";
-import { loadAttachments, signAttachments } from "../messages/attachments.js";
+import {
+  loadAttachments,
+  serializeAttachments,
+} from "../messages/attachments.js";
 import { messageColumns } from "../messages/queries.js";
 import { serializeMessage } from "../messages/serialize.js";
 import { parseSearchQuery } from "./query.js";
@@ -193,22 +195,16 @@ export async function searchMessages(
 
   const attachments = await loadAttachments(rows.map((row) => row.id));
 
-  const readableByEveryone = await resolveChannelsEveryoneCanRead([
-    ...new Set(rows.map((row) => row.channelId)),
-  ]);
-
   return {
-    data: await Promise.all(
-      rows.map(async (row) => ({
-        ...serializeMessage(row),
-        replyTo: null,
-        reactions: [],
-        attachments: await signAttachments(
-          attachments.get(row.id) ?? [],
-          readableByEveryone.has(row.channelId) ? "cacheable" : "no-store",
-        ),
-      })),
-    ),
+    data: rows.map((row) => ({
+      ...serializeMessage(row),
+      replyTo: null,
+      reactions: [],
+      attachments: serializeAttachments(
+        row.channelId,
+        attachments.get(row.id) ?? [],
+      ),
+    })),
     degraded,
     limit,
     offset,
