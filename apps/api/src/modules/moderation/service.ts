@@ -7,7 +7,7 @@ import { lockMembershipPair } from "../../lib/advisory-locks.js";
 import { writeAudit } from "../../lib/audit.js";
 import { forbidden, notFound } from "../../lib/errors.js";
 import { emitMemberEvent } from "../../socket/emit.js";
-import { disconnectUserSockets, syncUserRooms } from "../../socket/rooms.js";
+import { revokeUserRooms } from "../../socket/rooms.js";
 import { isServerMember, lockedServerOwner } from "../members/queries.js";
 import { actorPosition, requireBelowActor } from "../roles/policy.js";
 import { highestPositionFor } from "../roles/queries.js";
@@ -71,7 +71,7 @@ export async function kickMember(
     });
   });
 
-  await syncUserRooms([targetId]);
+  await revokeUserRooms([targetId]);
 
   emitMemberEvent("member:leave", context.server.id, targetId);
 }
@@ -120,9 +120,7 @@ export async function banMember(
     });
   });
 
-  await syncUserRooms([targetId]);
-
-  disconnectUserSockets(targetId);
+  await revokeUserRooms([targetId]);
 
   emitMemberEvent("member:leave", context.server.id, targetId);
 }

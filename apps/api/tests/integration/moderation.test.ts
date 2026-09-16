@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createServer, type Server as HttpServer } from "node:http";
 
 import type {
@@ -96,6 +97,41 @@ async function seed(): Promise<Fixture> {
     channelId: channel.id,
     everyoneRoleId: everyone.id,
   };
+}
+
+function send(account: Account, channelId: string) {
+  return request(app)
+    .post(`/api/v1/channels/${channelId}/messages`)
+    .set("Cookie", account.cookies)
+    .send({ content: "a line", nonce: randomUUID() });
+}
+
+async function secondServer(
+  owner: Account,
+  guest: Account,
+): Promise<{ serverId: string; channelId: string }> {
+  const created = await request(app)
+    .post("/api/v1/servers")
+    .set("Cookie", owner.cookies)
+    .send({ name: "Difference Engine" });
+
+  expect(created.status).toBe(201);
+
+  const serverId = idBody.parse(created.body).id;
+
+  await db.insert(serverMembers).values({ serverId, userId: guest.id });
+
+  const listed = await request(app)
+    .get(`/api/v1/servers/${serverId}/channels`)
+    .set("Cookie", owner.cookies);
+
+  const [channel] = z.array(z.object({ id: z.string() })).parse(listed.body);
+
+  if (channel === undefined) {
+    throw new Error("the fixture is incomplete");
+  }
+
+  return { serverId, channelId: channel.id };
 }
 
 function grantEveryone(serverId: string, mask: number) {
@@ -540,22 +576,128 @@ describe("moderation over the socket", () => {
     expect(rooms.has(`channel:${fixture.channelId}`)).toBe(false);
   });
 
-  it("closes a banned member's socket", async () => {
+  it("takes a banned member out of the rooms of the server they were banned from", async () => {
     const fixture = await seed();
     const client = await open(fixture.grace);
+    const socketId = client.id ?? "";
 
-    const closed = new Promise<void>((resolve) => {
-      client.once("disconnect", () => {
-        resolve();
-      });
+    expect(await roomsOf(socketId)).toContain(`server:${fixture.serverId}`);
+
+    expect(
+      (await ban(fixture.ada, fixture.serverId, fixture.grace.id)).status,
+    ).toBe(204);
+
+    const rooms = await settle(
+      socketId,
+      (current) => !current.has(`server:${fixture.serverId}`),
+    );
+
+    expect(rooms.has(`server:${fixture.serverId}`)).toBe(false);
+    expect(rooms.has(`channel:${fixture.channelId}`)).toBe(false);
+  });
+
+  it("leaves a banned member's other conversations working", async () => {
+    const fixture = await seed();
+    const elsewhere = await secondServer(fixture.grace, fixture.hopper);
+
+    const client = await open(fixture.grace);
+    const socketId = client.id ?? "";
+
+    const arrivals: string[] = [];
+
+    client.on("message:create", ({ message }) => {
+      arrivals.push(message.channelId);
     });
 
     expect(
       (await ban(fixture.ada, fixture.serverId, fixture.grace.id)).status,
     ).toBe(204);
 
-    await closed;
+    const rooms = await settle(
+      socketId,
+      (current) => !current.has(`server:${fixture.serverId}`),
+    );
 
-    expect(client.connected).toBe(false);
+    expect(client.connected).toBe(true);
+    expect(rooms.has(`channel:${fixture.channelId}`)).toBe(false);
+    expect(rooms.has(`channel:${elsewhere.channelId}`)).toBe(true);
+
+    expect((await send(fixture.ada, fixture.channelId)).status).toBe(201);
+
+    const delivered = new Promise<void>((resolve) => {
+      client.on("message:create", ({ message }) => {
+        if (message.channelId === elsewhere.channelId) {
+          resolve();
+        }
+      });
+    });
+
+    expect((await send(fixture.hopper, elsewhere.channelId)).status).toBe(201);
+
+    await delivered;
+
+    expect(arrivals).toEqual([elsewhere.channelId]);
+  });
+
+  it("tells a kicked member that they were removed", async () => {
+    const fixture = await seed();
+    const client = await open(fixture.grace);
+
+    const left = new Promise<{ serverId: string; userId: string }>(
+      (resolve) => {
+        client.once("member:leave", resolve);
+      },
+    );
+
+    expect(
+      (await kick(fixture.ada, fixture.serverId, fixture.grace.id)).status,
+    ).toBe(204);
+
+    await expect(left).resolves.toEqual({
+      serverId: fixture.serverId,
+      userId: fixture.grace.id,
+    });
+  });
+
+  it("tells a banned member that they were removed", async () => {
+    const fixture = await seed();
+    const client = await open(fixture.grace);
+
+    const left = new Promise<{ serverId: string; userId: string }>(
+      (resolve) => {
+        client.once("member:leave", resolve);
+      },
+    );
+
+    expect(
+      (await ban(fixture.ada, fixture.serverId, fixture.grace.id)).status,
+    ).toBe(204);
+
+    await expect(left).resolves.toEqual({
+      serverId: fixture.serverId,
+      userId: fixture.grace.id,
+    });
+  });
+
+  it("tells the other tabs of a member who left on their own", async () => {
+    const fixture = await seed();
+    const client = await open(fixture.grace);
+
+    const left = new Promise<{ serverId: string; userId: string }>(
+      (resolve) => {
+        client.once("member:leave", resolve);
+      },
+    );
+
+    const res = await request(app)
+      .delete(`/api/v1/servers/${fixture.serverId}/members/@me`)
+      .set("Cookie", fixture.grace.cookies);
+
+    expect(res.status).toBe(204);
+
+    await expect(left).resolves.toEqual({
+      serverId: fixture.serverId,
+      userId: fixture.grace.id,
+    });
   });
 });

@@ -123,7 +123,7 @@ export function emitMemberEvent(
   userId: string,
 ): void {
   currentSocketServer()
-    ?.to(serverRoom(serverId))
+    ?.to([serverRoom(serverId), userRoom(userId)])
     .emit(event, { serverId, userId });
 }
 

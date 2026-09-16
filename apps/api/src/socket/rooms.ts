@@ -389,10 +389,6 @@ export async function revokeServerRooms(serverId: string): Promise<void> {
   await revoke({ scope: "server", serverId });
 }
 
-export function disconnectUserSockets(userId: string): void {
-  currentSocketServer()?.in(userRoom(userId)).disconnectSockets(true);
-}
-
 export function revokeUserEverywhere(userId: string): void {
   const io = currentSocketServer();
   const room = userRoom(userId);
