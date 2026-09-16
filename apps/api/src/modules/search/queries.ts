@@ -1,7 +1,7 @@
 import type { Message } from "@opencord/shared/types";
 import { type SQL, sql } from "drizzle-orm";
 
-import { resolvePublicChannels } from "../../access/channels.js";
+import { resolveChannelsEveryoneCanRead } from "../../access/channels.js";
 import { db } from "../../db/index.js";
 import { AppError } from "../../lib/errors.js";
 import {
@@ -216,7 +216,7 @@ export async function searchMessages(
 
   const attachments = await loadAttachments(rows.map((row) => row.id));
 
-  const publicChannels = await resolvePublicChannels([
+  const publicChannels = await resolveChannelsEveryoneCanRead([
     ...new Set(rows.map((row) => row.channelId)),
   ]);
 
@@ -234,7 +234,7 @@ export async function searchMessages(
         reactions: [],
         attachments: await signAttachments(
           attachments.get(row.id) ?? [],
-          publicChannels.has(row.channelId),
+          publicChannels.has(row.channelId) ? "cacheable" : "no-store",
         ),
       })),
     ),

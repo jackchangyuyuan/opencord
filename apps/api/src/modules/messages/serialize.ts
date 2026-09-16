@@ -1,7 +1,7 @@
 import type { Message, MessagePreview } from "@opencord/shared/types";
 import { inArray } from "drizzle-orm";
 
-import { resolvePublicChannels } from "../../access/channels.js";
+import { resolveChannelsEveryoneCanRead } from "../../access/channels.js";
 import { db } from "../../db/index.js";
 import { messages } from "../../db/schema/index.js";
 import { loadAttachments, signAttachments } from "./attachments.js";
@@ -48,7 +48,7 @@ export async function serializeMessages(
 
   const attachments = await loadAttachments(rows.map((row) => row.id));
 
-  const publicChannels = await resolvePublicChannels([
+  const publicChannels = await resolveChannelsEveryoneCanRead([
     ...new Set(rows.map((row) => row.channelId)),
   ]);
 
@@ -62,7 +62,7 @@ export async function serializeMessages(
         reactions: reactions.get(row.id) ?? [],
         attachments: await signAttachments(
           attachments.get(row.id) ?? [],
-          publicChannels.has(row.channelId),
+          publicChannels.has(row.channelId) ? "cacheable" : "no-store",
         ),
       };
     }),

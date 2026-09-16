@@ -229,13 +229,13 @@ describe("media URLs", () => {
     const start = Math.floor(Date.now() / width) * width;
 
     vi.spyOn(Date, "now").mockReturnValue(start + 1);
-    const early = await signMediaUrl(key, true);
+    const early = await signMediaUrl(key, "cacheable");
 
     vi.spyOn(Date, "now").mockReturnValue(start + width - 1);
-    const late = await signMediaUrl(key, true);
+    const late = await signMediaUrl(key, "cacheable");
 
     vi.spyOn(Date, "now").mockReturnValue(start + width);
-    const next = await signMediaUrl(key, true);
+    const next = await signMediaUrl(key, "cacheable");
 
     expect(late).toBe(early);
     expect(next).not.toBe(early);

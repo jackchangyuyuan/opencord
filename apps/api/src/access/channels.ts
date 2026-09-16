@@ -33,13 +33,13 @@ export async function isDmParticipant(
   return rows.length > 0;
 }
 
-export async function resolvePublicChannels(
+export async function resolveChannelsEveryoneCanRead(
   channelIds: readonly string[],
 ): Promise<Set<string>> {
-  const publicChannels = new Set<string>();
+  const readable = new Set<string>();
 
   if (channelIds.length === 0) {
-    return publicChannels;
+    return readable;
   }
 
   const rows = await db
@@ -56,7 +56,7 @@ export async function resolvePublicChannels(
   ];
 
   if (serverIds.length === 0) {
-    return publicChannels;
+    return readable;
   }
 
   const everyoneRoles = await db
@@ -78,10 +78,16 @@ export async function resolvePublicChannels(
     .from(channelRoleOverwrites)
     .where(inArray(channelRoleOverwrites.serverId, serverIds));
 
+  const everyoneByServer = new Map(
+    everyoneRoles.map((role) => [role.serverId, role]),
+  );
+  const overwritesByChannel = Map.groupBy(overwrites, (row) => row.channelId);
+
   for (const channel of rows) {
-    const everyoneRole = everyoneRoles.find(
-      (role) => role.serverId === channel.serverId,
-    );
+    const everyoneRole =
+      channel.serverId === null
+        ? undefined
+        : everyoneByServer.get(channel.serverId);
 
     if (everyoneRole === undefined) {
       continue;
@@ -92,15 +98,15 @@ export async function resolvePublicChannels(
       serverOwnerId: NOBODY,
       everyoneRole,
       memberRoles: [],
-      roleOverwrites: overwrites.filter((row) => row.channelId === channel.id),
+      roleOverwrites: overwritesByChannel.get(channel.id) ?? [],
     });
 
     if ((permissions & Permissions.VIEW_CHANNEL) !== 0) {
-      publicChannels.add(channel.id);
+      readable.add(channel.id);
     }
   }
 
-  return publicChannels;
+  return readable;
 }
 
 export async function resolveAccessibleChannelsByUser(

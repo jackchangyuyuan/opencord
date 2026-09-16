@@ -118,22 +118,24 @@ function bucketedSigningDate(): Date {
   return new Date(Math.floor(Date.now() / width) * width);
 }
 
+export type MediaCaching = "cacheable" | "no-store";
+
 export function signMediaUrl(
   objectKey: string,
-  isPublic: boolean,
+  caching: MediaCaching,
 ): Promise<string> {
-  const cacheControl = isPublic
-    ? `private, max-age=${String(config.MEDIA_URL_TTL_PUBLIC)}`
-    : "private, no-store";
+  const cacheable = caching === "cacheable";
 
   return getSignedUrl(
     signer,
     new GetObjectCommand({
       Bucket: config.S3_BUCKET,
       Key: objectKey,
-      ResponseCacheControl: cacheControl,
+      ResponseCacheControl: cacheable
+        ? `private, max-age=${String(config.MEDIA_URL_TTL_PUBLIC)}`
+        : "private, no-store",
     }),
-    isPublic
+    cacheable
       ? {
           signingDate: bucketedSigningDate(),
           expiresIn:

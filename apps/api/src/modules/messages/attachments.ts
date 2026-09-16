@@ -6,7 +6,7 @@ import { eq, inArray } from "drizzle-orm";
 import type { Transaction } from "../../db/index.js";
 import { db } from "../../db/index.js";
 import { attachments } from "../../db/schema/index.js";
-import { signMediaUrl } from "../../lib/storage.js";
+import { type MediaCaching, signMediaUrl } from "../../lib/storage.js";
 import { requireOwnedUpload } from "../uploads/associate.js";
 
 export interface PreparedAttachment {
@@ -50,16 +50,16 @@ export async function prepareAttachments(
   return prepared;
 }
 
-export function writeAttachments(
+export async function writeAttachments(
   tx: Transaction,
   messageId: string,
   prepared: readonly PreparedAttachment[],
-): Promise<unknown> {
+): Promise<void> {
   if (prepared.length === 0) {
-    return Promise.resolve();
+    return;
   }
 
-  return tx
+  await tx
     .insert(attachments)
     .values(prepared.map((row) => ({ ...row, messageId })));
 }
@@ -111,12 +111,12 @@ export async function loadAttachments(
 
 export function signAttachments(
   rows: readonly AttachmentRow[],
-  isPublic: boolean,
+  caching: MediaCaching,
 ): Promise<MessageAttachment[]> {
   return Promise.all(
     rows.map(async (row) => ({
       ...row,
-      url: await signMediaUrl(row.objectKey, isPublic),
+      url: await signMediaUrl(row.objectKey, caching),
     })),
   );
 }

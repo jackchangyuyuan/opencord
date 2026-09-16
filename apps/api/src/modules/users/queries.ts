@@ -50,7 +50,9 @@ export async function serializeUser(user: UserRow): Promise<PublicUser> {
     username: user.username,
     name: user.name,
     avatarUrl:
-      key === null ? (user.image ?? null) : await signMediaUrl(key, true),
+      key === null
+        ? (user.image ?? null)
+        : await signMediaUrl(key, "cacheable"),
     description: user.description ?? null,
     customStatus: user.customStatus ?? null,
     customStatusEmoji: user.customStatusEmoji ?? null,

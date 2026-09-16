@@ -41,7 +41,9 @@ export async function serializeServer(server: {
     description: server.description,
     iconKey: server.iconKey,
     iconUrl:
-      server.iconKey === null ? null : await signMediaUrl(server.iconKey, true),
+      server.iconKey === null
+        ? null
+        : await signMediaUrl(server.iconKey, "cacheable"),
     ownerId: server.ownerId,
     createdAt: server.createdAt.toISOString(),
   };
