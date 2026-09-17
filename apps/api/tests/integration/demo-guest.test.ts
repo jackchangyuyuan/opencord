@@ -15,6 +15,7 @@ import {
   messages,
   serverMembers,
   servers,
+  users,
 } from "../../src/db/schema/index.js";
 import { seedCommunity } from "../../src/db/seed/community.js";
 import { seedSandboxTemplate } from "../../src/db/seed/sandbox.js";
@@ -86,6 +87,42 @@ describe("guest demo provisioning", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("joins the visitor to no server that merely took a seeded name", async () => {
+    await seedWorld();
+
+    const [outsider] = await db
+      .insert(users)
+      .values({
+        id: `outsider-${randomUUID().slice(0, 8)}`,
+        name: "outsider",
+        username: `outsider${randomUUID().slice(0, 8)}`,
+        email: `outsider-${randomUUID().slice(0, 8)}@example.com`,
+        emailVerified: false,
+      })
+      .returning({ id: users.id });
+
+    const impostors = await db
+      .insert(servers)
+      .values(
+        ["OpenCord HQ", "The Lounge", "Sandbox template"].map((name) => ({
+          name,
+          ownerId: outsider?.id ?? "",
+        })),
+      )
+      .returning({ id: servers.id });
+
+    const { account } = await enterDemo();
+
+    const joined = await db
+      .select({ serverId: serverMembers.serverId })
+      .from(serverMembers)
+      .where(eq(serverMembers.userId, account.id));
+
+    const impostorIds = new Set(impostors.map((server) => server.id));
+
+    expect(joined.filter((row) => impostorIds.has(row.serverId))).toEqual([]);
   });
 
   it("lands the visitor in a world that is already alive", async () => {

@@ -1,15 +1,21 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   pgTable,
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
 import { users } from "./auth.js";
+
+export const DEMO_ROLES = ["community", "template"] as const;
+
+export type DemoRole = (typeof DEMO_ROLES)[number];
 
 export const servers = pgTable(
   "servers",
@@ -24,11 +30,21 @@ export const servers = pgTable(
       .notNull()
       .references(() => users.id),
     isDemoSandbox: boolean("is_demo_sandbox").default(false).notNull(),
+    demoRole: text("demo_role").$type<DemoRole>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
   },
-  (table) => [index("servers_owner_id_idx").on(table.ownerId)],
+  (table) => [
+    index("servers_owner_id_idx").on(table.ownerId),
+    check(
+      "servers_demo_role_check",
+      sql`${table.demoRole} is null or ${table.demoRole} in ('community', 'template')`,
+    ),
+    uniqueIndex("servers_demo_template_uq")
+      .on(table.demoRole)
+      .where(sql`${table.demoRole} = 'template'`),
+  ],
 );
 
 export const serverMembers = pgTable(

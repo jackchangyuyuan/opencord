@@ -256,7 +256,7 @@ async function createServer(
 ): Promise<SeededServer> {
   const [server] = await db
     .insert(servers)
-    .values({ name, ownerId: owner.id })
+    .values({ name, ownerId: owner.id, demoRole: "community" })
     .returning({ id: servers.id });
 
   if (server === undefined) {

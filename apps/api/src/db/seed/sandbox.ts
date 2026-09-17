@@ -58,7 +58,11 @@ export async function seedSandboxTemplate(
 
   const [server] = await db
     .insert(servers)
-    .values({ name: SANDBOX_TEMPLATE_NAME, ownerId: owner.id })
+    .values({
+      name: SANDBOX_TEMPLATE_NAME,
+      ownerId: owner.id,
+      demoRole: "template",
+    })
     .returning({ id: servers.id });
 
   if (server === undefined) {

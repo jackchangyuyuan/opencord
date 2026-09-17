@@ -33,6 +33,7 @@ interface Fixture {
   personaId: string;
   communityChannelId: string;
   sandboxChannelId: string;
+  impostorChannelId: string;
 }
 
 async function seedUser(
@@ -59,12 +60,17 @@ async function seed(): Promise<Fixture> {
 
   const [community] = await db
     .insert(servers)
-    .values({ name: "OpenCord HQ", ownerId: personaId })
+    .values({ name: "OpenCord HQ", ownerId: personaId, demoRole: "community" })
     .returning({ id: servers.id });
 
   const [sandbox] = await db
     .insert(servers)
     .values({ name: "OpenCord HQ", ownerId: guestId, isDemoSandbox: true })
+    .returning({ id: servers.id });
+
+  const [impostor] = await db
+    .insert(servers)
+    .values({ name: "OpenCord HQ", ownerId: personaId })
     .returning({ id: servers.id });
 
   const [communityChannel] = await db
@@ -77,6 +83,11 @@ async function seed(): Promise<Fixture> {
     .values({ serverId: sandbox?.id ?? "", type: "text", name: "general" })
     .returning({ id: channels.id });
 
+  const [impostorChannel] = await db
+    .insert(channels)
+    .values({ serverId: impostor?.id ?? "", type: "text", name: "general" })
+    .returning({ id: channels.id });
+
   const communityChannelId = communityChannel?.id ?? "";
   const sandboxChannelId = sandboxChannel?.id ?? "";
 
@@ -85,7 +96,13 @@ async function seed(): Promise<Fixture> {
     { channelId: sandboxChannelId, authorId: personaId, content: "seeded" },
   ]);
 
-  return { guestId, personaId, communityChannelId, sandboxChannelId };
+  return {
+    guestId,
+    personaId,
+    communityChannelId,
+    sandboxChannelId,
+    impostorChannelId: impostorChannel?.id ?? "",
+  };
 }
 
 async function goOnline(userId: string): Promise<void> {
@@ -169,6 +186,15 @@ describe("the ambient-activity job", () => {
     expect(result.posted).toBe(1);
     expect(result.typed).toBe(1);
     expect(await countIn(fixture.communityChannelId)).toBe(2);
+  });
+
+  it("never writes into a server that merely took the seeded name", async () => {
+    const before = await countIn(fixture.impostorChannelId);
+
+    await goOnline(fixture.guestId);
+    await runAmbientActivity();
+
+    expect(await countIn(fixture.impostorChannelId)).toBe(before);
   });
 
   it("never writes into a server flagged as a demo sandbox", async () => {

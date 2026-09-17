@@ -111,7 +111,7 @@ async function findAmbientChannels(): Promise<AmbientChannel[]> {
     .innerJoin(servers, eq(servers.id, channels.serverId))
     .where(
       and(
-        eq(servers.isDemoSandbox, false),
+        eq(servers.demoRole, "community"),
         eq(channels.type, "text"),
         or(
           ...AMBIENT_CHANNELS.map((target) =>

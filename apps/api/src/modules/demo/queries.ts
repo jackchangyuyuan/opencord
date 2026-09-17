@@ -12,18 +12,13 @@ import {
   serverMembers,
   servers,
 } from "../../db/schema/index.js";
-import { COMMUNITY_SERVER_NAMES, SANDBOX_TEMPLATE_NAME } from "./dataset.js";
 
 export async function findCommunityServerIds(): Promise<string[]> {
   const rows = await db
     .select({ id: servers.id })
     .from(servers)
-    .where(
-      sql`${servers.name} = any(array[${sql.join(
-        COMMUNITY_SERVER_NAMES.map((name) => sql`${name}`),
-        sql`, `,
-      )}]::text[])`,
-    );
+    .where(eq(servers.demoRole, "community"))
+    .orderBy(servers.id);
 
   return rows.map((row) => row.id);
 }
@@ -31,7 +26,7 @@ export async function findCommunityServerIds(): Promise<string[]> {
 export async function findSandboxTemplateId(): Promise<string | undefined> {
   const row = await db.query.servers.findFirst({
     columns: { id: true },
-    where: { name: SANDBOX_TEMPLATE_NAME },
+    where: { demoRole: "template" },
   });
 
   return row?.id;
