@@ -34,6 +34,12 @@ export async function lockChannelOverwrites(
   );
 }
 
+export async function lockGuestDisposal(tx: Transaction): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended('guest-disposal', 0))`,
+  );
+}
+
 export async function tryLockAmbientActivity(
   tx: Transaction,
 ): Promise<boolean> {

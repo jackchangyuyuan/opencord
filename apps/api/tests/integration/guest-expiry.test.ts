@@ -50,6 +50,34 @@ async function createServer(account: Account, name: string): Promise<string> {
   return idBody.parse(res.body).id;
 }
 
+const BLOCK_TIMEOUT_MS = 3000;
+const BLOCK_POLL_MS = 10;
+
+async function waitUntilBlocked(): Promise<boolean> {
+  const deadline = Date.now() + BLOCK_TIMEOUT_MS;
+
+  for (;;) {
+    const rows = await db.execute<{ blocked: number }>(sql`
+      select count(*)::int as blocked
+        from pg_stat_activity
+       where datname = current_database()
+         and wait_event_type = 'Lock'
+    `);
+
+    if ((rows[0]?.blocked ?? 0) > 0) {
+      return true;
+    }
+
+    if (Date.now() > deadline) {
+      return false;
+    }
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, BLOCK_POLL_MS);
+    });
+  }
+}
+
 async function expire(userId: string): Promise<void> {
   await db
     .update(users)
@@ -348,6 +376,60 @@ describe("guest expiry", () => {
 
     const outcome = await expireGuest(guest.id, now);
 
+    expect(outcome).toMatchObject({ expired: true, deleted: 0 });
+    expect(outcome.transferred).toEqual([{ serverId, nextOwnerId: heir.id }]);
+
+    const survivor = await db.query.servers.findFirst({
+      columns: { ownerId: true },
+      where: { id: serverId },
+    });
+
+    expect(survivor?.ownerId).toBe(heir.id);
+  });
+
+  it("waits for a claim that is committing while the disposal runs", async () => {
+    const guest = await signInAnonymously();
+    const heir = await signInAnonymously();
+    const serverId = await createServer(guest, "Not just me");
+
+    await db.insert(serverMembers).values({ serverId, userId: heir.id });
+
+    await expire(guest.id);
+    await expire(heir.id);
+
+    let started = (): void => undefined;
+    let release = (): void => undefined;
+
+    const running = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const claim = db.transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({ isAnonymous: false, guestExpiresAt: null })
+        .where(eq(users.id, heir.id));
+
+      started();
+
+      await held;
+    });
+
+    await running;
+
+    const disposal = expireGuest(guest.id, new Date());
+
+    const blocked = await waitUntilBlocked();
+
+    release();
+    await claim;
+
+    const outcome = await disposal;
+
+    expect(blocked).toBe(true);
     expect(outcome).toMatchObject({ expired: true, deleted: 0 });
     expect(outcome.transferred).toEqual([{ serverId, nextOwnerId: heir.id }]);
 

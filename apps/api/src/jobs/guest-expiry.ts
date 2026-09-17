@@ -1,15 +1,4 @@
-import {
-  and,
-  asc,
-  eq,
-  gt,
-  inArray,
-  isNull,
-  lte,
-  ne,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 
 import { db, type Transaction } from "../db/index.js";
 import {
@@ -21,6 +10,7 @@ import {
   sessions,
   users,
 } from "../db/schema/index.js";
+import { lockGuestDisposal } from "../lib/advisory-locks.js";
 import { logger } from "../lib/logger.js";
 import { SEED_USERNAME_PREFIX } from "../modules/demo/dataset.js";
 import { emitPermissionsChanged, emitServerEvent } from "../socket/emit.js";
@@ -39,6 +29,31 @@ interface Disposal {
   nextOwnerId: string | null;
 }
 
+interface Candidate {
+  userId: string;
+  username: string;
+  isAnonymous: boolean | null;
+  guestExpiresAt: Date | null;
+}
+
+function canInherit(
+  server: { isDemoSandbox: boolean },
+  member: Candidate,
+  now: Date,
+): boolean {
+  if (
+    member.isAnonymous === true &&
+    member.guestExpiresAt !== null &&
+    member.guestExpiresAt <= now
+  ) {
+    return false;
+  }
+
+  return !(
+    server.isDemoSandbox && member.username.startsWith(SEED_USERNAME_PREFIX)
+  );
+}
+
 async function planDisposal(
   tx: Transaction,
   guestId: string,
@@ -54,7 +69,12 @@ async function planDisposal(
 
   for (const server of owned) {
     const remaining = await tx
-      .select({ userId: serverMembers.userId, username: users.username })
+      .select({
+        userId: serverMembers.userId,
+        username: users.username,
+        isAnonymous: users.isAnonymous,
+        guestExpiresAt: users.guestExpiresAt,
+      })
       .from(serverMembers)
       .innerJoin(users, eq(users.id, serverMembers.userId))
       .where(
@@ -62,23 +82,13 @@ async function planDisposal(
           eq(serverMembers.serverId, server.id),
           ne(serverMembers.userId, guestId),
           isNull(users.deactivatedAt),
-          or(
-            isNull(users.isAnonymous),
-            eq(users.isAnonymous, false),
-            isNull(users.guestExpiresAt),
-            gt(users.guestExpiresAt, sql`${now.toISOString()}::timestamp`),
-          ),
         ),
       )
       .orderBy(asc(serverMembers.joinedAt), asc(serverMembers.userId))
       .for("share", { of: users });
 
-    const heir = remaining.find(
-      (member) =>
-        !(
-          server.isDemoSandbox &&
-          member.username.startsWith(SEED_USERNAME_PREFIX)
-        ),
+    const heir = remaining.find((member) =>
+      canInherit(server, member, now),
     )?.userId;
 
     plans.push({ serverId: server.id, nextOwnerId: heir ?? null });
@@ -100,6 +110,8 @@ interface Expiry {
 
 export async function expireGuest(guestId: string, now: Date): Promise<Expiry> {
   return db.transaction(async (tx) => {
+    await lockGuestDisposal(tx);
+
     const [subject] = await tx
       .select({ id: users.id })
       .from(users)
