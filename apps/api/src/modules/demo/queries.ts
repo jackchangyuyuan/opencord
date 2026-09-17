@@ -12,8 +12,7 @@ import {
   serverMembers,
   servers,
 } from "../../db/schema/index.js";
-import { COMMUNITY_SERVER_NAMES } from "../../db/seed/community.js";
-import { SANDBOX_TEMPLATE_NAME } from "../../db/seed/sandbox.js";
+import { COMMUNITY_SERVER_NAMES, SANDBOX_TEMPLATE_NAME } from "./dataset.js";
 
 export async function findCommunityServerIds(): Promise<string[]> {
   const rows = await db

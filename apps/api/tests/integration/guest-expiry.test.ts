@@ -13,10 +13,12 @@ import {
   guestQuotas,
   readStates,
   serverMembers,
+  servers,
   sessions,
   users,
 } from "../../src/db/schema/index.js";
 import { expireGuest, runGuestExpiry } from "../../src/jobs/guest-expiry.js";
+import { SEED_USERNAME_PREFIX } from "../../src/modules/demo/dataset.js";
 import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 
@@ -355,5 +357,63 @@ describe("guest expiry", () => {
     });
 
     expect(survivor?.ownerId).toBe(heir.id);
+  });
+
+  it("deletes an abandoned sandbox whose only members are seeded personas", async () => {
+    const guest = await signInAnonymously();
+    const serverId = await createServer(guest, "Your sandbox");
+
+    await db
+      .update(servers)
+      .set({ isDemoSandbox: true })
+      .where(eq(servers.id, serverId));
+
+    const personaId = `${SEED_USERNAME_PREFIX}ada-0`;
+
+    await db.insert(users).values({
+      id: personaId,
+      name: "Seed Ada",
+      email: `${personaId}@seed.invalid`,
+      username: personaId,
+    });
+
+    await db.insert(serverMembers).values({ serverId, userId: personaId });
+
+    await expire(guest.id);
+
+    const result = await runGuestExpiry();
+
+    expect(result.serversDeleted).toBe(1);
+    expect(result.serversTransferred).toBe(0);
+    await expect(
+      db.query.servers.findFirst({
+        columns: { id: true },
+        where: { id: serverId },
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("still hands a sandbox to a real member who joined it", async () => {
+    const guest = await signInAnonymously();
+    const grace = await signUp("grace");
+    const serverId = await createServer(guest, "Your sandbox");
+
+    await db
+      .update(servers)
+      .set({ isDemoSandbox: true })
+      .where(eq(servers.id, serverId));
+
+    await db.insert(serverMembers).values({ serverId, userId: grace.id });
+
+    await expire(guest.id);
+
+    expect((await runGuestExpiry()).serversTransferred).toBe(1);
+
+    const row = await db.query.servers.findFirst({
+      columns: { ownerId: true },
+      where: { id: serverId },
+    });
+
+    expect(row?.ownerId).toBe(grace.id);
   });
 });

@@ -23,11 +23,11 @@ import {
   servers,
   users,
 } from "../db/schema/index.js";
-import type { Random } from "../db/seed/corpus.js";
-import { createRandom, messageBody, topicFor } from "../db/seed/corpus.js";
-import { SEED_USERNAME_PREFIX } from "../db/seed/personas.js";
 import { tryLockAmbientActivity } from "../lib/advisory-locks.js";
 import { logger } from "../lib/logger.js";
+import type { Random } from "../modules/demo/corpus.js";
+import { createRandom, messageBody, topicFor } from "../modules/demo/corpus.js";
+import { SEED_USERNAME_PREFIX } from "../modules/demo/dataset.js";
 import { refreshDemoPresence } from "../modules/demo/presence.js";
 import {
   messageColumns,

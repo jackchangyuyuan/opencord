@@ -3,6 +3,13 @@ import { randomUUID } from "node:crypto";
 import { Permissions } from "@opencord/shared/permissions";
 import { sql } from "drizzle-orm";
 
+import {
+  createRandom,
+  messageBody,
+  timeline,
+  topicFor,
+} from "../../modules/demo/corpus.js";
+import { COMMUNITY_SERVER_NAMES } from "../../modules/demo/dataset.js";
 import { db } from "../index.js";
 import {
   auditLog,
@@ -15,7 +22,6 @@ import {
   servers,
   users,
 } from "../schema/index.js";
-import { createRandom, messageBody, timeline, topicFor } from "./corpus.js";
 import { type Persona, personasFor } from "./personas.js";
 
 const BATCH = 2000;
@@ -31,8 +37,6 @@ const MODERATOR_PERMISSIONS =
   Permissions.MANAGE_MESSAGES |
   Permissions.KICK_MEMBERS |
   Permissions.MANAGE_CHANNELS;
-
-export const COMMUNITY_SERVER_NAMES = ["OpenCord HQ", "The Lounge"] as const;
 
 export const MEMBER_COUNT = 120;
 

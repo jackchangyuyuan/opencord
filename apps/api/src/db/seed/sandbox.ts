@@ -1,6 +1,13 @@
 import { Permissions } from "@opencord/shared/permissions";
 import { sql } from "drizzle-orm";
 
+import {
+  createRandom,
+  messageBody,
+  timeline,
+  topicFor,
+} from "../../modules/demo/corpus.js";
+import { SANDBOX_TEMPLATE_NAME } from "../../modules/demo/dataset.js";
 import { db } from "../index.js";
 import {
   channelRoleOverwrites,
@@ -12,9 +19,6 @@ import {
   servers,
 } from "../schema/index.js";
 import type { SeededUser } from "./community.js";
-import { createRandom, messageBody, timeline, topicFor } from "./corpus.js";
-
-export const SANDBOX_TEMPLATE_NAME = "Sandbox template";
 
 export const SANDBOX_MEMBER_COUNT = 6;
 export const SANDBOX_MESSAGE_COUNT = 48;

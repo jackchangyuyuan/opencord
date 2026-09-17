@@ -6,7 +6,8 @@ import {
 } from "@opencord/shared/schemas";
 import { describe, expect, it } from "vitest";
 
-import { personasFor, SEED_USERNAME_PREFIX } from "./personas.js";
+import { SEED_USERNAME_PREFIX } from "../../modules/demo/dataset.js";
+import { personasFor } from "./personas.js";
 
 describe("the seed personas", () => {
   it("is reproducible from its seed", async () => {

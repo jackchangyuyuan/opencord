@@ -17,11 +17,11 @@ import {
   servers,
 } from "../../src/db/schema/index.js";
 import { seedCommunity } from "../../src/db/seed/community.js";
-import { DM_THREAD_COUNT, DM_THREADS } from "../../src/db/seed/dm-threads.js";
-import { SEED_USERNAME_PREFIX } from "../../src/db/seed/personas.js";
 import { seedSandboxTemplate } from "../../src/db/seed/sandbox.js";
+import { SEED_USERNAME_PREFIX } from "../../src/modules/demo/dataset.js";
 import { demoPresenceStatusAt } from "../../src/modules/demo/presence.js";
 import * as demoQueries from "../../src/modules/demo/queries.js";
+import { DM_THREAD_COUNT, DM_THREADS } from "../../src/modules/demo/threads.js";
 import { type Account, signUp } from "../helpers/accounts.js";
 import { requireTestDatabase } from "../setup.js";
 

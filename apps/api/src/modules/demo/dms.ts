@@ -9,14 +9,14 @@ import {
   readStates,
   users,
 } from "../../db/schema/index.js";
-import { createRandom } from "../../db/seed/corpus.js";
+import { canonicalPair } from "../dms/queries.js";
+import { createRandom } from "./corpus.js";
+import { SEED_USERNAME_PREFIX } from "./dataset.js";
 import {
   DM_THREADS,
   type DmThread,
   MAX_COUNTERPART_OFFSET,
-} from "../../db/seed/dm-threads.js";
-import { SEED_USERNAME_PREFIX } from "../../db/seed/personas.js";
-import { canonicalPair } from "../dms/queries.js";
+} from "./threads.js";
 
 const DM_SEED = 5091;
 

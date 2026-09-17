@@ -22,6 +22,7 @@ import {
   users,
 } from "../db/schema/index.js";
 import { logger } from "../lib/logger.js";
+import { SEED_USERNAME_PREFIX } from "../modules/demo/dataset.js";
 import { emitPermissionsChanged, emitServerEvent } from "../socket/emit.js";
 import { revokeUserEverywhere, syncUserRooms } from "../socket/rooms.js";
 
@@ -72,7 +73,13 @@ async function planDisposal(
       .orderBy(asc(serverMembers.joinedAt), asc(serverMembers.userId))
       .for("share", { of: users });
 
-    const heir = remaining[0]?.userId;
+    const heir = remaining.find(
+      (member) =>
+        !(
+          server.isDemoSandbox &&
+          member.username.startsWith(SEED_USERNAME_PREFIX)
+        ),
+    )?.userId;
 
     plans.push({ serverId: server.id, nextOwnerId: heir ?? null });
   }

@@ -1,11 +1,11 @@
 import { REACTION_EMOJI } from "@opencord/shared/constants";
 import { desc, eq, sql } from "drizzle-orm";
 
+import type { Random } from "../../modules/demo/corpus.js";
 import { PIN_LIMIT } from "../../modules/messages/pins/queries.js";
 import { db } from "../index.js";
 import { messages, reactions } from "../schema/index.js";
 import type { SeededChannel, SeededUser } from "./community.js";
-import type { Random } from "./corpus.js";
 
 const BATCH = 2000;
 

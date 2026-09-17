@@ -3,8 +3,8 @@ import { asc, like } from "drizzle-orm";
 
 import { db } from "../../db/index.js";
 import { users } from "../../db/schema/index.js";
-import { SEED_USERNAME_PREFIX } from "../../db/seed/personas.js";
 import { recordConnection } from "../../socket/presence.js";
+import { SEED_USERNAME_PREFIX } from "./dataset.js";
 
 const CONNECTION_ID = "demo-ambient";
 

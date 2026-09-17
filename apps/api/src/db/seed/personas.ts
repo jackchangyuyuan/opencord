@@ -1,9 +1,8 @@
 import type { Faker } from "@faker-js/faker";
 import { USERNAME_MAX_LENGTH } from "@opencord/shared/constants";
 
+import { SEED_USERNAME_PREFIX } from "../../modules/demo/dataset.js";
 import { seededFaker } from "./faker.js";
-
-export const SEED_USERNAME_PREFIX = "seed-";
 
 const PERSONA_SEED = 20260913;
 

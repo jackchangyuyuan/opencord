@@ -11,6 +11,12 @@ import { desc, eq, sql } from "drizzle-orm";
 
 import { createUploadGrant } from "../../lib/storage.js";
 import {
+  type Random,
+  sentence,
+  timeline,
+  topicFor,
+} from "../../modules/demo/corpus.js";
+import {
   prepareAttachments,
   writeAttachments,
 } from "../../modules/messages/attachments.js";
@@ -23,7 +29,6 @@ import {
   type SeededChannel,
   type SeededUser,
 } from "./community.js";
-import { type Random, sentence, timeline, topicFor } from "./corpus.js";
 import { seededFaker } from "./faker.js";
 
 export const IMAGE_SEED = 486231;
