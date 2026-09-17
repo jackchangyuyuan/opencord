@@ -34,6 +34,7 @@ export const messages = pgTable(
       .references(() => users.id),
     content: text("content").notNull(),
     nonce: uuid("nonce"),
+    requestDigest: text("request_digest"),
     replyToId: uuid("reply_to_id"),
     mentionsEveryone: boolean("mentions_everyone").default(false).notNull(),
     editedAt: timestamp("edited_at", { withTimezone: true }),

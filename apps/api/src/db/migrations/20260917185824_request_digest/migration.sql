@@ -1,0 +1,1 @@
+ALTER TABLE "messages" ADD COLUMN "request_digest" text;

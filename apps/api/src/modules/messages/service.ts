@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { MESSAGE_MIN_LENGTH } from "@opencord/shared/constants";
 import { Permissions } from "@opencord/shared/permissions";
 import type {
@@ -208,17 +210,27 @@ async function repairEveryoneWatermark(
     );
 }
 
+function requestDigest(input: SendMessageInput): string {
+  const attachments = (input.attachments ?? []).map((file) => [
+    file.objectKey,
+    file.filename,
+    file.width ?? null,
+    file.height ?? null,
+  ]);
+
+  return createHash("sha256")
+    .update(
+      JSON.stringify([input.content, input.replyToId ?? null, attachments]),
+    )
+    .digest("hex");
+}
+
 function isReplay(
   existing: MessageRow | undefined,
   channelId: string,
-  content: string,
-  replyToId: string | null,
+  digest: string,
 ): existing is MessageRow {
-  return (
-    existing?.channelId === channelId &&
-    existing.content === content &&
-    existing.replyToId === replyToId
-  );
+  return existing?.channelId === channelId && existing.requestDigest === digest;
 }
 
 export async function sendMessage(
@@ -230,13 +242,7 @@ export async function sendMessage(
   const authorId = author.id;
 
   const replyToId = input.replyToId ?? null;
-  const prepared = await prepareContent(
-    context.server?.server.id ?? null,
-    channel.id,
-    authorId,
-    input.content,
-  );
-  const broadcast = await authorizeBroadcast(context, prepared, authorId);
+  const digest = requestDigest(input);
 
   // A replay is answered from the row that already exists, so a retry neither
   // re-reads the uploaded objects nor has to find a reply target that has been
@@ -244,7 +250,7 @@ export async function sendMessage(
   const replayed = await findMessageByNonce(authorId, input.nonce);
 
   if (replayed !== undefined) {
-    if (!isReplay(replayed, channel.id, prepared.content, replyToId)) {
+    if (!isReplay(replayed, channel.id, digest)) {
       throw nonceReused();
     }
 
@@ -253,6 +259,14 @@ export async function sendMessage(
       message: await hydrateOneMessage(replayed, authorId),
     };
   }
+
+  const prepared = await prepareContent(
+    context.server?.server.id ?? null,
+    channel.id,
+    authorId,
+    input.content,
+  );
+  const broadcast = await authorizeBroadcast(context, prepared, authorId);
 
   if (
     replyToId !== null &&
@@ -274,6 +288,7 @@ export async function sendMessage(
         authorId,
         content: prepared.content,
         nonce: input.nonce,
+        requestDigest: digest,
         replyToId,
         mentionsEveryone: broadcast.token === "everyone",
       })
@@ -291,7 +306,7 @@ export async function sendMessage(
           and(eq(messages.authorId, authorId), eq(messages.nonce, input.nonce)),
         );
 
-      if (!isReplay(existing, channel.id, prepared.content, replyToId)) {
+      if (!isReplay(existing, channel.id, digest)) {
         throw nonceReused();
       }
 

@@ -33,6 +33,7 @@ export const messageColumns = {
   authorId: messages.authorId,
   content: messages.content,
   nonce: messages.nonce,
+  requestDigest: messages.requestDigest,
   replyToId: messages.replyToId,
   mentionsEveryone: messages.mentionsEveryone,
   pinnedAt: messages.pinnedAt,

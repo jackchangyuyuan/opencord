@@ -388,6 +388,79 @@ describe("nonce idempotency", () => {
     vi.restoreAllMocks();
   });
 
+  it("still answers a retry of a message that has since been edited", async () => {
+    const fixture = await seed();
+    const nonce = randomUUID();
+
+    const first = await send(fixture.ada, fixture.channelId, {
+      content: "hello",
+      nonce,
+    });
+
+    const messageId = messageBody.parse(first.body).id;
+
+    expect(
+      (
+        await request(app)
+          .patch(`/api/v1/channels/${fixture.channelId}/messages/${messageId}`)
+          .set("Cookie", fixture.ada.cookies)
+          .send({ content: "hello, corrected" })
+      ).status,
+    ).toBe(200);
+
+    const retry = await send(fixture.ada, fixture.channelId, {
+      content: "hello",
+      nonce,
+    });
+
+    expect(retry.status).toBe(200);
+    expect(messageBody.parse(retry.body).id).toBe(messageId);
+    expect(messageBody.parse(retry.body).content).toBe("hello, corrected");
+    expect(await db.select().from(messages)).toHaveLength(1);
+  });
+
+  it("returns 409 NONCE_REUSED for different attachments", async () => {
+    const fixture = await seed();
+    const nonce = randomUUID();
+
+    vi.spyOn(storage, "headObject").mockResolvedValue({
+      contentType: "image/png",
+      size: 2048,
+      lastModified: new Date(),
+    });
+    vi.spyOn(storage, "copyObject").mockResolvedValue();
+
+    const first = await send(fixture.ada, fixture.channelId, {
+      content: "with a file",
+      nonce,
+      attachments: [
+        {
+          objectKey: `attachments/${fixture.ada.id}/${randomUUID()}.png`,
+          filename: "diagram.png",
+        },
+      ],
+    });
+
+    expect(first.status).toBe(201);
+
+    const res = await send(fixture.ada, fixture.channelId, {
+      content: "with a file",
+      nonce,
+      attachments: [
+        {
+          objectKey: `attachments/${fixture.ada.id}/${randomUUID()}.png`,
+          filename: "diagram.png",
+        },
+      ],
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ error: { code: "NONCE_REUSED" } });
+    expect(await db.select().from(messages)).toHaveLength(1);
+
+    vi.restoreAllMocks();
+  });
+
   it("returns 409 NONCE_REUSED for a different channel", async () => {
     const fixture = await seed();
     const nonce = randomUUID();
