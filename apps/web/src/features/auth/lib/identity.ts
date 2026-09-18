@@ -1,7 +1,9 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 
 import { sessionQueryKey } from "@/features/auth/hooks/use-session";
+import { cancelUnreadRefresh } from "@/features/channels/lib/refresh-unread";
 import { resetSendBlock } from "@/features/messages/hooks/use-send-message";
+import { endAccountScope } from "@/lib/account-scope";
 import type { Session } from "@/lib/auth-client";
 import { useDrafts } from "@/stores/drafts";
 import { usePresence } from "@/stores/presence";
@@ -13,10 +15,13 @@ function isSessionQuery(queryKey: QueryKey): boolean {
 }
 
 function forgetAccountState(client: QueryClient): void {
+  endAccountScope();
+
   void client.resetQueries({
     predicate: (query) => !isSessionQuery(query.queryKey),
   });
 
+  cancelUnreadRefresh();
   useDrafts.getState().reset();
   useUi.getState().forgetAccount();
   useTyping.getState().reset();

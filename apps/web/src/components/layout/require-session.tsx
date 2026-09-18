@@ -12,7 +12,7 @@ export function RequireSession({ children }: { children: ReactNode }) {
   const { session, isPending, isError, refetch } = useSession();
   const location = useLocation();
 
-  useSocketConnection(session !== null);
+  useSocketConnection(session?.user.id ?? null);
 
   if (isPending) {
     return (
