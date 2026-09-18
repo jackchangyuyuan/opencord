@@ -1,8 +1,8 @@
 import { type ReactNode, use } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { useActiveChannelId } from "@/features/channels/api/queries";
 import { ResolvedViewProvider } from "@/features/channels/components/resolved-view-provider";
+import { useActiveChannelId } from "@/features/channels/hooks/use-active-view";
 import { PreparingViewContext } from "@/features/channels/lib/resolved-view";
 import { MessageList } from "@/features/messages/components/message-list";
 import { useGapFill } from "@/features/realtime/hooks/use-gap-fill";

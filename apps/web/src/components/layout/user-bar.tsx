@@ -25,7 +25,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useSession, useSignOut } from "@/features/auth/hooks/use-session";
-import { useActiveServerId } from "@/features/channels/api/queries";
+import { useActiveServerId } from "@/features/channels/hooks/use-active-view";
 import { currentUserQuery } from "@/features/users/api/queries";
 import { UserAvatar } from "@/features/users/components/user-avatar";
 import { UserProfilePopover } from "@/features/users/components/user-profile-popover";

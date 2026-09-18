@@ -7,10 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  serverChannelsQuery,
-  useActiveServerId,
-} from "@/features/channels/api/queries";
+import { serverChannelsQuery } from "@/features/channels/api/queries";
+import { useActiveServerId } from "@/features/channels/hooks/use-active-view";
 import { serverMembersQuery } from "@/features/members/api/queries";
 import { searchMessagesQuery } from "@/features/search/api/queries";
 import { DateFilterField } from "@/features/search/components/date-filter-field";

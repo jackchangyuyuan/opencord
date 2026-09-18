@@ -15,11 +15,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { UnreadBadge } from "@/features/channels/components/unread-badge";
 import {
   useActiveServerId,
   useOnDirectMessages,
-} from "@/features/channels/api/queries";
-import { UnreadBadge } from "@/features/channels/components/unread-badge";
+} from "@/features/channels/hooks/use-active-view";
 import { dmBadgeCount, rollUp } from "@/features/channels/lib/unread";
 import { dmsQuery } from "@/features/dms/api/queries";
 import { CreateServerDialog } from "@/features/servers/components/create-server-dialog";

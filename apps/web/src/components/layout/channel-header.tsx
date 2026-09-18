@@ -10,10 +10,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Truncated } from "@/components/ui/truncated";
-import {
-  channelQuery,
-  useActiveChannelId,
-} from "@/features/channels/api/queries";
+import { channelQuery } from "@/features/channels/api/queries";
+import { useActiveChannelId } from "@/features/channels/hooks/use-active-view";
 import { dmParticipantsQuery } from "@/features/dms/api/queries";
 import { PinList } from "@/features/messages/components/pin-list";
 import {

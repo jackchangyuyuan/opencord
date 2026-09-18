@@ -7,12 +7,12 @@ import { UserBar } from "@/components/layout/user-bar";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Truncated } from "@/components/ui/truncated";
+import { ChannelList } from "@/features/channels/components/channel-list";
+import { CreateChannelDialog } from "@/features/channels/components/create-channel-dialog";
 import {
   useActiveServerId,
   useOnDirectMessages,
-} from "@/features/channels/api/queries";
-import { ChannelList } from "@/features/channels/components/channel-list";
-import { CreateChannelDialog } from "@/features/channels/components/create-channel-dialog";
+} from "@/features/channels/hooks/use-active-view";
 import { DmList } from "@/features/dms/components/dm-list";
 import { StartDmDialog } from "@/features/dms/components/start-dm-dialog";
 import { InviteDialog } from "@/features/invites/components/invite-dialog";

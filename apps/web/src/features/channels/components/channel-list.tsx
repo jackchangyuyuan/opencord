@@ -34,9 +34,9 @@ import { TruncatedControl } from "@/components/ui/truncated";
 import {
   type ChannelListEntry,
   serverChannelsQuery,
-  useRequestedChannelId,
 } from "@/features/channels/api/queries";
 import { UnreadBadge } from "@/features/channels/components/unread-badge";
+import { useRequestedChannelId } from "@/features/channels/hooks/use-active-view";
 import { useReorderChannels } from "@/features/channels/hooks/use-reorder-channels";
 import { usePrefetchChannel } from "@/features/channels/lib/load-view";
 import { badgeCount } from "@/features/channels/lib/unread";

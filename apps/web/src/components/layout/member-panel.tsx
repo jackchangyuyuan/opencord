@@ -8,11 +8,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { channelQuery } from "@/features/channels/api/queries";
 import {
-  channelQuery,
   useActiveChannelId,
   useActiveServerId,
-} from "@/features/channels/api/queries";
+} from "@/features/channels/hooks/use-active-view";
 import { DmMemberList } from "@/features/dms/components/dm-member-list";
 import { MemberList } from "@/features/members/components/member-list";
 import { SearchPanel } from "@/features/search/components/search-panel";
