@@ -39,6 +39,7 @@ import { AttachmentTray } from "@/features/uploads/components/attachment-tray";
 import { useUpload } from "@/features/uploads/hooks/use-upload";
 import { currentUserQuery } from "@/features/users/api/queries";
 import { cn } from "@/lib/cn";
+import { isComposing } from "@/lib/composition";
 import { socket } from "@/lib/socket";
 import { useDraft, useDrafts } from "@/stores/drafts";
 import { useUi } from "@/stores/ui";
@@ -251,6 +252,10 @@ export function Composer({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (isComposing(event)) {
+      return;
+    }
+
     if (onMenuKeyDown(event)) {
       return;
     }

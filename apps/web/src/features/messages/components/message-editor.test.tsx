@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -97,5 +97,20 @@ describe("the message editor", () => {
     await user.clear(field);
 
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
+  it("leaves Enter to the input method while it is composing", async () => {
+    const { user, field, onSave, onCancel } = setup();
+
+    await user.type(field, " and after");
+
+    fireEvent.keyDown(field, { key: "Enter", isComposing: true });
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+
+    await user.keyboard("{Enter}");
+
+    expect(onSave).toHaveBeenCalledWith("before and after");
   });
 });

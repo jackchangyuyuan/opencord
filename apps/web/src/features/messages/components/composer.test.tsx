@@ -1,7 +1,7 @@
 import { Permissions } from "@opencord/shared/permissions";
 import type { PublicUser } from "@opencord/shared/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -130,6 +130,14 @@ function stubMembers(data = ROSTER) {
   vi.stubGlobal("fetch", fetchMock);
 
   return fetchMock;
+}
+
+function urlOf(input: RequestInfo | URL): string {
+  if (typeof input === "string") {
+    return input;
+  }
+
+  return input instanceof URL ? input.href : input.url;
 }
 
 function options(): string[] {
@@ -441,6 +449,32 @@ describe("mention autocomplete", () => {
     await userEvent.keyboard("{Enter}");
 
     expect(field).toHaveValue("@everyone ");
+  });
+
+  it("leaves Enter to the input method while it is composing", async () => {
+    seed(Permissions.VIEW_CHANNEL | Permissions.SEND_MESSAGES);
+    const fetchMock = stubMembers();
+
+    renderComposer();
+
+    const field = screen.getByRole("textbox", { name: "Message" });
+
+    await userEvent.click(field);
+    await userEvent.type(field, "@ja");
+
+    await waitFor(() => {
+      expect(options().length).toBeGreaterThan(0);
+    });
+
+    fireEvent.keyDown(field, { key: "Enter", isComposing: true });
+
+    expect(field).toHaveValue("@ja");
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        urlOf(input).includes("/messages"),
+      ),
+    ).toHaveLength(0);
   });
 
   it("withholds @everyone from a member who may not broadcast", async () => {

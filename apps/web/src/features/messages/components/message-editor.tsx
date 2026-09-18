@@ -14,6 +14,7 @@ import {
   mentionOptionId,
   mentionText,
 } from "@/features/messages/lib/mentions";
+import { isComposing } from "@/lib/composition";
 
 export function MessageEditor({
   channelId,
@@ -138,6 +139,10 @@ export function MessageEditor({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (isComposing(event)) {
+      return;
+    }
+
     if (onMenuKeyDown(event)) {
       return;
     }
