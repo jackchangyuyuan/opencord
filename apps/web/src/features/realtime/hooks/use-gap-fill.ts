@@ -34,6 +34,26 @@ export function recoveryCursor(
   return known.at(-1 - overlap) ?? known.at(0) ?? null;
 }
 
+function verifiesItsOwnOldest(
+  cache: MessageCache | undefined,
+  overlap = RECOVERY_OVERLAP,
+): boolean {
+  return serverMessageIds(cache).length > overlap + 1;
+}
+
+function isHistoricalView(queryKey: readonly unknown[]): boolean {
+  if (queryKey[0] !== "channels") {
+    return false;
+  }
+
+  return (
+    (queryKey.length === 5 &&
+      queryKey[2] === "messages" &&
+      queryKey[3] === "around") ||
+    (queryKey.length === 3 && queryKey[2] === "pins")
+  );
+}
+
 export function useGapFill(activeChannelId: string | undefined): void {
   const queryClient = useQueryClient();
 
@@ -42,10 +62,13 @@ export function useGapFill(activeChannelId: string | undefined): void {
 
     const fill = async (channelId: string): Promise<void> => {
       const key = channelMessagesQueryKey(channelId);
-      const cached = serverMessageIds(
-        queryClient.getQueryData<MessageCache>(key),
-      );
-      const from = recoveryCursor(queryClient.getQueryData<MessageCache>(key));
+      const cache = queryClient.getQueryData<MessageCache>(key);
+      const cached = serverMessageIds(cache);
+      const from = recoveryCursor(cache);
+
+      if (!verifiesItsOwnOldest(cache)) {
+        await queryClient.invalidateQueries({ queryKey: key });
+      }
 
       if (from === null) {
         return;
@@ -56,6 +79,7 @@ export function useGapFill(activeChannelId: string | undefined): void {
       let after: string | null = from;
 
       while (after !== null) {
+        const askedAt = Date.now();
         const page = await fetchNewerMessages(channelId, after);
 
         if (cancelled) {
@@ -66,10 +90,11 @@ export function useGapFill(activeChannelId: string | undefined): void {
           live.add(message.id);
         }
 
-        queryClient.setQueryData<MessageCache>(key, (cache) =>
+        queryClient.setQueryData<MessageCache>(key, (current) =>
           page.data.reduce<MessageCache | undefined>(
-            (next, message) => applyIncoming(next, message, "fetch"),
-            cache,
+            (next, message) =>
+              applyIncoming(next, message, { source: "fetch", askedAt }),
+            current,
           ),
         );
 
@@ -80,8 +105,8 @@ export function useGapFill(activeChannelId: string | undefined): void {
 
       const missing = new Set(held.filter((id) => !live.has(id)));
 
-      queryClient.setQueryData<MessageCache>(key, (cache) =>
-        tombstone(cache, missing, new Date().toISOString()),
+      queryClient.setQueryData<MessageCache>(key, (current) =>
+        tombstone(current, missing, new Date().toISOString()),
       );
     };
 
@@ -100,6 +125,10 @@ export function useGapFill(activeChannelId: string | undefined): void {
     };
 
     const fillEveryOpenChannel = () => {
+      void queryClient.invalidateQueries({
+        predicate: (query) => isHistoricalView(query.queryKey),
+      });
+
       run(openChannelIds());
     };
 

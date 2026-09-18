@@ -10,6 +10,7 @@ import {
   isChannelList,
   serverChannelsQueryKey,
 } from "@/features/channels/api/queries";
+import { refreshUnread } from "@/features/channels/lib/refresh-unread";
 import { dmsQueryKey } from "@/features/dms/api/queries";
 import {
   isMemberList,
@@ -21,11 +22,11 @@ import {
   channelMessagesQueryKey,
   channelPinsQueryKey,
 } from "@/features/messages/api/queries";
-import { isNotStale } from "@/features/messages/lib/cache";
+import { noteReactionConfirmed } from "@/features/messages/hooks/use-toggle-reaction";
+import { carriesNewerContent } from "@/features/messages/lib/cache";
 import {
   applyMessageEvent,
   type MessageEvent,
-  pinStateChanged,
 } from "@/features/realtime/lib/apply-message-event";
 import { serverRolesQueryKey } from "@/features/roles/api/queries";
 import {
@@ -109,6 +110,15 @@ export function useSocketEvents(): void {
       );
     };
 
+    const noteReaction = (
+      payload: { messageId: string; emoji: string; userId: string },
+      present: boolean,
+    ) => {
+      if (payload.userId === viewerId()) {
+        noteReactionConfirmed(payload.messageId, payload.emoji, present);
+      }
+    };
+
     const viewerId = () =>
       queryClient.getQueryData<{ id: string }>(currentUserQuery.queryKey)?.id ??
       null;
@@ -131,19 +141,11 @@ export function useSocketEvents(): void {
         channelPinsQueryKey(message.channelId),
         (pins) =>
           pins?.map((pin) =>
-            pin.id === message.id && isNotStale(message, pin) ? message : pin,
+            pin.id === message.id && carriesNewerContent(message, pin)
+              ? message
+              : pin,
           ),
       );
-    };
-
-    const syncPins = (message: Message) => {
-      const cache = queryClient.getQueryData<MessageCache>(
-        channelMessagesQueryKey(message.channelId),
-      );
-
-      if (pinStateChanged(cache, message)) {
-        invalidate(channelPinsQueryKey(message.channelId));
-      }
     };
 
     const unpin = (channelId: string, messageId: string) => {
@@ -167,29 +169,39 @@ export function useSocketEvents(): void {
         );
       },
       "message:update": ({ message }) => {
-        syncPins(message);
         editPinned(message);
         apply(message.channelId, { type: "update", message });
+      },
+      "message:pin": (payload) => {
+        apply(payload.channelId, { type: "pin", payload });
+        invalidate(channelPinsQueryKey(payload.channelId));
       },
       "message:delete": (payload) => {
         unpin(payload.channelId, payload.messageId);
         apply(payload.channelId, { type: "delete", payload });
       },
       "reaction:add": (payload) => {
+        noteReaction(payload, true);
         apply(payload.channelId, {
           type: "reaction",
           add: true,
           payload,
           viewerId: viewerId(),
+          at: Date.now(),
         });
       },
       "reaction:remove": (payload) => {
+        noteReaction(payload, false);
         apply(payload.channelId, {
           type: "reaction",
           add: false,
           payload,
           viewerId: viewerId(),
+          at: Date.now(),
         });
+      },
+      "unread:stale": ({ channelId }) => {
+        refreshUnread(queryClient, channelId);
       },
       "channel:create": ({ serverId }) => {
         invalidate(serverChannelsQueryKey(serverId));
@@ -211,8 +223,14 @@ export function useSocketEvents(): void {
       "member:join": ({ serverId }) => {
         invalidate(serverMembersQueryKey(serverId));
       },
-      "member:leave": ({ serverId }) => {
+      "member:leave": ({ serverId, userId }) => {
         invalidate(serverMembersQueryKey(serverId));
+
+        if (userId === viewerId()) {
+          invalidate(serversQueryKey);
+          invalidate(serverChannelsQueryKey(serverId));
+          invalidate(serverQueryKey(serverId));
+        }
       },
       "role:update": ({ serverId }) => {
         invalidate(serverRolesQueryKey(serverId));

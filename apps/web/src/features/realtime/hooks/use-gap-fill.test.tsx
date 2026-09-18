@@ -1,15 +1,22 @@
 import type { Message } from "@opencord/shared/types";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  QueryObserver,
+} from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MessageCache } from "@/features/messages/api/queries";
 import {
+  channelMessagesAroundQueryKey,
   channelMessagesQueryKey,
+  channelPinsQueryKey,
   encodeCursor,
   MESSAGE_PAGE_SIZE,
 } from "@/features/messages/api/queries";
+import { api } from "@/lib/api-client";
 
 const { rawEmit, reset, socket } = vi.hoisted(() => {
   type Listener = (...args: unknown[]) => void;
@@ -104,6 +111,26 @@ function stubFetch(page: { data: Message[]; nextCursor: string | null }) {
   vi.stubGlobal("fetch", fetchMock);
 
   return fetchMock;
+}
+
+function watchMessages(channelId: string): () => void {
+  const observer = new QueryObserver(client, {
+    queryKey: channelMessagesQueryKey(channelId),
+    queryFn: () =>
+      api<unknown>(
+        `/channels/${channelId}/messages?limit=${String(MESSAGE_PAGE_SIZE)}`,
+      ),
+  });
+
+  return observer.subscribe(() => undefined);
+}
+
+function urlOf(input: RequestInfo | URL): string {
+  if (typeof input === "string") {
+    return input;
+  }
+
+  return input instanceof URL ? input.href : input.url;
 }
 
 function setVisibility(state: DocumentVisibilityState) {
@@ -476,8 +503,14 @@ describe("useGapFill", () => {
     ).toBeNull();
   });
 
-  it("asks for nothing when the channel has no message to anchor on", async () => {
+  it("re-reads a channel whose cache has nothing to anchor on", async () => {
+    const observed = watchMessages(CHANNEL_ID);
     const fetchMock = stubFetch({ data: [], nextCursor: null });
+
+    client.setQueryData<MessageCache>(channelMessagesQueryKey(CHANNEL_ID), {
+      pages: [{ data: [], nextCursor: null }],
+      pageParams: [null],
+    });
 
     renderHook(
       () => {
@@ -490,8 +523,109 @@ describe("useGapFill", () => {
       window.dispatchEvent(new Event("focus"));
     });
 
-    await Promise.resolve();
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([url]) =>
+          urlOf(url).includes(`/channels/${CHANNEL_ID}/messages?limit=`),
+        ),
+      ).toBe(true);
+    });
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    observed();
+  });
+
+  it("re-reads a channel holding a single message, which no window reaches", async () => {
+    const observed = watchMessages(CHANNEL_ID);
+    const fetchMock = stubFetch({ data: [], nextCursor: null });
+
+    seed(client, CHANNEL_ID, [message(run(1), "only")]);
+
+    renderHook(
+      () => {
+        useGapFill(CHANNEL_ID);
+      },
+      { wrapper },
+    );
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([url]) =>
+          urlOf(url).includes(`/channels/${CHANNEL_ID}/messages?limit=`),
+        ),
+      ).toBe(true);
+    });
+
+    observed();
+  });
+
+  it("reads forward rather than re-reading a history long enough to anchor", async () => {
+    const observed = watchMessages(CHANNEL_ID);
+    const history = Array.from({ length: RECOVERY_OVERLAP + 5 }, (_, at) =>
+      run(at + 1),
+    );
+    const from = history.at(-1 - RECOVERY_OVERLAP) ?? "";
+
+    seed(client, CHANNEL_ID, history.map((id) => message(id, id)).reverse());
+
+    const fetchMock = stubFetch({
+      data: history.filter((id) => id > from).map((id) => message(id, id)),
+      nextCursor: null,
+    });
+
+    renderHook(
+      () => {
+        useGapFill(CHANNEL_ID);
+      },
+      { wrapper },
+    );
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    expect(
+      fetchMock.mock.calls.every(([url]) => urlOf(url).includes("after=")),
+    ).toBe(true);
+
+    observed();
+  });
+
+  it("re-reads the historical windows and the pinned list on a reconnect", async () => {
+    seed(client, CHANNEL_ID, [message(run(1), "first")]);
+
+    const aroundKey = channelMessagesAroundQueryKey(CHANNEL_ID, run(1));
+    const pinsKey = channelPinsQueryKey(CHANNEL_ID);
+
+    client.setQueryData<MessageCache>(aroundKey, {
+      pages: [{ data: [message(run(1), "first")], nextCursor: null }],
+      pageParams: [null],
+    });
+    client.setQueryData(pinsKey, []);
+
+    stubFetch({ data: [], nextCursor: null });
+
+    renderHook(
+      () => {
+        useGapFill(CHANNEL_ID);
+      },
+      { wrapper },
+    );
+
+    act(() => {
+      rawEmit("connect");
+    });
+
+    await waitFor(() => {
+      expect(client.getQueryState(aroundKey)?.isInvalidated).toBe(true);
+      expect(client.getQueryState(pinsKey)?.isInvalidated).toBe(true);
+    });
   });
 });

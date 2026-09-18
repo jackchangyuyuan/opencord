@@ -230,6 +230,7 @@ describe("deleting a message", () => {
               emoji: "\u{1F44D}",
             },
             viewerId: "u-ada",
+            at: Date.now(),
           }),
       );
     });
@@ -282,6 +283,116 @@ describe("deleting a message", () => {
 
     await waitFor(() => {
       expect(entries(aroundKey)[0]?.deletedAt).toBe("2026-09-11T11:00:00.000Z");
+    });
+  });
+
+  it("keeps a deletion the socket confirmed before the answer failed", async () => {
+    const deferred: { reject?: (error: Error) => void } = {};
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((_resolve, reject) => {
+            deferred.reject = reject;
+          }),
+      ),
+    );
+
+    const { result } = renderHook(() => useDeleteMessage(CHANNEL_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.remove(MESSAGE_ID);
+    });
+
+    await waitFor(() => {
+      expect(deferred.reject).toBeDefined();
+    });
+
+    expect(entries(channelMessagesQueryKey(CHANNEL_ID))[0]?.deletedAt).not.toBe(
+      null,
+    );
+
+    const confirmed = "2026-09-11T11:00:00.000Z";
+
+    act(() => {
+      client.setQueryData<MessageCache>(
+        channelMessagesQueryKey(CHANNEL_ID),
+        (cache) =>
+          applyMessageEvent(cache, {
+            type: "delete",
+            payload: {
+              channelId: CHANNEL_ID,
+              messageId: MESSAGE_ID,
+              deletedAt: confirmed,
+            },
+          }),
+      );
+    });
+
+    act(() => {
+      deferred.reject?.(new TypeError("Failed to fetch"));
+    });
+
+    await waitFor(() => {
+      expect(chatAlert).toHaveBeenCalled();
+    });
+
+    const entry = entries(channelMessagesQueryKey(CHANNEL_ID))[0];
+
+    expect(entry?.deletedAt).toBe(confirmed);
+    expect(entry?.content).toBe("");
+  });
+
+  it("takes back its own tombstone when the request is refused", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          respond(403, { error: { code: "FORBIDDEN", message: "no" } }),
+        ),
+      ),
+    );
+
+    const { result } = renderHook(() => useDeleteMessage(CHANNEL_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.remove(MESSAGE_ID);
+    });
+
+    await waitFor(() => {
+      expect(entries(channelMessagesQueryKey(CHANNEL_ID))[0]?.deletedAt).toBe(
+        null,
+      );
+    });
+
+    expect(entries(channelMessagesQueryKey(CHANNEL_ID))[0]?.content).toBe(
+      "regrettable",
+    );
+  });
+
+  it("takes back its own tombstone when the transport fails and nothing confirmed it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))),
+    );
+
+    const { result } = renderHook(() => useDeleteMessage(CHANNEL_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.remove(MESSAGE_ID);
+    });
+
+    await waitFor(() => {
+      expect(entries(channelMessagesQueryKey(CHANNEL_ID))[0]?.deletedAt).toBe(
+        null,
+      );
     });
   });
 });

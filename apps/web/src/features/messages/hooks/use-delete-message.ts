@@ -5,7 +5,13 @@ import {
   channelMessageCaches,
   type MessageCache,
 } from "@/features/messages/api/queries";
-import { findMessage, mapMessage } from "@/features/messages/lib/cache";
+import {
+  confirmDeleted,
+  findMessage,
+  mapMessage,
+  restoreDeleted,
+} from "@/features/messages/lib/cache";
+import { accountScope, isCurrentScope } from "@/lib/account-scope";
 import { api, ApiError } from "@/lib/api-client";
 import { chatAlert } from "@/lib/toast";
 
@@ -72,28 +78,38 @@ export function useDeleteMessage(channelId: string): DeleteState {
           ...message,
           content: "",
           deletedAt: applied,
+          pendingDelete: applied,
         })),
       );
 
-      return { applied, replaced };
+      return { applied, replaced, scope: accountScope() };
     },
 
-    onSuccess: (deleted) => {
+    onSuccess: (deleted, _messageId, context) => {
+      if (!isCurrentScope(context.scope)) {
+        return;
+      }
+
       queryClient.setQueriesData<MessageCache>(caches, (cache) =>
-        mapMessage(cache, deleted.messageId, (message) => ({
-          ...message,
-          deletedAt: deleted.deletedAt,
-        })),
+        mapMessage(cache, deleted.messageId, (message) =>
+          confirmDeleted(message, deleted.deletedAt),
+        ),
       );
     },
 
     onError: (error, messageId, context) => {
-      const { applied, replaced } = context ?? {};
+      const { applied, replaced, scope } = context ?? {};
 
-      if (replaced !== undefined) {
+      if (
+        replaced !== undefined &&
+        scope !== undefined &&
+        isCurrentScope(scope)
+      ) {
         queryClient.setQueriesData<MessageCache>(caches, (cache) =>
           mapMessage(cache, messageId, (entry) =>
-            entry.deletedAt === applied ? { ...entry, ...replaced } : entry,
+            entry.pendingDelete === applied
+              ? restoreDeleted(entry, replaced)
+              : entry,
           ),
         );
       }

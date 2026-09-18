@@ -7,15 +7,24 @@ import type {
 import type { MessageCache } from "@/features/messages/api/queries";
 import {
   applyIncoming,
+  carriesNewerContent,
   type ChatMessage,
+  confirmDeleted,
   findMessage,
-  isNotStale,
+  mergeIncoming,
 } from "@/features/messages/lib/cache";
 
 export interface DeletePayload {
   channelId: string;
   messageId: string;
   deletedAt: string;
+}
+
+export interface PinPayload {
+  channelId: string;
+  messageId: string;
+  pinnedAt: string | null;
+  pinnedBy: string | null;
 }
 
 export interface ReactionPayload {
@@ -29,11 +38,13 @@ export type MessageEvent =
   | { type: "create"; message: Message }
   | { type: "update"; message: Message }
   | { type: "delete"; payload: DeletePayload }
+  | { type: "pin"; payload: PinPayload }
   | {
       type: "reaction";
       add: boolean;
       payload: ReactionPayload;
       viewerId: string | null;
+      at: number;
     };
 
 export function applyReaction(
@@ -69,15 +80,6 @@ export function applyReaction(
         : entry,
     )
     .filter((entry) => entry.count > 0);
-}
-
-export function pinStateChanged(
-  cache: MessageCache | undefined,
-  message: Message,
-): boolean {
-  const cached = findMessage(cache, message.id);
-
-  return cached?.pinnedAt !== message.pinnedAt;
 }
 
 function mapEntries(
@@ -126,6 +128,16 @@ export function applyMessageEvent(
     return cache;
   }
 
+  if (event.type === "pin") {
+    const { messageId, pinnedAt, pinnedBy } = event.payload;
+
+    return replace(cache, messageId, (entry) => ({
+      ...entry,
+      pinnedAt,
+      pinnedBy,
+    }));
+  }
+
   if (event.type === "reaction") {
     const cached = findMessage(cache, event.payload.messageId);
 
@@ -152,6 +164,7 @@ export function applyMessageEvent(
         event.add,
         mine,
       ),
+      reactionsAt: event.at,
     }));
   }
 
@@ -167,30 +180,27 @@ export function applyMessageEvent(
         );
       }
 
-      return entry.deletedAt === null
-        ? { ...entry, content: "", deletedAt }
-        : entry;
+      return entry.deletedAt !== null && entry.pendingDelete === undefined
+        ? entry
+        : confirmDeleted(entry, deletedAt);
     });
   }
 
   const cached = findMessage(cache, event.message.id);
-  const fresh = cached !== undefined && isNotStale(event.message, cached);
+  const fresh =
+    cached === undefined || carriesNewerContent(event.message, cached);
 
   return mapEntries(cache, (entry) => {
     if (entry.id !== event.message.id) {
-      return requote(entry, event.message.id, (quoted) =>
-        quoted.deletedAt === null
-          ? { ...quoted, content: event.message.content }
-          : quoted,
-      );
+      return fresh
+        ? requote(entry, event.message.id, (quoted) =>
+            quoted.deletedAt === null
+              ? { ...quoted, content: event.message.content }
+              : quoted,
+          )
+        : entry;
     }
 
-    return fresh
-      ? {
-          ...event.message,
-          reactions: entry.reactions,
-          ...(entry.local === undefined ? {} : { local: entry.local }),
-        }
-      : entry;
+    return fresh ? mergeIncoming(entry, event.message) : entry;
   });
 }

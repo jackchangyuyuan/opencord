@@ -1,7 +1,10 @@
 import type { MessageAttachmentInput } from "@opencord/shared/schemas";
 import type { Message } from "@opencord/shared/types";
 
-import type { MessageCache } from "@/features/messages/api/queries";
+import type {
+  MessageCache,
+  MessagePage,
+} from "@/features/messages/api/queries";
 
 export type RetryMode = "same-nonce" | "new-nonce" | "none" | "claim";
 
@@ -13,7 +16,11 @@ export interface LocalState {
   attachments: MessageAttachmentInput[];
 }
 
-export type ChatMessage = Message & { local?: LocalState };
+export type ChatMessage = Message & {
+  local?: LocalState;
+  pendingDelete?: string;
+  reactionsAt?: number;
+};
 
 export interface SendIdentity {
   authorId: string;
@@ -80,19 +87,73 @@ export function findSend(
     .find((entry) => isSameSend(entry, identity));
 }
 
-function insertionPoint(
-  entries: readonly ChatMessage[],
-  message: ChatMessage,
-): number {
-  if (isOptimistic(message.id)) {
-    return 0;
-  }
-
+function insertionPoint(entries: readonly ChatMessage[], id: string): number {
   const at = entries.findIndex(
-    (entry) => !isOptimistic(entry.id) && entry.id < message.id,
+    (entry) => !isOptimistic(entry.id) && entry.id < id,
   );
 
   return at === -1 ? entries.length : at;
+}
+
+function oldestServerId(entries: readonly ChatMessage[]): string | undefined {
+  for (let at = entries.length - 1; at >= 0; at -= 1) {
+    const entry = entries[at];
+
+    if (entry !== undefined && !isOptimistic(entry.id)) {
+      return entry.id;
+    }
+  }
+
+  return undefined;
+}
+
+function pageFor(
+  pages: readonly MessagePage[],
+  messageId: string,
+): number | null {
+  for (const [index, page] of pages.entries()) {
+    const oldest = oldestServerId(page.data);
+
+    if (oldest === undefined || oldest < messageId) {
+      return index;
+    }
+  }
+
+  const last = pages.length - 1;
+
+  return pages[last]?.nextCursor === null ? last : null;
+}
+
+export function insertInOrder(
+  cache: MessageCache | undefined,
+  message: ChatMessage,
+): MessageCache {
+  const base = cache ?? emptyCache();
+  const index = pageFor(base.pages, message.id);
+
+  if (index === null) {
+    return base;
+  }
+
+  return {
+    ...base,
+    pages: base.pages.map((page, at) => {
+      if (at !== index) {
+        return page;
+      }
+
+      const point = insertionPoint(page.data, message.id);
+
+      return {
+        ...page,
+        data: [
+          ...page.data.slice(0, point),
+          message,
+          ...page.data.slice(point),
+        ],
+      };
+    }),
+  };
 }
 
 export function insertOptimistic(
@@ -106,10 +167,16 @@ export function insertOptimistic(
     return { ...base, pages: [{ data: [message], nextCursor: null }] };
   }
 
-  const at = insertionPoint(first.data, message);
-  const data = [...first.data.slice(0, at), message, ...first.data.slice(at)];
+  return {
+    ...base,
+    pages: [{ ...first, data: [message, ...first.data] }, ...rest],
+  };
+}
 
-  return { ...base, pages: [{ ...first, data }, ...rest] };
+function dropEntry(cache: MessageCache, messageId: string): MessageCache {
+  return mapPages(cache, (entries) =>
+    entries.filter((entry) => entry.id !== messageId),
+  );
 }
 
 function matches(entry: ChatMessage, message: Message): boolean {
@@ -120,7 +187,19 @@ function matches(entry: ChatMessage, message: Message): boolean {
   );
 }
 
-export function isNotStale(message: Message, entry: ChatMessage): boolean {
+function findMatch(
+  cache: MessageCache,
+  message: Message,
+): ChatMessage | undefined {
+  return cache.pages
+    .flatMap((page) => page.data)
+    .find((entry) => matches(entry, message));
+}
+
+export function carriesNewerContent(
+  message: Message,
+  entry: ChatMessage,
+): boolean {
   if (entry.deletedAt !== null) {
     return message.deletedAt !== null;
   }
@@ -137,31 +216,91 @@ export function isNotStale(message: Message, entry: ChatMessage): boolean {
 
 export type MessageSource = "broadcast" | "fetch";
 
+export interface IncomingOptions {
+  source?: MessageSource;
+  askedAt?: number;
+}
+
+export function mergeIncoming(
+  held: ChatMessage,
+  message: Message,
+  options: IncomingOptions = {},
+): ChatMessage {
+  const { source = "broadcast", askedAt } = options;
+
+  const outpaced =
+    askedAt !== undefined &&
+    held.reactionsAt !== undefined &&
+    held.reactionsAt > askedAt;
+
+  return {
+    ...message,
+    ...(source === "broadcast" || outpaced
+      ? { reactions: held.reactions }
+      : {}),
+    ...(held.reactionsAt === undefined
+      ? {}
+      : { reactionsAt: held.reactionsAt }),
+    ...(source === "broadcast"
+      ? { pinnedAt: held.pinnedAt, pinnedBy: held.pinnedBy }
+      : {}),
+    ...(held.local === undefined ? {} : { local: held.local }),
+    ...(held.pendingDelete === undefined
+      ? {}
+      : { pendingDelete: held.pendingDelete }),
+  };
+}
+
 export function applyIncoming(
   cache: MessageCache | undefined,
   message: Message,
-  source: MessageSource = "broadcast",
+  options: IncomingOptions = {},
 ): MessageCache {
   const base = cache ?? emptyCache();
+  const held = findMatch(base, message);
 
-  const known = base.pages.some((page) =>
-    page.data.some((entry) => matches(entry, message)),
-  );
+  if (held === undefined) {
+    return insertInOrder(base, message);
+  }
 
-  if (!known) {
-    return insertOptimistic(base, message);
+  if (held.id !== message.id) {
+    const without = dropEntry(base, held.id);
+    const placed = insertInOrder(without, message);
+
+    return placed === without ? insertOptimistic(without, message) : placed;
+  }
+
+  if (!carriesNewerContent(message, held)) {
+    return base;
   }
 
   return mapPages(base, (entries) =>
     entries.map((entry) =>
-      matches(entry, message) && isNotStale(message, entry)
-        ? {
-            ...message,
-            ...(source === "broadcast" ? { reactions: entry.reactions } : {}),
-          }
-        : entry,
+      entry.id === message.id ? mergeIncoming(held, message, options) : entry,
     ),
   );
+}
+
+export function confirmDeleted(
+  entry: ChatMessage,
+  deletedAt: string,
+): ChatMessage {
+  const rest = { ...entry };
+
+  delete rest.pendingDelete;
+
+  return { ...rest, content: "", deletedAt };
+}
+
+export function restoreDeleted(
+  entry: ChatMessage,
+  replaced: { content: string; deletedAt: string | null },
+): ChatMessage {
+  const rest = { ...entry };
+
+  delete rest.pendingDelete;
+
+  return { ...rest, ...replaced };
 }
 
 export function tombstone(
@@ -175,21 +314,24 @@ export function tombstone(
 
   return mapPages(cache, (entries) =>
     entries.map((entry) =>
-      messageIds.has(entry.id) && entry.deletedAt === null
-        ? { ...entry, content: "", deletedAt }
+      messageIds.has(entry.id) &&
+      (entry.deletedAt === null || entry.pendingDelete !== undefined)
+        ? confirmDeleted(entry, deletedAt)
         : entry,
     ),
   );
 }
 
-export function markLocal(
+export function markPendingSend(
   cache: MessageCache | undefined,
   identity: SendIdentity,
   local: LocalState,
 ): MessageCache {
   return mapPages(cache ?? emptyCache(), (entries) =>
     entries.map((entry) =>
-      isSameSend(entry, identity) ? { ...entry, local } : entry,
+      isSameSend(entry, identity) && isOptimistic(entry.id)
+        ? { ...entry, local }
+        : entry,
     ),
   );
 }
@@ -199,6 +341,8 @@ export function removeSend(
   identity: SendIdentity,
 ): MessageCache {
   return mapPages(cache ?? emptyCache(), (entries) =>
-    entries.filter((entry) => !isSameSend(entry, identity)),
+    entries.filter(
+      (entry) => !(isSameSend(entry, identity) && isOptimistic(entry.id)),
+    ),
   );
 }

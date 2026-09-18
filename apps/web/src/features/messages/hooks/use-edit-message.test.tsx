@@ -389,4 +389,117 @@ describe("editing a message", () => {
       client.getQueryData<MessageCache>(aroundKey)?.pages[0]?.data[0]?.content,
     ).toBe("before");
   });
+
+  it("rolls two failed edits back to the text the server holds", async () => {
+    const failures: ((error: Error) => void)[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((_resolve, reject) => {
+            failures.push(reject);
+          }),
+      ),
+    );
+
+    const { result } = renderHook(() => useEditMessage(CHANNEL_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.edit({ messageId: MESSAGE_ID, content: "first attempt" });
+    });
+
+    expect(entries()[0]?.content).toBe("first attempt");
+
+    act(() => {
+      result.current.edit({ messageId: MESSAGE_ID, content: "second attempt" });
+    });
+
+    expect(entries()[0]?.content).toBe("second attempt");
+
+    await waitFor(() => {
+      expect(failures).toHaveLength(1);
+    });
+
+    act(() => {
+      failures[0]?.(new TypeError("Failed to fetch"));
+    });
+
+    await waitFor(() => {
+      expect(chatAlert).toHaveBeenCalledTimes(1);
+    });
+
+    expect(entries()[0]?.content).toBe("second attempt");
+
+    await waitFor(() => {
+      expect(failures).toHaveLength(2);
+    });
+
+    act(() => {
+      failures[1]?.(new TypeError("Failed to fetch"));
+    });
+
+    await waitFor(() => {
+      expect(entries()[0]?.content).toBe("before");
+    });
+  });
+
+  it("does not overwrite a later edit with an earlier answer", async () => {
+    const settlers: {
+      resolve?: (value: Response) => void;
+      reject?: (error: Error) => void;
+    }[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve, reject) => {
+            settlers.push({ resolve, reject });
+          }),
+      ),
+    );
+
+    const { result } = renderHook(() => useEditMessage(CHANNEL_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.edit({ messageId: MESSAGE_ID, content: "first attempt" });
+    });
+
+    act(() => {
+      result.current.edit({ messageId: MESSAGE_ID, content: "second attempt" });
+    });
+
+    await waitFor(() => {
+      expect(settlers).toHaveLength(1);
+    });
+
+    act(() => {
+      settlers[0]?.resolve?.(
+        respond(200, {
+          ...message(),
+          content: "first attempt <@u-grace>",
+          editedAt: "2026-09-11T11:00:00.000Z",
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(settlers).toHaveLength(2);
+    });
+
+    expect(entries()[0]?.content).toBe("second attempt");
+
+    act(() => {
+      settlers[1]?.reject?.(new TypeError("Failed to fetch"));
+    });
+
+    await waitFor(() => {
+      expect(entries()[0]?.content).toBe("first attempt <@u-grace>");
+    });
+  });
 });

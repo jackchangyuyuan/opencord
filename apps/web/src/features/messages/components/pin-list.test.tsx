@@ -7,10 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MessageCache } from "@/features/messages/api/queries";
 import { channelPinsQueryKey } from "@/features/messages/api/queries";
-import {
-  applyMessageEvent,
-  pinStateChanged,
-} from "@/features/realtime/lib/apply-message-event";
+import { applyMessageEvent } from "@/features/realtime/lib/apply-message-event";
 
 import { PinList } from "./pin-list";
 import { PinnedIndicator } from "./pinned-indicator";
@@ -144,7 +141,7 @@ describe("PinnedIndicator", () => {
   });
 });
 
-describe("a message:update carrying pinnedAt", () => {
+describe("a message:pin event", () => {
   it("marks the cached row pinned without refetching the channel", () => {
     const pinnedAt = "2026-09-11T11:00:00.000Z";
 
@@ -154,32 +151,37 @@ describe("a message:update carrying pinnedAt", () => {
     };
 
     const next = applyMessageEvent(cache, {
-      type: "update",
-      message: message({ pinnedAt, pinnedBy: "u-ada" }),
+      type: "pin",
+      payload: {
+        channelId: CHANNEL_ID,
+        messageId: "m-1",
+        pinnedAt,
+        pinnedBy: "u-ada",
+      },
     });
 
     expect(next?.pages[0]?.data[0]?.pinnedAt).toBe(pinnedAt);
     expect(next?.pages[0]?.data[0]?.pinnedBy).toBe("u-ada");
   });
 
-  it("reports the pin list stale, and says nothing for an ordinary edit", () => {
+  it("is not undone by an edit that carries the old pin state", () => {
+    const pinnedAt = "2026-09-11T11:00:00.000Z";
+
     const cache: MessageCache = {
-      pages: [{ data: [message()], nextCursor: null }],
+      pages: [
+        { data: [message({ pinnedAt, pinnedBy: "u-ada" })], nextCursor: null },
+      ],
       pageParams: [null],
     };
 
-    expect(
-      pinStateChanged(cache, message({ pinnedAt: "2026-09-11T11:00:00.000Z" })),
-    ).toBe(true);
+    const next = applyMessageEvent(cache, {
+      type: "update",
+      message: message({ content: "edited" }),
+    });
 
-    expect(
-      pinStateChanged(
-        cache,
-        message({ content: "edited", editedAt: "2026-09-11T11:00:00.000Z" }),
-      ),
-    ).toBe(false);
-
-    expect(pinStateChanged(undefined, message())).toBe(true);
+    expect(next?.pages[0]?.data[0]?.content).toBe("edited");
+    expect(next?.pages[0]?.data[0]?.pinnedAt).toBe(pinnedAt);
+    expect(next?.pages[0]?.data[0]?.pinnedBy).toBe("u-ada");
   });
 
   it("refills the popover once the pin query is invalidated", async () => {

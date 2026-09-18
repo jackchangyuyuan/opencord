@@ -137,7 +137,12 @@ function seedChannelList(): void {
 function channelRow() {
   return client
     .getQueryData<
-      { id: string; hasUnread: boolean; lastMessageId: string | null }[]
+      {
+        id: string;
+        hasUnread: boolean;
+        lastMessageId: string | null;
+        mentionCount: number;
+      }[]
     >(serverChannelsQueryKey(SERVER_ID))
     ?.find((channel) => channel.id === CHANNEL_ID);
 }
@@ -804,5 +809,130 @@ describe("useSocketEvents", () => {
     unmount();
 
     expect(listenerCount()).toBe(0);
+  });
+
+  it("re-reads a channel's unread state when the server says it is stale", async () => {
+    seedChannelList();
+
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: CHANNEL_ID,
+          serverId: SERVER_ID,
+          type: "text",
+          name: "general",
+          topic: null,
+          position: 0,
+          lastMessageId: "m-9",
+          lastEveryoneMentionId: null,
+          createdAt: "2026-09-11T10:00:00.000Z",
+          lastReadMessageId: null,
+          hasUnread: true,
+          hasEveryone: false,
+          mentionCount: 3,
+          unreadCount: 4,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("unread:stale", { channelId: CHANNEL_ID });
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/api/v1/channels/${CHANNEL_ID}/read`,
+        expect.objectContaining({ method: "GET" }),
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(channelRow()?.mentionCount).toBe(3);
+    });
+
+    expect(channelRow()?.hasUnread).toBe(true);
+
+    vi.unstubAllGlobals();
+  });
+
+  it("asks once for a burst of announcements about the same channel", async () => {
+    seedChannelList();
+
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ mentionCount: 1 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("unread:stale", { channelId: CHANNEL_ID });
+    emit("unread:stale", { channelId: CHANNEL_ID });
+    emit("unread:stale", { channelId: CHANNEL_ID });
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    vi.unstubAllGlobals();
+  });
+
+  it("reconciles the viewer's own membership when they are the one removed", () => {
+    signIn("u-me");
+
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("member:leave", { serverId: SERVER_ID, userId: "u-me" });
+
+    const keys = invalidate.mock.calls.map(([options]) =>
+      JSON.stringify((options as { queryKey?: unknown }).queryKey),
+    );
+
+    expect(keys).toContain(JSON.stringify(serverMembersQueryKey(SERVER_ID)));
+    expect(keys).toContain(JSON.stringify(serversQueryKey));
+    expect(keys).toContain(JSON.stringify(serverChannelsQueryKey(SERVER_ID)));
+  });
+
+  it("refreshes only the roster when somebody else is removed", () => {
+    signIn("u-me");
+
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    renderHook(
+      () => {
+        useSocketEvents();
+      },
+      { wrapper },
+    );
+
+    emit("member:leave", { serverId: SERVER_ID, userId: "u-grace" });
+
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: serverMembersQueryKey(SERVER_ID),
+    });
   });
 });

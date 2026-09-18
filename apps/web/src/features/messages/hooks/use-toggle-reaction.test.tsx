@@ -11,7 +11,10 @@ import {
 } from "@/features/messages/api/queries";
 import { applyMessageEvent } from "@/features/realtime/lib/apply-message-event";
 
-import { useToggleReaction } from "./use-toggle-reaction";
+import {
+  noteReactionConfirmed,
+  useToggleReaction,
+} from "./use-toggle-reaction";
 
 const chatAlert = vi.hoisted(() => vi.fn<(title: string) => void>());
 
@@ -165,6 +168,7 @@ describe("toggling a reaction", () => {
             emoji: "🎉",
           },
           viewerId: VIEWER_ID,
+          at: Date.now(),
         }),
       );
     });
@@ -233,6 +237,7 @@ describe("the caller's own reaction echo", () => {
         emoji: "👍",
       },
       viewerId: VIEWER_ID,
+      at: Date.now(),
     });
 
     expect(next?.pages[0]?.data[0]?.reactions).toEqual([
@@ -253,11 +258,139 @@ describe("the caller's own reaction echo", () => {
           emoji: "👍",
         },
         viewerId: VIEWER_ID,
+        at: Date.now(),
       },
     );
 
     expect(next?.pages[0]?.data[0]?.reactions).toEqual([
       { emoji: "👍", count: 2, me: true },
     ]);
+  });
+});
+
+describe("a reaction toggled twice before either request answers", () => {
+  const key = channelMessagesQueryKey(CHANNEL_ID);
+
+  it("leaves no reaction behind when the add and the remove both fail", async () => {
+    const failures: ((error: Error) => void)[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((_resolve, reject) => {
+            failures.push(reject);
+          }),
+      ),
+    );
+
+    client.setQueryData<MessageCache>(key, cacheWith([]));
+
+    const { result } = renderHook(() => useToggleReaction(CHANNEL_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.toggle({ messageId: MESSAGE_ID, emoji: "👍", add: true });
+    });
+
+    expect(reactionsIn(key)).toEqual([{ emoji: "👍", count: 1, me: true }]);
+
+    act(() => {
+      result.current.toggle({ messageId: MESSAGE_ID, emoji: "👍", add: false });
+    });
+
+    expect(reactionsIn(key)).toEqual([]);
+
+    await waitFor(() => {
+      expect(failures).toHaveLength(1);
+    });
+
+    act(() => {
+      failures[0]?.(new TypeError("Failed to fetch"));
+    });
+
+    await waitFor(() => {
+      expect(failures).toHaveLength(2);
+    });
+
+    act(() => {
+      failures[1]?.(new TypeError("Failed to fetch"));
+    });
+
+    await waitFor(() => {
+      expect(chatAlert).toHaveBeenCalledTimes(2);
+    });
+
+    expect(reactionsIn(key)).toEqual([]);
+  });
+
+  it("keeps a reaction the socket confirmed before the answer failed", async () => {
+    const deferred: { reject?: (error: Error) => void } = {};
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((_resolve, reject) => {
+            deferred.reject = reject;
+          }),
+      ),
+    );
+
+    client.setQueryData<MessageCache>(key, cacheWith([]));
+
+    const { result } = renderHook(() => useToggleReaction(CHANNEL_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.toggle({ messageId: MESSAGE_ID, emoji: "👍", add: true });
+    });
+
+    await waitFor(() => {
+      expect(deferred.reject).toBeDefined();
+    });
+
+    act(() => {
+      noteReactionConfirmed(MESSAGE_ID, "👍", true);
+    });
+
+    act(() => {
+      deferred.reject?.(new TypeError("Failed to fetch"));
+    });
+
+    await waitFor(() => {
+      expect(chatAlert).toHaveBeenCalled();
+    });
+
+    expect(reactionsIn(key)).toEqual([{ emoji: "👍", count: 1, me: true }]);
+  });
+
+  it("still puts back what the server holds when a single toggle fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          respond(403, { error: { code: "FORBIDDEN", message: "no" } }),
+        ),
+      ),
+    );
+
+    client.setQueryData<MessageCache>(key, cacheWith([]));
+
+    const { result } = renderHook(() => useToggleReaction(CHANNEL_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.toggle({ messageId: MESSAGE_ID, emoji: "👍", add: true });
+    });
+
+    await waitFor(() => {
+      expect(chatAlert).toHaveBeenCalled();
+    });
+
+    expect(reactionsIn(key)).toEqual([]);
   });
 });

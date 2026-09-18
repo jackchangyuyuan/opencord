@@ -13,11 +13,12 @@ import {
   findSend,
   insertOptimistic,
   type LocalState,
-  markLocal,
+  markPendingSend,
   optimisticId,
   removeSend,
   type SendIdentity,
 } from "@/features/messages/lib/cache";
+import { accountScope, isCurrentScope } from "@/lib/account-scope";
 import { api, ApiError } from "@/lib/api-client";
 
 const NONCE_REUSED = "NONCE_REUSED";
@@ -199,17 +200,25 @@ export function useSendMessage(channelId: string) {
           }),
         );
       } else {
-        update((cache) => markLocal(cache, identity, sending));
+        update((cache) => markPendingSend(cache, identity, sending));
+      }
+
+      return { scope: accountScope() };
+    },
+
+    onSuccess: (message, _input, context) => {
+      if (isCurrentScope(context.scope)) {
+        update((cache) => applyIncoming(cache, message));
       }
     },
 
-    onSuccess: (message) => {
-      update((cache) => applyIncoming(cache, message));
-    },
+    onError: (error, input, context) => {
+      if (context === undefined || !isCurrentScope(context.scope)) {
+        return;
+      }
 
-    onError: (error, input) => {
       update((cache) =>
-        markLocal(
+        markPendingSend(
           cache,
           { authorId: input.authorId, nonce: input.nonce },
           failureFor(error, input),

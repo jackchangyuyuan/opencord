@@ -11,6 +11,7 @@ import {
 } from "@/features/messages/api/queries";
 import { applyIncoming, type ChatMessage } from "@/features/messages/lib/cache";
 import { rowKey } from "@/features/messages/lib/rows";
+import { endAccountScope } from "@/lib/account-scope";
 import { useDrafts } from "@/stores/drafts";
 
 import { useSendMessage } from "./use-send-message";
@@ -654,5 +655,119 @@ describe("useSendMessage", () => {
     });
 
     expect(entries()).toHaveLength(0);
+  });
+
+  it("does not fail a send the socket already confirmed", async () => {
+    const deferred: { reject?: (error: Error) => void } = {};
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((_resolve, reject) => {
+            deferred.reject = reject;
+          }),
+      ),
+    );
+
+    const { result } = renderHook(() => useSendMessage(CHANNEL_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.send({
+        content: "hello",
+        nonce: NONCE,
+        authorId: AUTHOR_ID,
+      });
+    });
+
+    await waitFor(() => {
+      expect(deferred.reject).toBeDefined();
+    });
+
+    act(() => {
+      client.setQueryData<MessageCache>(
+        channelMessagesQueryKey(CHANNEL_ID),
+        (current) => applyIncoming(current, serverMessage()),
+      );
+    });
+
+    expect(entries()[0]?.id).toBe("m-server");
+
+    act(() => {
+      deferred.reject?.(new TypeError("Failed to fetch"));
+    });
+
+    await waitFor(() => {
+      expect(entries()[0]?.local).toBeUndefined();
+    });
+
+    const confirmed = entries()[0];
+
+    if (confirmed === undefined) {
+      throw new Error("the confirmed message disappeared");
+    }
+
+    act(() => {
+      result.current.discard(confirmed);
+    });
+
+    expect(entries().map((entry) => entry.id)).toEqual(["m-server"]);
+  });
+
+  it("writes nothing once the account it was sent for has been left", async () => {
+    const deferred: { resolve?: (value: Response) => void } = {};
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            deferred.resolve = resolve;
+          }),
+      ),
+    );
+
+    const { result } = renderHook(() => useSendMessage(CHANNEL_ID), {
+      wrapper,
+    });
+
+    act(() => {
+      result.current.send({
+        content: "hello",
+        nonce: NONCE,
+        authorId: AUTHOR_ID,
+      });
+    });
+
+    await waitFor(() => {
+      expect(deferred.resolve).toBeDefined();
+    });
+
+    expect(entries()).toHaveLength(1);
+
+    act(() => {
+      endAccountScope();
+      client.setQueryData<MessageCache>(channelMessagesQueryKey(CHANNEL_ID), {
+        pages: [{ data: [], nextCursor: null }],
+        pageParams: [null],
+      });
+    });
+
+    act(() => {
+      deferred.resolve?.(
+        new Response(JSON.stringify(serverMessage()), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalled();
+    });
+
+    expect(entries()).toEqual([]);
   });
 });
