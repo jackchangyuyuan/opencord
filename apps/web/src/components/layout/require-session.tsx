@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router";
 
 import { CenteredPanel } from "@/components/layout/centered-panel";
@@ -59,5 +59,5 @@ export function RequireSession({ children }: { children: ReactNode }) {
     return <Navigate replace to={`/${returnToQuery(location.pathname)}`} />;
   }
 
-  return children;
+  return <Fragment key={session.user.id}>{children}</Fragment>;
 }

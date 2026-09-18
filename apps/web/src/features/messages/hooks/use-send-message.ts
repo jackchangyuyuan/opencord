@@ -36,6 +36,10 @@ function setBlockedUntil(at: number): void {
   }
 }
 
+export function resetSendBlock(): void {
+  setBlockedUntil(0);
+}
+
 export function useRateLimited(): boolean {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

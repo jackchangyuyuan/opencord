@@ -4,6 +4,7 @@ interface DraftsState {
   byChannel: Record<string, string>;
   setDraft: (channelId: string, value: string) => void;
   clearDraft: (channelId: string) => void;
+  reset: () => void;
 }
 
 export const useDrafts = create<DraftsState>()((set) => ({
@@ -17,6 +18,9 @@ export const useDrafts = create<DraftsState>()((set) => ({
         Object.entries(state.byChannel).filter(([key]) => key !== channelId),
       ),
     }));
+  },
+  reset: () => {
+    set({ byChannel: {} });
   },
 }));
 

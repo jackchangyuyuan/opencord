@@ -8,6 +8,7 @@ import { RouterProvider } from "react-router";
 
 import { Toaster } from "./components/ui/toast";
 import { sessionQueryKey } from "./features/auth/hooks/use-session";
+import { watchIdentity } from "./features/auth/lib/identity";
 import { setSessionExpiredHandler } from "./lib/api-client";
 import { queryClient } from "./lib/query-client";
 import { router } from "./routes";
@@ -15,6 +16,8 @@ import { router } from "./routes";
 setSessionExpiredHandler(() => {
   void queryClient.invalidateQueries({ queryKey: sessionQueryKey });
 });
+
+watchIdentity(queryClient);
 
 const container = document.getElementById("root");
 

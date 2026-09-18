@@ -45,6 +45,7 @@ interface UiState {
   setMobileDrawerOpen: (open: boolean) => void;
   dismissDemoPanel: () => void;
   flashArchitecture: () => void;
+  forgetAccount: () => void;
 }
 
 export const UI_STORAGE_KEY = "opencord:ui";
@@ -92,6 +93,15 @@ export const useUi = create<UiState>()(
       },
       flashArchitecture: () => {
         set((state) => ({ architectureFlash: state.architectureFlash + 1 }));
+      },
+      forgetAccount: () => {
+        set({
+          activeModal: null,
+          channelSettingsId: null,
+          contextMenu: null,
+          replyTarget: null,
+          mobileDrawerOpen: false,
+        });
       },
     }),
     {

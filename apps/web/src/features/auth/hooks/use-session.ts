@@ -49,9 +49,6 @@ export function useSignOut() {
       }
     },
     onSuccess: () => {
-      queryClient.removeQueries({
-        predicate: (query) => query.queryKey[0] !== sessionQueryKey[0],
-      });
       queryClient.setQueryData(sessionQueryKey, null);
     },
   });
