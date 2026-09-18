@@ -42,4 +42,11 @@ export default defineConfig([
     files: ["*.config.ts", "eslint.config.js"],
     extends: [nodeConfig],
   },
+
+  {
+    files: ["vitest.config.ts"],
+    rules: {
+      "turbo/no-undeclared-env-vars": ["error", { allowList: ["^TZ$"] }],
+    },
+  },
 ]);
