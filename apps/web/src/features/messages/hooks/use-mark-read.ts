@@ -22,6 +22,7 @@ const MARK_READ_RETRY_DELAY_MS = 500;
 
 export interface MarkReadState {
   dividerAfterMessageId: string | null;
+  boundaryKnown: boolean;
   markRead: (messageId: string) => void;
 }
 
@@ -175,6 +176,10 @@ export function useMarkRead(
 
   const captured = capturedRef.current?.channelId === channelId;
 
+  const listFailed =
+    serverId !== undefined &&
+    (serverId === null ? dms.isError : channels.isError);
+
   useEffect(() => {
     attemptedRef.current = null;
     confirmedRef.current = null;
@@ -264,6 +269,7 @@ export function useMarkRead(
 
   return {
     dividerAfterMessageId: capturedRef.current?.afterMessageId ?? null,
+    boundaryKnown: captured || listFailed,
     markRead,
   };
 }

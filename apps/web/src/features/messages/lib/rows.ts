@@ -67,6 +67,32 @@ export function buildRows(messages: readonly Message[]): Row[] {
   return rows;
 }
 
+export function unreadBoundaryKey(
+  rows: readonly Row[],
+  afterMessageId: string | null,
+  historyComplete: boolean,
+): string | null {
+  if (afterMessageId === null) {
+    return null;
+  }
+
+  const readSideLoaded =
+    historyComplete ||
+    rows.some(
+      (row) => row.kind === "message" && row.message.id <= afterMessageId,
+    );
+
+  if (!readSideLoaded) {
+    return null;
+  }
+
+  return (
+    rows.find(
+      (row) => row.kind === "message" && row.message.id > afterMessageId,
+    )?.key ?? null
+  );
+}
+
 export interface ListAnchor {
   key: string;
   index: number;

@@ -51,6 +51,7 @@ import {
   listAnchor,
   prependedCount,
   type Row,
+  unreadBoundaryKey,
 } from "@/features/messages/lib/rows";
 import {
   atBottom as scrollerAtBottom,
@@ -201,7 +202,7 @@ export function MessageList({
     ...channelQuery(channelId ?? ""),
     enabled,
   });
-  const { dividerAfterMessageId, markRead } = useMarkRead(
+  const { boundaryKnown, dividerAfterMessageId, markRead } = useMarkRead(
     channelId,
     channel?.serverId,
   );
@@ -211,6 +212,7 @@ export function MessageList({
   const openedRef = useRef(false);
   const openRafRef = useRef(0);
   const releaseRef = useRef<(() => void) | null>(null);
+  const mountRowKeyRef = useRef<string | null>(null);
   const reachedRef = useRef(false);
   const [announcement, setAnnouncement] = useState("");
 
@@ -432,13 +434,11 @@ export function MessageList({
     (row) => row.kind === "message" && row.message.id === jumpTo,
   );
 
-  const dividerBeforeKey =
-    dividerAfterMessageId === null
-      ? null
-      : (rows.find(
-          (row) =>
-            row.kind === "message" && row.message.id > dividerAfterMessageId,
-        )?.key ?? null);
+  const dividerBeforeKey = unreadBoundaryKey(
+    rows,
+    dividerAfterMessageId,
+    !messages.hasNextPage,
+  );
 
   const firstUnreadIndex =
     dividerBeforeKey === null
@@ -446,13 +446,11 @@ export function MessageList({
       : rows.findIndex((row) => row.key === dividerBeforeKey);
 
   const openAtUnread =
-    dividerAfterMessageId !== null &&
-    dividerAfterMessageId !== EVERYTHING_UNREAD &&
-    firstUnreadIndex > 0;
+    dividerAfterMessageId !== EVERYTHING_UNREAD && firstUnreadIndex > 0;
 
   const arrivalRef = useRef<Arrival | null>(null);
 
-  if (arrivalRef.current === null && rows.length > 0) {
+  if (arrivalRef.current === null && rows.length > 0 && boundaryKnown) {
     arrivalRef.current =
       jumpTo !== null ? "jump" : openAtUnread ? "unread" : "bottom";
 
@@ -471,11 +469,20 @@ export function MessageList({
     takeThePresent();
   }, [takeThePresent]);
 
+  const boundaryMount = openAtUnread ? firstUnreadIndex : -1;
+
+  mountRowKeyRef.current =
+    boundaryMount === -1 ? null : (rows[boundaryMount]?.key ?? null);
+
+  // Mount where the reader belongs rather than scrolling there after measuring:
+  // rows are measured only once they paint. The unread arrival mounts on the
+  // boundary row itself, which the marker is drawn at the top of -- so the
+  // conversation opens on the line, with everything already read above the fold.
   const mountAt =
     jumpIndex !== -1
       ? jumpIndex
       : openAtUnread
-        ? { align: "start" as const, index: firstUnreadIndex, offset: -72 }
+        ? { align: "start" as const, index: boundaryMount }
         : (initialTopMostItemIndex ?? {
             align: "end" as const,
             index: "LAST" as const,
@@ -525,9 +532,28 @@ export function MessageList({
     let measured = -1;
     let revealed = false;
 
-    releaseRef.current = watchReaderScroll(scroller, () => {
+    const stopWatching = watchReaderScroll(scroller, () => {
       reachedRef.current = true;
     });
+
+    const mountKey = mountRowKeyRef.current;
+
+    const stopPinning =
+      arrivalRef.current === "unread" && mountKey !== null
+        ? holdRow(
+            scroller,
+            () =>
+              scroller.querySelector<HTMLElement>(
+                `[data-row-key="${CSS.escape(mountKey)}"]`,
+              ),
+            scroller.getBoundingClientRect().top,
+          )
+        : null;
+
+    releaseRef.current = () => {
+      stopWatching();
+      stopPinning?.();
+    };
 
     const tick = () => {
       const drawn = rovingRef.current?.querySelector(MESSAGE_ROW) != null;
@@ -727,7 +753,7 @@ export function MessageList({
               </Button>
             }
           />
-        ) : messages.isPending ? (
+        ) : messages.isPending || !boundaryKnown ? (
           <PendingMessages />
         ) : (
           <div

@@ -5,6 +5,8 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { seedConversation } from "@/features/messages/lib/conversation-fixture";
+
 import { MessageList } from "./message-list";
 
 const CHANNEL_ID = "44444444-4444-4444-8444-444444444444";
@@ -163,6 +165,8 @@ function mountList() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+
+  seedConversation(client, CHANNEL_ID);
 
   render(
     <QueryClientProvider client={client}>

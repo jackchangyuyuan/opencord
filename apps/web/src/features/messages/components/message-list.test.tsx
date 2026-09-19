@@ -4,12 +4,19 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { channelQuery } from "@/features/channels/api/queries";
 import { channelMessagesQueryKey } from "@/features/messages/api/queries";
+import { EVERYTHING_UNREAD } from "@/features/messages/hooks/use-mark-read";
+import {
+  FIXTURE_SERVER_ID,
+  seedConversation,
+} from "@/features/messages/lib/conversation-fixture";
 import {
   buildRows,
   flattenPages,
   listAnchor,
   prependedCount,
+  unreadBoundaryKey,
 } from "@/features/messages/lib/rows";
 import { localDay } from "@/lib/local-day";
 import { useUi } from "@/stores/ui";
@@ -21,15 +28,18 @@ vi.mock("react-virtuoso", () => ({
     data,
     itemContent,
     firstItemIndex,
+    initialTopMostItemIndex,
     scrollerRef,
   }: {
     data: { key: string }[];
     itemContent: (index: number, row: unknown) => React.ReactNode;
     firstItemIndex: number;
+    initialTopMostItemIndex?: unknown;
     scrollerRef?: (ref: HTMLElement | null) => void;
   }) => (
     <div
       data-first-item-index={firstItemIndex}
+      data-mount-at={JSON.stringify(initialTopMostItemIndex ?? null)}
       data-testid="virtuoso"
       ref={(node) => {
         scrollerRef?.(node);
@@ -74,18 +84,43 @@ const NEWEST_FIRST = [
   message("m-1", "u-ada", "2026-09-01T10:00:00.000Z", "first"),
 ];
 
+function stubBody(
+  url: string,
+  page: { data: Message[]; nextCursor: string | null },
+): unknown {
+  if (url.includes("/messages")) {
+    return page;
+  }
+
+  if (url.includes("/overwrites")) {
+    return { roles: [], members: [] };
+  }
+
+  if (url.includes("/members") || url.includes("/roles")) {
+    return [];
+  }
+
+  if (/\/servers\/[^/?]+$/.test(url)) {
+    return {
+      id: FIXTURE_SERVER_ID,
+      name: "Fixture",
+      ownerId: "u-ada",
+      everyoneRole: { id: "r-everyone", permissions: 0 },
+      viewerRoles: [],
+    };
+  }
+
+  return { id: "u-ada", username: "ada", name: "Ada", avatarUrl: null };
+}
+
 function stubApi(page: { data: Message[]; nextCursor: string | null }) {
   vi.stubGlobal(
     "fetch",
     vi.fn<typeof fetch>().mockImplementation((input) => {
       const url = input instanceof Request ? input.url : input.toString();
 
-      const body = url.includes("/messages")
-        ? page
-        : { id: "u-ada", username: "ada", name: "Ada", avatarUrl: null };
-
       return Promise.resolve(
-        new Response(JSON.stringify(body), {
+        new Response(JSON.stringify(stubBody(url, page)), {
           status: 200,
           headers: { "content-type": "application/json" },
         }),
@@ -98,6 +133,8 @@ function mountList() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+
+  seedConversation(client, CHANNEL_ID);
 
   render(
     <QueryClientProvider client={client}>
@@ -239,6 +276,53 @@ describe("date dividers follow the viewer's calendar", () => {
   });
 });
 
+describe("unreadBoundaryKey", () => {
+  const rows = buildRows(flattenPages([{ data: NEWEST_FIRST }]));
+
+  const MORE_HISTORY = false;
+  const WHOLE_CHANNEL = true;
+
+  it("is nothing when the channel has no unread state", () => {
+    expect(unreadBoundaryKey(rows, null, MORE_HISTORY)).toBeNull();
+  });
+
+  it("is the first message after the watermark", () => {
+    expect(unreadBoundaryKey(rows, "m-1", MORE_HISTORY)).toBe("m-2");
+  });
+
+  it("is nothing when the watermark is the newest loaded message", () => {
+    expect(unreadBoundaryKey(rows, "m-3", MORE_HISTORY)).toBeNull();
+  });
+
+  it("is nothing when the watermark is older than every loaded message", () => {
+    expect(unreadBoundaryKey(rows, "m-0", MORE_HISTORY)).toBeNull();
+  });
+
+  it("is nothing for a channel that has never been read", () => {
+    expect(unreadBoundaryKey(rows, EVERYTHING_UNREAD, MORE_HISTORY)).toBeNull();
+  });
+
+  it("is the first message once the whole channel is loaded", () => {
+    expect(unreadBoundaryKey(rows, EVERYTHING_UNREAD, WHOLE_CHANNEL)).toBe(
+      "m-1",
+    );
+    expect(unreadBoundaryKey(rows, "m-0", WHOLE_CHANNEL)).toBe("m-1");
+  });
+
+  it("is the same message once the page holding the read side lands", () => {
+    const older = buildRows(
+      flattenPages([
+        { data: NEWEST_FIRST },
+        {
+          data: [message("m-0", "u-ada", "2026-08-31T10:00:00.000Z", "zeroth")],
+        },
+      ]),
+    );
+
+    expect(unreadBoundaryKey(older, "m-0", MORE_HISTORY)).toBe("m-1");
+  });
+});
+
 describe("prependedCount", () => {
   const page = [
     message("m-3", "u-ada", "2026-09-11T15:30:00.000Z", "a"),
@@ -300,6 +384,8 @@ describe("MessageList", () => {
       defaultOptions: { queries: { retry: false } },
     });
 
+    seedConversation(client, CHANNEL_ID);
+
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={["/app"]}>
@@ -345,6 +431,8 @@ describe("MessageList", () => {
       defaultOptions: { queries: { retry: false } },
     });
 
+    seedConversation(client, CHANNEL_ID);
+
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={["/app"]}>
@@ -381,12 +469,14 @@ describe("MessageList", () => {
   it("declares an empty polite live region for arriving messages", async () => {
     stubApi({ data: NEWEST_FIRST, nextCursor: null });
 
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    seedConversation(client, CHANNEL_ID);
+
     render(
-      <QueryClientProvider
-        client={
-          new QueryClient({ defaultOptions: { queries: { retry: false } } })
-        }
-      >
+      <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={["/app"]}>
           <MessageList channelId={CHANNEL_ID} />
         </MemoryRouter>
@@ -408,6 +498,8 @@ describe("MessageList", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
+
+    seedConversation(client, CHANNEL_ID);
 
     render(
       <QueryClientProvider client={client}>
@@ -507,5 +599,161 @@ describe("choosing Reply", () => {
     });
 
     expect(writes).toEqual([]);
+  });
+});
+
+function mountWithWatermark(lastReadMessageId: string | null) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  seedConversation(client, CHANNEL_ID, {
+    lastMessageId: "m-3",
+    lastReadMessageId,
+    hasUnread: true,
+    unreadCount: 3,
+  });
+
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/app"]}>
+        <MessageList channelId={CHANNEL_ID} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+function dividerRowText(): string | null {
+  const marker = screen.queryByRole("separator");
+
+  return marker === null
+    ? null
+    : (marker.parentElement?.getAttribute("data-row-key") ?? null);
+}
+
+describe("the unread boundary", () => {
+  it("marks the first message after the watermark", async () => {
+    stubApi({ data: NEWEST_FIRST, nextCursor: null });
+
+    mountWithWatermark("m-1");
+
+    expect(await screen.findByText("first")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(dividerRowText()).toBe("m-2");
+    });
+  });
+
+  it("marks nothing when the watermark is older than the loaded window", async () => {
+    stubApi({ data: NEWEST_FIRST, nextCursor: "cursor-1" });
+
+    mountWithWatermark("m-0");
+
+    expect(await screen.findByText("first")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("virtuoso")).toHaveTextContent("third");
+    });
+
+    expect(dividerRowText()).toBeNull();
+  });
+
+  it("marks nothing for a never-read channel with history still above", async () => {
+    stubApi({ data: NEWEST_FIRST, nextCursor: "cursor-1" });
+
+    mountWithWatermark(null);
+
+    expect(await screen.findByText("first")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("virtuoso")).toHaveTextContent("third");
+    });
+
+    expect(dividerRowText()).toBeNull();
+  });
+
+  it("waits for the list before mounting, then opens on the boundary", async () => {
+    stubApi({ data: NEWEST_FIRST, nextCursor: null });
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    client.setQueryData(channelQuery(CHANNEL_ID).queryKey, {
+      id: CHANNEL_ID,
+      serverId: FIXTURE_SERVER_ID,
+      type: "text",
+      name: "general",
+      topic: null,
+      position: 0,
+      lastMessageId: "m-3",
+      lastEveryoneMentionId: null,
+      createdAt: "2026-09-01T09:00:00.000Z",
+    });
+
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={["/app"]}>
+          <MessageList channelId={CHANNEL_ID} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(
+        client.getQueryData(channelMessagesQueryKey(CHANNEL_ID)),
+      ).toBeDefined();
+    });
+
+    expect(screen.queryByTestId("virtuoso")).not.toBeInTheDocument();
+
+    act(() => {
+      seedConversation(client, CHANNEL_ID, {
+        lastMessageId: "m-3",
+        lastReadMessageId: "m-1",
+        hasUnread: true,
+        unreadCount: 2,
+      });
+    });
+
+    expect(await screen.findByTestId("virtuoso")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(dividerRowText()).toBe("m-2");
+    });
+  });
+
+  // The boundary row itself, and with no offset of its own: the marker is drawn
+  // at the top of that row, so mounting on it is what puts the line against the
+  // top edge. A pixel allowance instead of a row clipped a tall message and left
+  // part of an earlier one showing, which is the marker sitting lower than it
+  // belongs.
+  it("mounts on the unread boundary, with no offset of its own", async () => {
+    stubApi({ data: NEWEST_FIRST, nextCursor: null });
+
+    mountWithWatermark("m-1");
+
+    expect(await screen.findByText("first")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(dividerRowText()).toBe("m-2");
+    });
+
+    expect(screen.getByTestId("virtuoso")).toHaveAttribute(
+      "data-mount-at",
+      JSON.stringify({ align: "start", index: 2 }),
+    );
+  });
+
+  it("marks the first message of a never-read channel it has loaded whole", async () => {
+    stubApi({ data: NEWEST_FIRST, nextCursor: null });
+
+    mountWithWatermark(null);
+
+    expect(await screen.findByText("first")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(dividerRowText()).toBe("m-1");
+    });
   });
 });

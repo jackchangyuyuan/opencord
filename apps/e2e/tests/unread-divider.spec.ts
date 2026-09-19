@@ -15,11 +15,19 @@ const password = "correct horse battery staple";
 
 const LIST_DELAY_MS = 2_000;
 
+const PAGE_SIZE = 75;
+
+const OVERFLOW = PAGE_SIZE;
+
+const UNREAD_TAIL = 20;
+
 interface Room {
   reader: BrowserContext;
   writer: BrowserContext;
   channelId: string;
   otherChannelId: string;
+  channelName: string;
+  otherChannelName: string;
 }
 
 async function signUp(
@@ -71,7 +79,7 @@ async function seed(browser: Browser): Promise<Room> {
   const listed = await reader.request.get(
     `/api/v1/servers/${serverId}/channels`,
   );
-  const channels = (await listed.json()) as { id: string }[];
+  const channels = (await listed.json()) as { id: string; name: string }[];
   const [first, second] = channels;
 
   if (first === undefined || second === undefined) {
@@ -93,6 +101,8 @@ async function seed(browser: Browser): Promise<Room> {
     writer,
     channelId: first.id,
     otherChannelId: second.id,
+    channelName: first.name,
+    otherChannelName: second.name,
   };
 }
 
@@ -135,6 +145,161 @@ test("marks the boundary between what was read and what arrived (flow 6)", async
 
   await expect(dividerRow(page)).toContainText("arrived while away");
   await expect(dividerRow(page)).toHaveCount(1);
+
+  await page.close();
+});
+
+test("marks the boundary when the channel is entered from its badge (flow 6)", async ({
+  browser,
+}) => {
+  const room = await seed(browser);
+
+  await post(room.writer, room.channelId, "read before leaving");
+
+  const page = await room.reader.newPage();
+
+  await page.goto(`/app/channels/${room.channelId}`);
+  await expect(page.getByRole("textbox", { name: "Message" })).toBeVisible();
+  await expect(page.getByTestId("socket-status")).toHaveText("Connected");
+  await expect.poll(async () => (await readState(room)).unreadCount).toBe(0);
+
+  const away = page.getByRole("link", { name: room.otherChannelName });
+  const back = page.getByRole("link", { name: room.channelName });
+
+  await away.click();
+  await expect(page).toHaveURL(`/app/channels/${room.otherChannelId}`);
+
+  await post(room.writer, room.channelId, "arrived while away");
+  await post(room.writer, room.channelId, "and one more");
+
+  await expect(
+    page.getByText(`${room.channelName}: unread messages`),
+  ).toBeVisible();
+
+  await back.click();
+
+  await expect(dividerRow(page)).toHaveCount(1);
+  await expect(dividerRow(page)).toContainText("arrived while away");
+  await expect(
+    page.locator('[data-slot="new-messages-divider"]'),
+  ).toBeInViewport();
+
+  await expect.poll(async () => (await readState(room)).unreadCount).toBe(0);
+  await expect(dividerRow(page)).toContainText("arrived while away");
+
+  await page.close();
+});
+
+test("opens with the unread boundary against the top edge (flow 6)", async ({
+  browser,
+}) => {
+  const room = await seed(browser);
+
+  for (let sent = 0; sent < 20; sent += 1) {
+    await post(room.writer, room.channelId, `before leaving ${String(sent)}`);
+  }
+
+  const page = await room.reader.newPage();
+
+  await page.goto(`/app/channels/${room.channelId}`);
+  await expect(page.getByRole("textbox", { name: "Message" })).toBeVisible();
+  await expect(page.getByTestId("socket-status")).toHaveText("Connected");
+  await expect.poll(async () => (await readState(room)).unreadCount).toBe(0);
+
+  await page.goto(`/app/channels/${room.otherChannelId}`);
+  await expect(page.getByRole("textbox", { name: "Message" })).toBeVisible();
+
+  await post(room.writer, room.channelId, "arrived while away");
+
+  for (let sent = 0; sent < UNREAD_TAIL; sent += 1) {
+    await post(room.writer, room.channelId, `while away ${String(sent)}`);
+  }
+
+  await expect
+    .poll(async () => (await readState(room)).unreadCount)
+    .toBe(UNREAD_TAIL + 1);
+
+  await page.goto(`/app/channels/${room.channelId}`);
+  await expect(dividerRow(page)).toContainText("arrived while away");
+
+  const measure = () =>
+    page.evaluate(() => {
+      const scroller = document.querySelector("[data-virtuoso-scroller]");
+      const marker = document.querySelector(
+        '[data-slot="new-messages-divider"]',
+      );
+
+      if (scroller === null || marker === null) {
+        return null;
+      }
+
+      const top = scroller.getBoundingClientRect().top;
+      const rows = [...scroller.querySelectorAll("[data-row-key]")];
+      const at = rows.findIndex((row) => row.contains(marker));
+      const boundary = rows[at];
+
+      if (boundary === undefined) {
+        return null;
+      }
+
+      return {
+        boundaryTop: boundary.getBoundingClientRect().top - top,
+        markerTop: marker.getBoundingClientRect().top - top,
+        readStillShowing: rows
+          .slice(0, at)
+          .filter((row) => row.getBoundingClientRect().bottom > top + 2).length,
+        scrollable: scroller.scrollHeight > scroller.clientHeight + 4,
+      };
+    });
+
+  // Polled, because the mount lands on the row and a correction pass then pins
+  // it flush: Virtuoso resolves an index by summing sizes it has rounded down,
+  // which leaves the row a few pixels low until the pin answers. Reading once
+  // measures whichever frame the assertion happened to land on. This is a
+  // retrying assertion and not a wait -- a placement that never settles fails.
+  await expect
+    .poll(async () => Math.abs((await measure())?.markerTop ?? -1))
+    .toBeLessThanOrEqual(2);
+
+  const placement = await measure();
+
+  expect(placement).not.toBeNull();
+  expect(placement?.scrollable).toBe(true);
+
+  expect(Math.abs(placement?.boundaryTop ?? -1)).toBeLessThanOrEqual(2);
+  expect(placement?.readStillShowing).toBe(0);
+
+  await page.close();
+});
+
+test("draws no boundary when the watermark is older than the first page (flow 6)", async ({
+  browser,
+}) => {
+  const room = await seed(browser);
+
+  await post(room.writer, room.channelId, "read before leaving");
+
+  const page = await room.reader.newPage();
+
+  await page.goto(`/app/channels/${room.channelId}`);
+  await expect(page.getByRole("textbox", { name: "Message" })).toBeVisible();
+  await expect.poll(async () => (await readState(room)).unreadCount).toBe(0);
+
+  await page.goto(`/app/channels/${room.otherChannelId}`);
+  await expect(page.getByRole("textbox", { name: "Message" })).toBeVisible();
+
+  for (let sent = 0; sent < PAGE_SIZE + 1; sent += 1) {
+    await post(room.writer, room.channelId, `while away ${String(sent)}`);
+  }
+
+  await page.goto(`/app/channels/${room.channelId}`);
+  await expect(
+    page
+      .getByTestId("message-content")
+      .getByText(`while away ${String(OVERFLOW)}`),
+  ).toBeVisible();
+
+  await expect(dividerRow(page)).toHaveCount(0);
 
   await page.close();
 });
