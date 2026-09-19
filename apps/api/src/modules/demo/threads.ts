@@ -51,7 +51,7 @@ export const DM_THREADS: DmThread[] = [
   {
     counterpartOffset: 24,
     freshnessMinutes: 3 * 60 + 20,
-    unread: 0,
+    unread: 2,
     lines: [
       {
         from: "them",
@@ -92,7 +92,7 @@ export const DM_THREADS: DmThread[] = [
   {
     counterpartOffset: 9,
     freshnessMinutes: 4 * 24 * 60,
-    unread: 0,
+    unread: 1,
     lines: [
       { from: "them", text: "welcome aboard! shout if anything is confusing." },
       {
@@ -110,7 +110,7 @@ export const DM_THREADS: DmThread[] = [
   {
     counterpartOffset: 16,
     freshnessMinutes: 19 * 24 * 60,
-    unread: 0,
+    unread: 1,
     lines: [
       { from: "them", text: "left you the kettle notes in #random" },
       { from: "visitor", text: "I regret asking" },

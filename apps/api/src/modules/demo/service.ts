@@ -84,6 +84,8 @@ export async function provisionDemoScenario(
 
     const sandbox = await cloneSandbox(tx, templateId, userId);
 
+    await placeReadStates(tx, userId, sandbox.channelIds);
+
     const dmCount = await openDemoDms(tx, userId);
 
     await tx.insert(guestQuotas).values({ userId }).onConflictDoNothing();

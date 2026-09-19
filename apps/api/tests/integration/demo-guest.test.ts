@@ -37,7 +37,9 @@ const dmList = z.array(
   z.object({
     id: z.string(),
     lastMessageId: z.string().nullable(),
+    lastReadMessageId: z.string().nullable(),
     hasUnread: z.boolean(),
+    unreadCount: z.number(),
     recipient: z.object({
       id: z.string(),
       username: z.string(),
@@ -53,6 +55,16 @@ const messagePage = z.object({
 });
 const serverList = z.array(z.object({ id: z.string(), name: z.string() }));
 const channelList = z.array(z.object({ id: z.string(), name: z.string() }));
+const unreadChannelList = z.array(
+  z.object({
+    id: z.string(),
+    name: z.string().nullable(),
+    lastMessageId: z.string().nullable(),
+    lastReadMessageId: z.string().nullable(),
+    hasUnread: z.boolean(),
+    unreadCount: z.number(),
+  }),
+);
 async function enterDemo(): Promise<{
   account: Account;
   scenario: z.infer<typeof scenarioBody>;
@@ -267,7 +279,7 @@ describe("guest demo provisioning", () => {
     ).toEqual([account.id, dm?.recipient.id ?? ""].toSorted());
   });
 
-  it("arrives with some conversations unread and some already read", async () => {
+  it("arrives with every conversation unread and behind a watermark", async () => {
     await seedWorld();
 
     const { account } = await enterDemo();
@@ -277,8 +289,60 @@ describe("guest demo provisioning", () => {
         .body,
     );
 
-    expect(dms.filter((dm) => dm.hasUnread).length).toBeGreaterThan(0);
-    expect(dms.filter((dm) => !dm.hasUnread).length).toBeGreaterThan(0);
+    expect(dms.length).toBeGreaterThan(0);
+
+    for (const dm of dms) {
+      expect(dm.hasUnread).toBe(true);
+      expect(dm.lastReadMessageId).not.toBeNull();
+      expect(dm.unreadCount).toBeGreaterThan(0);
+    }
+  });
+
+  it("arrives with every seeded channel unread and behind a watermark", async () => {
+    await seedWorld();
+
+    const { account, scenario } = await enterDemo();
+
+    const servers = serverList.parse(
+      (await request(app).get("/api/v1/servers").set("Cookie", account.cookies))
+        .body,
+    );
+
+    expect(servers.map((server) => server.id)).toContain(scenario.sandboxId);
+
+    let seen = 0;
+
+    for (const server of servers) {
+      const channels = unreadChannelList.parse(
+        (
+          await request(app)
+            .get(`/api/v1/servers/${server.id}/channels`)
+            .set("Cookie", account.cookies)
+        ).body,
+      );
+
+      expect(channels.length).toBeGreaterThan(0);
+
+      for (const channel of channels) {
+        expect(channel.hasUnread).toBe(true);
+        expect(channel.lastReadMessageId).not.toBeNull();
+        expect(channel.unreadCount).toBeGreaterThan(0);
+        expect(channel.lastMessageId).not.toBeNull();
+        expect(
+          (channel.lastReadMessageId ?? "") < (channel.lastMessageId ?? ""),
+        ).toBe(true);
+        seen += 1;
+      }
+    }
+
+    expect(seen).toBeGreaterThan(0);
+  });
+
+  it("stops every scripted thread short of a counterpart's message", () => {
+    for (const thread of DM_THREADS) {
+      expect(thread.unread).toBeGreaterThan(0);
+      expect(thread.lines.at(-thread.unread)?.from).toBe("them");
+    }
   });
 
   it("spreads the counterparts across the presence states the demo shows", () => {

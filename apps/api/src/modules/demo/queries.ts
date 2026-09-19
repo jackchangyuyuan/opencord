@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import type { Transaction } from "../../db/index.js";
 import { db } from "../../db/index.js";
@@ -49,29 +49,30 @@ export async function loadCommunityShape(
   return { serverId, channelIds: channelRows.map((row) => row.id) };
 }
 
+export const UNREAD_TAIL = 12;
+
 export async function placeReadStates(
   tx: Transaction,
   userId: string,
   channelIds: readonly string[],
 ): Promise<void> {
-  const marked = channelIds.filter((_channelId, index) => index % 2 === 0);
-
-  for (const channelId of marked) {
-    const [row] = await tx
+  for (const channelId of channelIds) {
+    const tail = await tx
       .select({ id: messages.id })
       .from(messages)
-      .where(eq(messages.channelId, channelId))
-      .orderBy(sql`${messages.id} desc`)
-      .limit(1)
-      .offset(12);
+      .where(and(eq(messages.channelId, channelId), isNull(messages.deletedAt)))
+      .orderBy(desc(messages.id))
+      .limit(UNREAD_TAIL + 1);
 
-    if (row === undefined) {
+    const watermark = tail.at(-1);
+
+    if (watermark === undefined || tail.length < 2) {
       continue;
     }
 
     await tx
       .insert(readStates)
-      .values({ userId, channelId, lastReadMessageId: row.id })
+      .values({ userId, channelId, lastReadMessageId: watermark.id })
       .onConflictDoNothing();
   }
 }
