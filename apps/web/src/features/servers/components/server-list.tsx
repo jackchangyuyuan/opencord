@@ -1,5 +1,5 @@
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CSSProperties } from "react";
+import { type CSSProperties, useState } from "react";
 import { useNavigate } from "react-router";
 
 import {
@@ -24,6 +24,35 @@ import {
 import { serversQuery } from "@/features/servers/api/queries";
 import { cn } from "@/lib/cn";
 import { tintHue } from "@/lib/tint";
+
+export function ServerIcon({
+  iconUrl,
+  name,
+}: {
+  iconUrl: string | null;
+  name: string;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (iconUrl === null || failed) {
+    return (
+      <span aria-hidden className="tracking-tight">
+        {initials(name)}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      alt=""
+      className="size-full rounded-2xl object-cover"
+      onError={() => {
+        setFailed(true);
+      }}
+      src={iconUrl}
+    />
+  );
+}
 
 function initials(name: string): string {
   const words = name.split(/\s+/).filter(Boolean);
@@ -124,17 +153,11 @@ export function ServerList({ activeServerId }: { activeServerId?: string }) {
                         : "idle",
                   )}
                 />
-                {server.iconUrl === null ? (
-                  <span aria-hidden className="tracking-tight">
-                    {initials(server.name)}
-                  </span>
-                ) : (
-                  <img
-                    alt=""
-                    className="size-full rounded-2xl object-cover"
-                    src={server.iconUrl}
-                  />
-                )}
+                <ServerIcon
+                  iconUrl={server.iconUrl}
+                  key={server.iconUrl}
+                  name={server.name}
+                />
                 <span className="sr-only">{server.name}</span>
                 <UnreadBadge
                   className="absolute -right-1 -bottom-1 ml-0 ring-2 ring-rail"
