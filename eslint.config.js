@@ -3,7 +3,7 @@ import { nodeConfig } from "@opencord/eslint-config/node";
 import { defineConfig, globalIgnores } from "eslint/config";
 
 export default defineConfig([
-  globalIgnores(["apps/", "packages/"]),
+  globalIgnores(["apps/", "packages/", "out/"]),
   baseConfig,
   nodeConfig,
 ]);
