@@ -1,0 +1,53 @@
+# Rendered into /etc/nginx/conf.d/10-http.conf by the image's own entrypoint,
+# which runs envsubst over /etc/nginx/templates/*.template. That is how
+# ${STORAGE_PUBLIC_ORIGIN} reaches the Content-Security-Policy: the storage
+# origin differs between the Compose profile and production, and the policy and
+# the API's signed URLs have to name the same one or every image is blocked.
+#
+# On the production host the TLS server block arrives beside this file as
+# conf.d/20-https.local.conf, written by scripts/provision-vps.sh once a
+# certificate exists. This block keeps serving the ACME challenge and redirects
+# everything else.
+
+server {
+  listen 80;
+  listen [::]:80;
+  server_name _;
+
+  root /usr/share/nginx/html;
+  index index.html;
+
+  client_max_body_size 2m;
+
+  location ^~ /.well-known/acme-challenge/ {
+    root /var/www/certbot;
+  }
+
+  location /api/ {
+    proxy_pass http://opencord_api;
+    include /etc/nginx/conf.d/proxy_params;
+  }
+
+  location /socket.io/ {
+    proxy_pass http://opencord_api;
+    include /etc/nginx/conf.d/proxy_params;
+
+    proxy_read_timeout 7d;
+    proxy_send_timeout 7d;
+  }
+
+  location /assets/ {
+    expires 1y;
+    add_header Cache-Control "public, immutable" always;
+  }
+
+  location = /index.html {
+    add_header Cache-Control "no-cache" always;
+    include /etc/nginx/conf.d/headers_params;
+  }
+
+  location / {
+    try_files $uri /index.html;
+    include /etc/nginx/conf.d/headers_params;
+  }
+}
