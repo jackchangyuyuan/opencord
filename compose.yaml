@@ -1,3 +1,49 @@
+x-api: &api
+  profiles: ["full"]
+  build: { context: ., dockerfile: apps/api/Dockerfile }
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    rustfs: { condition: service_healthy }
+    storage-init: { condition: service_completed_successfully }
+    migrate: { condition: service_completed_successfully }
+  environment: &api-env
+    NODE_ENV: production
+    LOG_LEVEL: warn
+    PORT: "3000"
+    TRUST_PROXY_HOPS: "1"
+    PUBLIC_ORIGIN: http://localhost:8080
+    DATABASE_URL: "postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}"
+    REDIS_URL: redis://redis:6379
+    BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required}"
+    AWS_REGION: "${AWS_REGION:?}"
+    AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:?}"
+    AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:?}"
+    S3_BUCKET: "${S3_BUCKET:?}"
+    S3_ENDPOINT: http://rustfs:9000
+    S3_PUBLIC_ENDPOINT: http://localhost:9000
+    S3_FORCE_PATH_STYLE: "true"
+    STORAGE_PUBLIC_ORIGIN: http://localhost:9000
+    RATE_LIMIT_NAMESPACE: rl-full
+    RATE_LIMIT_AUTH_POINTS: "1000"
+    RATE_LIMIT_CLAIM_POINTS: "1000"
+    RATE_LIMIT_CREATE_POINTS: "1000"
+    RATE_LIMIT_DEMO_DAILY_POINTS: "10000"
+    RATE_LIMIT_DEMO_POINTS: "1000"
+    RATE_LIMIT_MESSAGE_POINTS: "1000"
+  stop_grace_period: 30s
+  healthcheck:
+    test:
+      - "CMD"
+      - "node"
+      - "-e"
+      - "fetch('http://127.0.0.1:3000/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+    interval: 10s
+    timeout: 3s
+    retries: 5
+    start_period: 60s
+    start_interval: 500ms
+
 services:
   postgres:
     image: postgres:18-alpine
@@ -62,6 +108,59 @@ services:
       AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}"
       AWS_DEFAULT_REGION: "${AWS_REGION:?AWS_REGION is required}"
       S3_BUCKET: "${S3_BUCKET:?S3_BUCKET is required}"
+
+  migrate:
+    profiles: ["full"]
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    depends_on:
+      postgres: { condition: service_healthy }
+    command: ["node", "dist/db/migrate.js"]
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: warn
+      INSTANCE_ID: migrate
+      PUBLIC_ORIGIN: http://localhost:8080
+      DATABASE_URL: "postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}"
+      REDIS_URL: redis://redis:6379
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required}"
+      AWS_REGION: "${AWS_REGION:?}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:?}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:?}"
+      S3_BUCKET: "${S3_BUCKET:?}"
+      S3_ENDPOINT: http://rustfs:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
+      S3_FORCE_PATH_STYLE: "true"
+      STORAGE_PUBLIC_ORIGIN: http://localhost:9000
+    restart: "no"
+
+  api-1:
+    <<: *api
+    environment:
+      <<: *api-env
+      INSTANCE_ID: api-1
+
+  api-2:
+    <<: *api
+    environment:
+      <<: *api-env
+      INSTANCE_ID: api-2
+
+  nginx:
+    profiles: ["full"]
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    depends_on:
+      api-1: { condition: service_healthy }
+      api-2: { condition: service_healthy }
+    ports: ["127.0.0.1:8080:80"]
+    environment:
+      STORAGE_PUBLIC_ORIGIN: http://localhost:9000
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+      start_interval: 250ms
 
 volumes:
   postgres-data:

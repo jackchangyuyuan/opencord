@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "e2e": "playwright test",
+    "e2e:compose": "docker compose --profile full up -d --wait --build && pnpm --filter @opencord/api db:seed 4000 && E2E_BASE_URL=http://localhost:8080 playwright test",
     "e2e:a11y": "playwright test --grep \"@a11y\"",
     "e2e:ui": "playwright test --ui",
     "e2e:install": "playwright install chromium",
