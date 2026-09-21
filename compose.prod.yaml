@@ -1,0 +1,126 @@
+x-api: &api
+  image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:?}/opencord-api:${GIT_SHA:?}"
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    migrate: { condition: service_completed_successfully }
+  environment: &api-env
+    NODE_ENV: production
+    LOG_LEVEL: "${LOG_LEVEL:-info}"
+    PORT: "3000"
+    TRUST_PROXY_HOPS: "1"
+    PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:?}"
+    DATABASE_URL: "postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}"
+    REDIS_URL: redis://redis:6379
+    BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?}"
+    AWS_REGION: "${AWS_REGION:?}"
+    AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:?}"
+    AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:?}"
+    S3_BUCKET: "${S3_BUCKET:?}"
+    S3_FORCE_PATH_STYLE: "false"
+    STORAGE_PUBLIC_ORIGIN: "${STORAGE_PUBLIC_ORIGIN:?}"
+    GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
+    GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}"
+    GITHUB_CLIENT_ID: "${GITHUB_CLIENT_ID:-}"
+    GITHUB_CLIENT_SECRET: "${GITHUB_CLIENT_SECRET:-}"
+  stop_grace_period: 30s
+  restart: unless-stopped
+  healthcheck:
+    test:
+      - "CMD"
+      - "node"
+      - "-e"
+      - "fetch('http://127.0.0.1:3000/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+    interval: 15s
+    timeout: 5s
+    retries: 5
+    start_period: 60s
+    start_interval: 1s
+
+services:
+  migrate:
+    image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:?}/opencord-api:${GIT_SHA:?GIT_SHA is required}"
+    command: ["node", "dist/db/migrate.js"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: "postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}"
+      PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:?}"
+      REDIS_URL: redis://redis:6379
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?}"
+      AWS_REGION: "${AWS_REGION:?}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:?}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:?}"
+      S3_BUCKET: "${S3_BUCKET:?}"
+      STORAGE_PUBLIC_ORIGIN: "${STORAGE_PUBLIC_ORIGIN:?}"
+    restart: "no"
+
+  api-1:
+    <<: *api
+    environment:
+      <<: *api-env
+      INSTANCE_ID: api-1
+
+  api-2:
+    <<: *api
+    environment:
+      <<: *api-env
+      INSTANCE_ID: api-2
+
+  nginx:
+    image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:?}/opencord-web:${GIT_SHA:?}"
+    depends_on:
+      api-1: { condition: service_healthy }
+      api-2: { condition: service_healthy }
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      STORAGE_PUBLIC_ORIGIN: "${STORAGE_PUBLIC_ORIGIN:?}"
+    volumes:
+      - ./infra/nginx/extra:/etc/nginx/extra:ro
+      - certbot-webroot:/var/www/certbot:ro
+      - letsencrypt:/etc/letsencrypt:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:?}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?}"
+      POSTGRES_DB: "${POSTGRES_DB:?}"
+    volumes: ["postgres-data:/var/lib/postgresql"]
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--save", "", "--maxmemory-policy", "noeviction"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  postgres-data:
+  certbot-webroot:
+  letsencrypt:
