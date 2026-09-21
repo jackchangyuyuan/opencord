@@ -1,6 +1,7 @@
 import { toNodeHandler } from "better-auth/node";
 import { sql } from "drizzle-orm";
 import express from "express";
+import helmet from "helmet";
 
 import { auth } from "./auth.js";
 import { config } from "./config.js";
@@ -35,6 +36,23 @@ import { redis } from "./redis.js";
 export const app = express();
 
 app.set("trust proxy", config.TRUST_PROXY_HOPS);
+
+// Defence in depth behind NGINX, which is the only component that serves both
+// the SPA and these responses and therefore owns every document-level header.
+// Those five are disabled explicitly rather than left at their defaults: a
+// browser does not merge two Content-Security-Policy values, it enforces their
+// intersection, and the effective policy is then one nobody wrote and no config
+// explains. What is left is the handful of headers that are only ever about an
+// API response, plus removing the framework's own X-Powered-By.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    frameguard: false,
+    hsts: false,
+    referrerPolicy: false,
+    xContentTypeOptions: false,
+  }),
+);
 
 app.use(httpLogger);
 
