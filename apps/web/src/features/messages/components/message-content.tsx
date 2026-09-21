@@ -160,6 +160,10 @@ export const MessageContent = memo(function MessageContent({
   content: string;
   edited?: boolean;
 }) {
+  if (content === "") {
+    return null;
+  }
+
   return (
     <div
       className="message-markdown text-body break-words"

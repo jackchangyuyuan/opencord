@@ -547,6 +547,7 @@ export function MessageList({
                 `[data-row-key="${CSS.escape(mountKey)}"]`,
               ),
             scroller.getBoundingClientRect().top,
+            OPENING_FRAMES,
           )
         : null;
 

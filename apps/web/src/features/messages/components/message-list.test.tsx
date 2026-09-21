@@ -757,3 +757,20 @@ describe("the unread boundary", () => {
     });
   });
 });
+
+describe("a message with no text of its own", () => {
+  it("renders no content box for it", async () => {
+    stubApi({
+      data: [message("m-1", "u-ada", "2026-09-01T10:00:00.000Z", "")],
+      nextCursor: null,
+    });
+
+    mountList();
+
+    expect(await screen.findByTestId("virtuoso")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("message-content")).not.toBeInTheDocument();
+    });
+  });
+});
