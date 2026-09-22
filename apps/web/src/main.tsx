@@ -1,5 +1,6 @@
 import "./index.css";
 
+import { CSPProvider } from "@base-ui/react/csp-provider";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { StrictMode } from "react";
@@ -25,13 +26,21 @@ if (!container) {
   throw new Error("Root container #root is missing in index.html");
 }
 
+// The production Content-Security-Policy is `style-src 'self'`, and the
+// `<style>` element a ScrollArea viewport injects to hide the platform
+// scrollbar is refused under it -- silently, and only once NGINX is serving the
+// headers, so neither the development server nor the suites ever see it. This
+// is Base UI's own answer: the element is not rendered, and index.css carries
+// the two rules it would have contained.
 createRoot(container).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <Toaster>
-        <RouterProvider router={router} />
-        {import.meta.env.PROD ? null : <ReactQueryDevtools />}
-      </Toaster>
-    </QueryClientProvider>
+    <CSPProvider disableStyleElements>
+      <QueryClientProvider client={queryClient}>
+        <Toaster>
+          <RouterProvider router={router} />
+          {import.meta.env.PROD ? null : <ReactQueryDevtools />}
+        </Toaster>
+      </QueryClientProvider>
+    </CSPProvider>
   </StrictMode>,
 );

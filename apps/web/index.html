@@ -5,14 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>OpenCord</title>
-    <script>
-      try {
-        var stored = JSON.parse(localStorage.getItem("opencord:prefs"));
-        if (stored && stored.state && stored.state.theme === "dark") {
-          document.documentElement.classList.add("dark");
-        }
-      } catch (error) {}
-    </script>
+    <script src="/theme.js"></script>
   </head>
   <body>
     <div id="root"></div>

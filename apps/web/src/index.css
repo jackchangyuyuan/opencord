@@ -234,6 +234,20 @@
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
   }
+  /* Base UI's own, moved here. A ScrollArea viewport hides the platform
+     scrollbar because the component draws its own, and Base UI ships that rule
+     in a `<style>` element it injects at runtime -- which `style-src 'self'`
+     refuses, leaving every scroll area a scrollbar-width narrower than it was
+     drawn to be. `CSPProvider disableStyleElements` in main.tsx stops it being
+     injected at all, on the condition that these two rules are declared here
+     instead. The rule above is why they have to be: `*` would otherwise put a
+     `thin` scrollbar back on every one of them. */
+  .base-ui-disable-scrollbar {
+    scrollbar-width: none;
+  }
+  .base-ui-disable-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 @keyframes demo-loop-fade {
