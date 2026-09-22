@@ -27,6 +27,7 @@ RUN rm /etc/nginx/conf.d/default.conf
 COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
 COPY infra/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY infra/nginx/conf.d/proxy_params /etc/nginx/conf.d/proxy_params
+COPY infra/nginx/conf.d/api_locations /etc/nginx/conf.d/api_locations
 COPY infra/nginx/templates/ /etc/nginx/templates/
 
 ENV STORAGE_PUBLIC_ORIGIN=http://localhost:9000

@@ -120,6 +120,13 @@ services:
       retries: 5
       start_period: 30s
 
+  certbot:
+    image: certbot/certbot:v5.8.0
+    profiles: ["certbot"]
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+
 volumes:
   postgres-data:
   certbot-webroot:

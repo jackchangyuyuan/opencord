@@ -1,0 +1,24 @@
+
+# The locations that proxy to the API, shared by the HTTP server block the image
+# renders and the TLS server block provision-vps.sh installs on the host. Both
+# serve the same application, so a path added to one and not the other is a bug
+# only a provisioned host can show you: the Compose profile exercises the HTTP
+# block, and nothing exercises the TLS copy until it is live.
+#
+# No add_header anywhere in here. NGINX drops an inherited header set the moment
+# a nested block adds one of its own, so an add_header added here would silently
+# strip the server-level HSTS from every proxied response in the TLS block.
+
+location /api/ {
+  proxy_pass http://opencord_api;
+  include /etc/nginx/conf.d/proxy_params;
+}
+
+location /socket.io/ {
+  proxy_pass http://opencord_api;
+  include /etc/nginx/conf.d/proxy_params;
+
+  proxy_read_timeout 7d;
+  proxy_send_timeout 7d;
+}
+

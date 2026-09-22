@@ -23,18 +23,7 @@ server {
     root /var/www/certbot;
   }
 
-  location /api/ {
-    proxy_pass http://opencord_api;
-    include /etc/nginx/conf.d/proxy_params;
-  }
-
-  location /socket.io/ {
-    proxy_pass http://opencord_api;
-    include /etc/nginx/conf.d/proxy_params;
-
-    proxy_read_timeout 7d;
-    proxy_send_timeout 7d;
-  }
+  include /etc/nginx/conf.d/api_locations;
 
   location /assets/ {
     expires 1y;
