@@ -22,3 +22,12 @@ location /socket.io/ {
   proxy_send_timeout 7d;
 }
 
+location = /livez {
+  proxy_pass http://opencord_api;
+  include /etc/nginx/conf.d/proxy_params;
+}
+
+location = /readyz {
+  proxy_pass http://opencord_api;
+  include /etc/nginx/conf.d/proxy_params;
+}

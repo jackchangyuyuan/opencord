@@ -5,9 +5,13 @@
 # the API's signed URLs have to name the same one or every image is blocked.
 #
 # On the production host the TLS server block arrives beside this file as
-# conf.d/20-https.local.conf, written by scripts/provision-vps.sh once a
-# certificate exists. This block keeps serving the ACME challenge and redirects
-# everything else.
+# extra/20-https.local.conf, written by scripts/provision-vps.sh once a
+# certificate exists. That file brings a port-80 block of its own, named for the
+# certificate's domain, which is what redirects a production visitor to HTTPS.
+# This block stays the default server and keeps answering for every other name,
+# which is how the same image serves the Compose profile over plain HTTP at
+# localhost and how the ACME challenge is answered before any certificate
+# exists.
 
 server {
   listen 80;
@@ -31,6 +35,11 @@ server {
   }
 
   location = /index.html {
+    add_header Cache-Control "no-cache" always;
+    include /etc/nginx/conf.d/headers_params;
+  }
+
+  location = /theme.js {
     add_header Cache-Control "no-cache" always;
     include /etc/nginx/conf.d/headers_params;
   }
