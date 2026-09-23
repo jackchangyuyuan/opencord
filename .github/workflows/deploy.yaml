@@ -1,0 +1,134 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: The commit to deploy. Its images must already be published.
+        required: true
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Roll out to production
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    env:
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+    steps:
+      - name: Resolve the commit to deploy
+        run: |
+          set -euo pipefail
+          sha='${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.event.workflow_run.head_sha }}'
+          echo "GIT_SHA=${sha}" >>"${GITHUB_ENV}"
+          echo "deploying ${sha}"
+
+      - name: Check out that exact commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.GIT_SHA }}
+          persist-credentials: false
+
+      - name: Pack the deployment bundle
+        run: |
+          set -euo pipefail
+          tar --owner=0 --group=0 -czf bundle.tar.gz \
+            compose.prod.yaml scripts/deploy.sh scripts/backup-db.sh
+          echo "BUNDLE_SHA256=$(sha256sum bundle.tar.gz | cut -d' ' -f1)" >>"${GITHUB_ENV}"
+          tar -tzf bundle.tar.gz
+
+      - name: Make room for the bundle
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: DEPLOY_PATH
+          script: |
+            set -euo pipefail
+            mkdir -p "${DEPLOY_PATH}/.deploy"
+            rm -rf "${DEPLOY_PATH}/.deploy/staging" "${DEPLOY_PATH}/.deploy/bundle.tar.gz"
+
+      - name: Copy the bundle
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: bundle.tar.gz
+          target: ${{ secrets.DEPLOY_PATH }}/.deploy
+          overwrite: true
+
+      # The bundle is promoted only after it has arrived whole and Compose has
+      # parsed it against the .env already on the instance, so a transfer that
+      # dies halfway leaves the running pair of files untouched. The lock covers
+      # the promotion and the rollout together: a second deploy waits rather
+      # than swapping files under one that is mid-rollout.
+      - name: Promote the bundle and roll out
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: DEPLOY_PATH,GIT_SHA,BUNDLE_SHA256,GHCR_USER,GHCR_TOKEN
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            cd "${DEPLOY_PATH}"
+
+            exec 9>.deploy/lock
+            if ! flock -w 900 9; then
+              echo "deploy: another deploy holds the lock" >&2
+              exit 1
+            fi
+
+            echo "${BUNDLE_SHA256}  .deploy/bundle.tar.gz" | sha256sum -c -
+
+            rm -rf .deploy/staging
+            mkdir -p .deploy/staging
+            tar -xzf .deploy/bundle.tar.gz -C .deploy/staging
+            chmod +x .deploy/staging/scripts/*.sh
+
+            docker compose -f .deploy/staging/compose.prod.yaml --env-file .env config -q
+
+            mkdir -p scripts
+            mv -f .deploy/staging/compose.prod.yaml compose.prod.yaml
+            mv -f .deploy/staging/scripts/deploy.sh scripts/deploy.sh
+            mv -f .deploy/staging/scripts/backup-db.sh scripts/backup-db.sh
+            rm -rf .deploy/staging .deploy/bundle.tar.gz
+
+            ./scripts/deploy.sh
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Confirm the site answers from outside
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 10); do
+            code=$(curl -fsS -o /dev/null -w '%{http_code}' "${{ vars.PUBLIC_ORIGIN }}/" || true)
+            if [ "$code" = "200" ]; then
+              echo "deploy: ${{ vars.PUBLIC_ORIGIN }} answered 200"
+              exit 0
+            fi
+            echo "deploy: attempt ${attempt} saw '${code}'"
+            sleep 6
+          done
+          echo "deploy: the site did not answer after the rollout" >&2
+          exit 1
