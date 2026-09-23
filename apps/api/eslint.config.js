@@ -51,6 +51,16 @@ export default defineConfig([
   },
 
   {
+    files: ["tests/integration/social-sign-up.test.ts"],
+    rules: {
+      "turbo/no-undeclared-env-vars": [
+        "error",
+        { allowList: ["^GOOGLE_CLIENT_", "^GITHUB_CLIENT_"] },
+      ],
+    },
+  },
+
+  {
     files: [
       "src/lib/leader-election.test.ts",
       "tests/integration/jobs.test.ts",

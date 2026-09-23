@@ -51,6 +51,22 @@ function canonicalUsername(username: unknown): string | undefined {
   return parsed.data;
 }
 
+// A required additionalField is validated against the provider profile before
+// the user is created, and no provider carries a `username`. That check throws
+// MISSING_FIELD out of the callback, so the create hook below -- which is what
+// mints a username everywhere else -- is never reached on this path.
+//
+// Deriving it here puts the field in the profile the check reads. The hook
+// still runs afterwards and keeps what it finds, so nothing derives twice.
+// `overrideUserInfoOnSignIn` is left unset, which is what stops a later
+// sign-in from writing this derived handle over a username the user chose.
+async function socialProfileUsername(profile: {
+  email?: string | null;
+  name?: string | null;
+}): Promise<{ username: string }> {
+  return { username: await deriveUsername(profile.email, profile.name) };
+}
+
 const socialProviders = {
   ...(config.GOOGLE_CLIENT_ID !== undefined &&
   config.GOOGLE_CLIENT_SECRET !== undefined
@@ -58,6 +74,7 @@ const socialProviders = {
         google: {
           clientId: config.GOOGLE_CLIENT_ID,
           clientSecret: config.GOOGLE_CLIENT_SECRET,
+          mapProfileToUser: socialProfileUsername,
         },
       }
     : {}),
@@ -67,6 +84,7 @@ const socialProviders = {
         github: {
           clientId: config.GITHUB_CLIENT_ID,
           clientSecret: config.GITHUB_CLIENT_SECRET,
+          mapProfileToUser: socialProfileUsername,
         },
       }
     : {}),
