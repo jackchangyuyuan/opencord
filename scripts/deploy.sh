@@ -70,8 +70,8 @@ fi
 echo "deploy: pulling ${GIT_SHA}"
 compose pull --quiet
 
-echo "deploy: migrating"
-compose run --rm migrate
+echo "deploy: migrating and provisioning"
+compose run --rm bootstrap
 
 for service in api-1 api-2; do
   echo "deploy: replacing ${service}"

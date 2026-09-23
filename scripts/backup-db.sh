@@ -5,6 +5,10 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 COMPOSE_FILE=compose.prod.yaml
 
+compose() {
+  docker compose -f "${COMPOSE_FILE}" "$@"
+}
+
 if [[ ! -f .env ]]; then
   echo "backup: .env is missing" >&2
   exit 1
@@ -16,6 +20,8 @@ source .env
 set +a
 
 : "${BACKUP_BUCKET:?BACKUP_BUCKET is required}"
+: "${BACKUP_AWS_ACCESS_KEY_ID:?BACKUP_AWS_ACCESS_KEY_ID is required}"
+: "${BACKUP_AWS_SECRET_ACCESS_KEY:?BACKUP_AWS_SECRET_ACCESS_KEY is required}"
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 KEY="backups/opencord-${STAMP}.sql.gz"
@@ -27,11 +33,11 @@ KEY="backups/opencord-${STAMP}.sql.gz"
 #
 # `set -o pipefail` above is what makes a failing pg_dump fail the whole
 # pipeline rather than uploading a truncated object with a zero exit status.
-docker compose -f "${COMPOSE_FILE}" exec -T postgres \
-  sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=plain --no-owner' \
-  | gzip -9 \
-  | aws s3 cp - "s3://${BACKUP_BUCKET}/${KEY}" \
-      --storage-class STANDARD_IA \
-      --expected-size 1073741824
+compose exec -T postgres \
+  sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=plain --no-owner | gzip -9' |
+  compose run --rm -T backup \
+    s3 cp - "s3://${BACKUP_BUCKET}/${KEY}" \
+    --storage-class STANDARD_IA \
+    --expected-size 1073741824
 
 echo "backup: wrote s3://${BACKUP_BUCKET}/${KEY}"

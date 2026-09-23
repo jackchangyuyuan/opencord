@@ -80,4 +80,16 @@ docker compose -f ${COMPOSE_FILE} exec nginx nginx -s reload
 EOF
 sudo chmod +x /etc/cron.daily/opencord-certbot
 
+if [[ -n "${BACKUP_BUCKET:-}" ]]; then
+  echo "provision: installing the nightly backup timer"
+  sudo tee /etc/cron.daily/opencord-backup >/dev/null <<EOF
+#!/bin/sh
+cd "$(pwd)" || exit 0
+./scripts/backup-db.sh
+EOF
+  sudo chmod +x /etc/cron.daily/opencord-backup
+else
+  echo "provision: BACKUP_BUCKET is unset, so no backup timer was installed"
+fi
+
 echo "provision: done"

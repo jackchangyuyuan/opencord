@@ -6,7 +6,7 @@ x-api: &api
     redis: { condition: service_healthy }
     rustfs: { condition: service_healthy }
     storage-init: { condition: service_completed_successfully }
-    migrate: { condition: service_completed_successfully }
+    bootstrap: { condition: service_completed_successfully }
   environment: &api-env
     NODE_ENV: production
     LOG_LEVEL: warn
@@ -108,17 +108,18 @@ services:
       AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}"
       AWS_DEFAULT_REGION: "${AWS_REGION:?AWS_REGION is required}"
       S3_BUCKET: "${S3_BUCKET:?S3_BUCKET is required}"
+      STORAGE_CORS_ORIGINS: "http://localhost:5173,http://localhost:8080"
 
-  migrate:
+  bootstrap:
     profiles: ["full"]
     build: { context: ., dockerfile: apps/api/Dockerfile }
     depends_on:
       postgres: { condition: service_healthy }
-    command: ["node", "dist/db/migrate.js"]
+    command: ["node", "dist/db/bootstrap.js"]
     environment:
       NODE_ENV: production
       LOG_LEVEL: warn
-      INSTANCE_ID: migrate
+      INSTANCE_ID: bootstrap
       PUBLIC_ORIGIN: http://localhost:8080
       DATABASE_URL: "postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}"
       REDIS_URL: redis://redis:6379

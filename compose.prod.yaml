@@ -3,7 +3,7 @@ x-api: &api
   depends_on:
     postgres: { condition: service_healthy }
     redis: { condition: service_healthy }
-    migrate: { condition: service_completed_successfully }
+    bootstrap: { condition: service_completed_successfully }
   environment: &api-env
     NODE_ENV: production
     LOG_LEVEL: "${LOG_LEVEL:-info}"
@@ -38,9 +38,9 @@ x-api: &api
     start_interval: 1s
 
 services:
-  migrate:
+  bootstrap:
     image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:?}/opencord-api:${GIT_SHA:?GIT_SHA is required}"
-    command: ["node", "dist/db/migrate.js"]
+    command: ["node", "dist/db/bootstrap.js"]
     depends_on:
       postgres: { condition: service_healthy }
     environment:
@@ -119,6 +119,14 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  backup:
+    image: amazon/aws-cli:2.36.40
+    profiles: ["backup"]
+    environment:
+      AWS_ACCESS_KEY_ID: "${BACKUP_AWS_ACCESS_KEY_ID:-}"
+      AWS_SECRET_ACCESS_KEY: "${BACKUP_AWS_SECRET_ACCESS_KEY:-}"
+      AWS_DEFAULT_REGION: "${AWS_REGION:?}"
 
   certbot:
     image: certbot/certbot:v5.8.0
