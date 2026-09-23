@@ -23,10 +23,16 @@ import {
   violatedConstraint,
 } from "../../lib/postgres-errors.js";
 import { syncUserRooms } from "../../socket/rooms.js";
+import {
+  LANDING_CHANNEL_NAME,
+  LANDING_SERVER_NAME,
+  unreadDepthsFor,
+} from "./catalogue.js";
 import { openDemoDms } from "./dms.js";
 import { refreshDemoPresence } from "./presence.js";
 import {
   cloneSandbox,
+  type CommunityShape,
   findCommunityServerIds,
   findSandboxTemplateId,
   loadCommunityShape,
@@ -60,6 +66,22 @@ export async function createGuestSession(
   };
 }
 
+// The first screen a visitor sees. Position 0 of the first server is
+// #announcements, which is deliberately the quietest channel in the catalogue;
+// the landing channel is named instead so the busiest one opens first.
+function landingChannelOf(shapes: readonly CommunityShape[]): string | null {
+  const landing =
+    shapes.find((shape) => shape.name === LANDING_SERVER_NAME) ?? shapes[0];
+
+  if (landing === undefined) {
+    return null;
+  }
+
+  const index = landing.channelNames.indexOf(LANDING_CHANNEL_NAME);
+
+  return landing.channelIds[index === -1 ? 0 : index] ?? null;
+}
+
 export async function provisionDemoScenario(
   userId: string,
 ): Promise<DemoScenario> {
@@ -79,7 +101,12 @@ export async function provisionDemoScenario(
         .values({ serverId: shape.serverId, userId })
         .onConflictDoNothing();
 
-      await placeReadStates(tx, userId, shape.channelIds);
+      await placeReadStates(
+        tx,
+        userId,
+        shape.channelIds,
+        unreadDepthsFor(shape.channelNames),
+      );
     }
 
     const sandbox = await cloneSandbox(tx, templateId, userId);
@@ -111,7 +138,7 @@ export async function provisionDemoScenario(
     serverCount: shapes.length + 1,
     dmCount: scenario.dmCount,
     sandboxId: scenario.serverId,
-    landingChannelId: shapes[0]?.channelIds[0] ?? null,
+    landingChannelId: landingChannelOf(shapes),
   };
 }
 

@@ -6,6 +6,7 @@ import type {
   SeededChannel,
   SeededUser,
 } from "../../modules/demo/provision.js";
+import type { Executor } from "../../modules/demo/provision.js";
 import { PIN_LIMIT } from "../../modules/messages/pins/queries.js";
 import { db } from "../index.js";
 import { messages, reactions } from "../schema/index.js";
@@ -193,8 +194,11 @@ export function planDensity(
   };
 }
 
-function newestFirst(channelId: string): Promise<DensityRow[]> {
-  return db
+function newestFirst(
+  channelId: string,
+  executor: Executor,
+): Promise<DensityRow[]> {
+  return executor
     .select({
       id: messages.id,
       authorId: messages.authorId,
@@ -206,7 +210,10 @@ function newestFirst(channelId: string): Promise<DensityRow[]> {
     .limit(SPREAD);
 }
 
-async function writeReplies(plans: readonly ReplyPlan[]): Promise<void> {
+async function writeReplies(
+  plans: readonly ReplyPlan[],
+  executor: Executor,
+): Promise<void> {
   if (plans.length === 0) {
     return;
   }
@@ -216,7 +223,7 @@ async function writeReplies(plans: readonly ReplyPlan[]): Promise<void> {
     sql`, `,
   );
 
-  await db.execute(sql`
+  await executor.execute(sql`
     update messages m
        set reply_to_id = v.reply_to_id
       from (values ${pairs}) as v(id, reply_to_id)
@@ -224,7 +231,10 @@ async function writeReplies(plans: readonly ReplyPlan[]): Promise<void> {
   `);
 }
 
-async function writeEdits(plans: readonly EditPlan[]): Promise<void> {
+async function writeEdits(
+  plans: readonly EditPlan[],
+  executor: Executor,
+): Promise<void> {
   if (plans.length === 0) {
     return;
   }
@@ -237,7 +247,7 @@ async function writeEdits(plans: readonly EditPlan[]): Promise<void> {
     sql`, `,
   );
 
-  await db.execute(sql`
+  await executor.execute(sql`
     update messages m
        set edited_at = v.edited_at
       from (values ${pairs}) as v(id, edited_at)
@@ -245,7 +255,10 @@ async function writeEdits(plans: readonly EditPlan[]): Promise<void> {
   `);
 }
 
-async function writePins(plans: readonly PinPlan[]): Promise<void> {
+async function writePins(
+  plans: readonly PinPlan[],
+  executor: Executor,
+): Promise<void> {
   if (plans.length === 0) {
     return;
   }
@@ -258,7 +271,7 @@ async function writePins(plans: readonly PinPlan[]): Promise<void> {
     sql`, `,
   );
 
-  await db.execute(sql`
+  await executor.execute(sql`
     update messages m
        set pinned_at = v.pinned_at,
            pinned_by = v.pinned_by
@@ -267,9 +280,12 @@ async function writePins(plans: readonly PinPlan[]): Promise<void> {
   `);
 }
 
-async function writeReactions(plans: readonly ReactionPlan[]): Promise<void> {
+async function writeReactions(
+  plans: readonly ReactionPlan[],
+  executor: Executor,
+): Promise<void> {
   for (let index = 0; index < plans.length; index += BATCH) {
-    await db.insert(reactions).values(plans.slice(index, index + BATCH));
+    await executor.insert(reactions).values(plans.slice(index, index + BATCH));
   }
 }
 
@@ -285,6 +301,7 @@ export async function seedDensity(
   people: readonly SeededUser[],
   moderators: readonly SeededUser[],
   random: Random,
+  executor: Executor = db,
 ): Promise<DensityResult> {
   const result: DensityResult = {
     replies: 0,
@@ -294,13 +311,13 @@ export async function seedDensity(
   };
 
   for (const channel of channels) {
-    const rows = (await newestFirst(channel.channelId)).reverse();
+    const rows = (await newestFirst(channel.channelId, executor)).reverse();
     const plan = planDensity(rows, people, moderators, random);
 
-    await writeReplies(plan.replies);
-    await writeEdits(plan.edits);
-    await writePins(plan.pins);
-    await writeReactions(plan.reactions);
+    await writeReplies(plan.replies, executor);
+    await writeEdits(plan.edits, executor);
+    await writePins(plan.pins, executor);
+    await writeReactions(plan.reactions, executor);
 
     result.replies += plan.replies.length;
     result.edits += plan.edits.length;

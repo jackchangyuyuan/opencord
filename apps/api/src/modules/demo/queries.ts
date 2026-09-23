@@ -34,35 +34,75 @@ export async function findSandboxTemplateId(): Promise<string | undefined> {
 
 export interface CommunityShape {
   serverId: string;
+  name: string | null;
   channelIds: string[];
+  channelNames: (string | null)[];
 }
 
 export async function loadCommunityShape(
   serverId: string,
 ): Promise<CommunityShape> {
   const channelRows = await db
-    .select({ id: channels.id })
+    .select({ id: channels.id, name: channels.name })
     .from(channels)
     .where(eq(channels.serverId, serverId))
     .orderBy(channels.position, channels.id);
 
-  return { serverId, channelIds: channelRows.map((row) => row.id) };
+  const server = await db.query.servers.findFirst({
+    columns: { name: true },
+    where: { id: serverId },
+  });
+
+  return {
+    serverId,
+    name: server?.name ?? null,
+    channelIds: channelRows.map((row) => row.id),
+    channelNames: channelRows.map((row) => row.name),
+  };
 }
 
 export const UNREAD_TAIL = 12;
 
+// A visitor arrives with some channels read and some not. The depth is per
+// channel rather than uniform, so the sidebar shows a spread of badge sizes and
+// the unread divider lands in a different place in each one -- a single depth
+// everywhere makes every channel look identically stale.
 export async function placeReadStates(
   tx: Transaction,
   userId: string,
   channelIds: readonly string[],
+  depths: readonly number[] = [],
 ): Promise<void> {
-  for (const channelId of channelIds) {
+  for (const [index, channelId] of channelIds.entries()) {
+    const depth = depths[index] ?? UNREAD_TAIL;
+
+    if (depth <= 0) {
+      // Read to the end: the newest message is the watermark.
+      const [newest] = await tx
+        .select({ id: messages.id })
+        .from(messages)
+        .where(
+          and(eq(messages.channelId, channelId), isNull(messages.deletedAt)),
+        )
+        .orderBy(desc(messages.id))
+        .limit(1);
+
+      if (newest !== undefined) {
+        await tx
+          .insert(readStates)
+          .values({ userId, channelId, lastReadMessageId: newest.id })
+          .onConflictDoNothing();
+      }
+
+      continue;
+    }
+
     const tail = await tx
       .select({ id: messages.id })
       .from(messages)
       .where(and(eq(messages.channelId, channelId), isNull(messages.deletedAt)))
       .orderBy(desc(messages.id))
-      .limit(UNREAD_TAIL + 1);
+      .limit(depth + 1);
 
     const watermark = tail.at(-1);
 

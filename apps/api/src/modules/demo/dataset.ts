@@ -1,5 +1,5 @@
-export const SEED_USERNAME_PREFIX = "seed-";
+export { COMMUNITY_SERVER_NAMES } from "./catalogue.js";
 
-export const COMMUNITY_SERVER_NAMES = ["OpenCord HQ", "The Lounge"] as const;
+export const SEED_USERNAME_PREFIX = "seed-";
 
 export const SANDBOX_TEMPLATE_NAME = "Sandbox template";

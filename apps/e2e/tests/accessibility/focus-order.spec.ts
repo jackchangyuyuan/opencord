@@ -82,8 +82,11 @@ test.describe("keyboard focus order", { tag: "@a11y" }, () => {
     const listAt = stops.findIndex((stop) => stop.name === "Message history");
 
     expect(listAt).toBeGreaterThan(-1);
+    // The composer follows the history. A link or a jump pill in the newest
+    // messages is focusable too, so the composer is not always the very next
+    // stop -- the order is what matters, not the distance.
     expect(
-      stops.slice(listAt + 1, listAt + 4).map((stop) => stop.name),
+      stops.slice(listAt + 1, listAt + 7).map((stop) => stop.name),
     ).toContain("Message");
   });
 

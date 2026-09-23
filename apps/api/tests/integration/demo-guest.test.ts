@@ -18,6 +18,7 @@ import {
   users,
 } from "../../src/db/schema/index.js";
 import { SEED_USERNAME_PREFIX } from "../../src/modules/demo/dataset.js";
+import { COMMUNITY_SERVER_NAMES } from "../../src/modules/demo/dataset.js";
 import { demoPresenceStatusAt } from "../../src/modules/demo/presence.js";
 import { seedCommunity } from "../../src/modules/demo/provision.js";
 import * as demoQueries from "../../src/modules/demo/queries.js";
@@ -142,7 +143,7 @@ describe("guest demo provisioning", () => {
 
     const { account, scenario } = await enterDemo();
 
-    expect(scenario.serverCount).toBe(3);
+    expect(scenario.serverCount).toBe(COMMUNITY_SERVER_NAMES.length + 1);
 
     const listed = await request(app)
       .get("/api/v1/servers")
@@ -150,7 +151,7 @@ describe("guest demo provisioning", () => {
 
     const visible = serverList.parse(listed.body);
 
-    expect(visible).toHaveLength(3);
+    expect(visible).toHaveLength(COMMUNITY_SERVER_NAMES.length + 1);
     expect(visible.map((server) => server.name)).toContain("Your sandbox");
 
     const sandbox = await db.query.servers.findFirst({
@@ -298,7 +299,7 @@ describe("guest demo provisioning", () => {
     }
   });
 
-  it("arrives with every seeded channel unread and behind a watermark", async () => {
+  it("arrives with a spread of unread depths, every channel watermarked", async () => {
     await seedWorld();
 
     const { account, scenario } = await enterDemo();
@@ -311,6 +312,7 @@ describe("guest demo provisioning", () => {
     expect(servers.map((server) => server.id)).toContain(scenario.sandboxId);
 
     let seen = 0;
+    let unread = 0;
 
     for (const server of servers) {
       const channels = unreadChannelList.parse(
@@ -324,18 +326,28 @@ describe("guest demo provisioning", () => {
       expect(channels.length).toBeGreaterThan(0);
 
       for (const channel of channels) {
-        expect(channel.hasUnread).toBe(true);
+        // Every channel is read up to a watermark; how far behind it the
+        // visitor is varies by channel, which is what gives the sidebar a
+        // spread of badge sizes instead of one uniform state.
+        const read = channel.lastReadMessageId ?? "";
+        const last = channel.lastMessageId ?? "";
+
         expect(channel.lastReadMessageId).not.toBeNull();
-        expect(channel.unreadCount).toBeGreaterThan(0);
         expect(channel.lastMessageId).not.toBeNull();
-        expect(
-          (channel.lastReadMessageId ?? "") < (channel.lastMessageId ?? ""),
-        ).toBe(true);
+        expect(channel.hasUnread).toBe(channel.unreadCount > 0);
+        // Read to the end, or the watermark sits behind the newest message.
+        expect(channel.unreadCount === 0 || read < last).toBe(true);
+
         seen += 1;
+        unread += channel.hasUnread ? 1 : 0;
       }
     }
 
     expect(seen).toBeGreaterThan(0);
+    // Both states have to be present, or the badge and the divider are only
+    // demonstrated by accident.
+    expect(unread).toBeGreaterThan(0);
+    expect(unread).toBeLessThan(seen);
   });
 
   it("stops every scripted thread short of a counterpart's message", () => {

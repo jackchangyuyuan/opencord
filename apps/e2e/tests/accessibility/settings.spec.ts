@@ -109,10 +109,15 @@ test.describe("channel permissions", { tag: "@a11y" }, () => {
     }) => {
       await enterDemo(theme);
 
-      await page
-        .getByRole("link", { name: /general/ })
-        .first()
-        .click();
+      const general = page.getByRole("link", { name: /general/ }).first();
+
+      await general.click();
+
+      // Channel settings opens the *active* channel, so the click has to have
+      // landed first. The demo opens on a different channel, which is what
+      // makes the wait load-bearing rather than decorative.
+      await expect(general).toHaveAttribute("aria-current", "page");
+
       await page.getByRole("button", { name: "Channel settings" }).click();
 
       const channel = page.getByRole("dialog", { name: "#general" });
