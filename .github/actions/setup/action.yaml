@@ -1,0 +1,16 @@
+name: Set up the toolchain
+description: pnpm from packageManager, Node from .nvmrc, and a frozen install.
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v6
+
+    - uses: actions/setup-node@v5
+      with:
+        node-version-file: .nvmrc
+        cache: pnpm
+
+    - name: Install
+      shell: bash
+      run: pnpm install --frozen-lockfile

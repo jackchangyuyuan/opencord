@@ -1,0 +1,179 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  TURBO_UI: "false"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      - uses: ./.github/actions/setup
+
+      - name: Start the backing services
+        run: |
+          cp .env.example .env
+          docker compose up -d --wait postgres redis rustfs storage-init
+
+      - name: Typecheck, lint, test and build
+        run: >
+          pnpm exec turbo run
+          typecheck typecheck:root lint lint:root test:coverage build
+        env:
+          TEST_DATABASE_URL: postgres://opencord:change-me@localhost:5432/opencord
+
+      - name: Verify formatting
+        run: pnpm format:check
+
+      - name: Stop the backing services
+        if: always()
+        run: docker compose down -v
+
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup
+
+      - name: Start the backing services
+        run: |
+          cp .env.example .env
+          docker compose up -d --wait postgres redis rustfs storage-init
+
+      - name: Install the browser
+        run: pnpm --filter @opencord/e2e exec playwright install --with-deps chromium
+
+      - name: Build the packages the API imports
+        run: pnpm exec turbo run build --filter=@opencord/api^...
+
+      - name: Apply the migrations
+        run: pnpm --filter @opencord/api db:migrate
+
+      - name: Seed the development corpus
+        run: pnpm --filter @opencord/api db:seed 4000
+
+      - name: Run the end-to-end flows
+        run: pnpm e2e
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            apps/e2e/playwright-report/
+            apps/e2e/test-results/
+          retention-days: 7
+
+      - name: Stop the backing services
+        if: always()
+        run: docker compose down -v
+
+  publish:
+    name: Publish images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [verify, e2e]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - image: opencord-api
+            dockerfile: apps/api/Dockerfile
+          - image: opencord-web
+            dockerfile: apps/web/Dockerfile
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve the registry namespace
+        run: echo "NAMESPACE=${GITHUB_REPOSITORY_OWNER,,}" >>"${GITHUB_ENV}"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Sign in to the registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: |
+            ghcr.io/${{ env.NAMESPACE }}/${{ matrix.image }}:${{ github.sha }}
+            ghcr.io/${{ env.NAMESPACE }}/${{ matrix.image }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  commits:
+    name: Commit messages
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      - uses: ./.github/actions/setup
+
+      - name: Lint the commit messages
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            from="${PR_BASE_SHA}"
+            to="${PR_HEAD_SHA}"
+          else
+            from="${PUSH_BEFORE_SHA:-}"
+            to="${PUSH_AFTER_SHA}"
+          fi
+
+          if [ -z "${from}" ] ||
+             ! git cat-file -e "${from}^{commit}" 2>/dev/null ||
+             ! git merge-base --is-ancestor "${from}" "${to}"; then
+            from="$(git rev-parse --verify --quiet "${to}^" || true)"
+          fi
+
+          if [ -z "${from}" ]; then
+            echo "no parent of ${to} to compare against; judging it alone"
+            git log -1 --format=%B "${to}" | pnpm exec commitlint --verbose
+            exit 0
+          fi
+
+          echo "linting ${from}..${to}"
+          pnpm exec commitlint --from "${from}" --to "${to}" --verbose
