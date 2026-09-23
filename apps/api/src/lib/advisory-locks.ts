@@ -49,3 +49,13 @@ export async function tryLockAmbientActivity(
 
   return rows[0]?.locked === true;
 }
+
+// The demo dataset is provisioned once for the whole deployment, and both a
+// rollout and a restart can call for it. Two writers would each produce a full
+// cast, and the second would fail on the unique index that allows one template
+// server -- after it had already written everything else.
+export async function lockDemoProvisioning(tx: Transaction): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended('demo-provisioning', 0))`,
+  );
+}

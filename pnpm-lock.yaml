@@ -187,6 +187,9 @@ importers:
       '@better-auth/drizzle-adapter':
         specifier: ^1.7.2
         version: 1.7.2(@better-auth/core@1.7.2(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.4.0(zod@4.5.4))(jose@6.2.12)(kysely@0.29.5)(nanostores@1.5.3))(@better-auth/utils@0.4.2)(drizzle-orm@1.0.0-rc.4(postgres@3.4.9)(zod@4.5.4))
+      '@faker-js/faker':
+        specifier: ^10.6.0
+        version: 10.6.0
       '@opencord/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -230,9 +233,6 @@ importers:
         specifier: 'catalog:'
         version: 4.5.4
     devDependencies:
-      '@faker-js/faker':
-        specifier: ^10.6.0
-        version: 10.6.0
       '@opencord/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config

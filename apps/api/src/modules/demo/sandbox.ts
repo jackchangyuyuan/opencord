@@ -1,14 +1,7 @@
 import { Permissions } from "@opencord/shared/permissions";
 import { sql } from "drizzle-orm";
 
-import {
-  createRandom,
-  messageBody,
-  timeline,
-  topicFor,
-} from "../../modules/demo/corpus.js";
-import { SANDBOX_TEMPLATE_NAME } from "../../modules/demo/dataset.js";
-import { db } from "../index.js";
+import { db } from "../../db/index.js";
 import {
   channelRoleOverwrites,
   channels,
@@ -17,8 +10,10 @@ import {
   roles,
   serverMembers,
   servers,
-} from "../schema/index.js";
-import type { SeededUser } from "./community.js";
+} from "../../db/schema/index.js";
+import { createRandom, messageBody, timeline, topicFor } from "./corpus.js";
+import { SANDBOX_TEMPLATE_NAME } from "./dataset.js";
+import type { Executor, SeededUser } from "./provision.js";
 
 export const SANDBOX_MEMBER_COUNT = 6;
 export const SANDBOX_MESSAGE_COUNT = 48;
@@ -48,6 +43,7 @@ export interface SandboxTemplate {
 
 export async function seedSandboxTemplate(
   people: SeededUser[],
+  executor: Executor = db,
 ): Promise<SandboxTemplate> {
   const random = createRandom(915);
   const [owner] = people;
@@ -56,7 +52,7 @@ export async function seedSandboxTemplate(
     throw new Error("the persona list is empty");
   }
 
-  const [server] = await db
+  const [server] = await executor
     .insert(servers)
     .values({
       name: SANDBOX_TEMPLATE_NAME,
@@ -88,7 +84,7 @@ export async function seedSandboxTemplate(
     })),
   ];
 
-  const insertedRoles = await db
+  const insertedRoles = await executor
     .insert(roles)
     .values(roleRows)
     .returning({ id: roles.id, name: roles.name });
@@ -99,7 +95,7 @@ export async function seedSandboxTemplate(
     throw new Error("the sandbox template has no @everyone role");
   }
 
-  const insertedChannels = await db
+  const insertedChannels = await executor
     .insert(channels)
     .values(
       SANDBOX_CHANNELS.map((channel, position) => ({
@@ -117,7 +113,7 @@ export async function seedSandboxTemplate(
   );
 
   if (privateChannel !== undefined) {
-    await db.insert(channelRoleOverwrites).values({
+    await executor.insert(channelRoleOverwrites).values({
       channelId: privateChannel.id,
       serverId: server.id,
       roleId: everyoneRole.id,
@@ -128,7 +124,7 @@ export async function seedSandboxTemplate(
 
   const members = people.slice(0, SANDBOX_MEMBER_COUNT);
 
-  await db
+  await executor
     .insert(serverMembers)
     .values(
       members.map((person) => ({ serverId: server.id, userId: person.id })),
@@ -138,7 +134,7 @@ export async function seedSandboxTemplate(
   const contributor = insertedRoles.find((role) => role.name === "Contributor");
 
   if (contributor !== undefined) {
-    await db.insert(memberRoles).values(
+    await executor.insert(memberRoles).values(
       members.slice(1, 4).map((person) => ({
         serverId: server.id,
         userId: person.id,
@@ -154,7 +150,7 @@ export async function seedSandboxTemplate(
   for (const channel of insertedChannels) {
     const topic = topicFor(channel.name ?? "general");
 
-    await db.insert(messages).values(
+    await executor.insert(messages).values(
       timeline(perChannel, startMs, endMs, random).map((at) => ({
         id: sql<string>`uuidv7(${new Date(at).toISOString()}::timestamptz - clock_timestamp())`,
         channelId: channel.id,
@@ -165,7 +161,7 @@ export async function seedSandboxTemplate(
     );
   }
 
-  await db.execute(sql`
+  await executor.execute(sql`
     with newest as (
       select distinct on (channel_id) channel_id, id
         from messages

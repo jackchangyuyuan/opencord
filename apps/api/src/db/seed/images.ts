@@ -16,6 +16,13 @@ import {
   timeline,
   topicFor,
 } from "../../modules/demo/corpus.js";
+import { seededFaker } from "../../modules/demo/faker.js";
+import {
+  type CommunityResult,
+  repairWatermarks,
+  type SeededChannel,
+  type SeededUser,
+} from "../../modules/demo/provision.js";
 import {
   prepareAttachments,
   writeAttachments,
@@ -23,13 +30,6 @@ import {
 import { uploadObjectKey } from "../../modules/uploads/service.js";
 import { db } from "../index.js";
 import { messages } from "../schema/index.js";
-import {
-  type CommunityResult,
-  repairWatermarks,
-  type SeededChannel,
-  type SeededUser,
-} from "./community.js";
-import { seededFaker } from "./faker.js";
 
 export const IMAGE_SEED = 486231;
 

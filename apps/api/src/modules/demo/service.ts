@@ -66,7 +66,7 @@ export async function provisionDemoScenario(
   const templateId = await findSandboxTemplateId();
 
   if (templateId === undefined) {
-    throw new Error("the sandbox template is missing; run db:seed");
+    throw new Error("the demo dataset is missing; run db:bootstrap");
   }
 
   const communityIds = await findCommunityServerIds();

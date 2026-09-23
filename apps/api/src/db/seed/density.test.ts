@@ -2,8 +2,8 @@ import { REACTION_EMOJI } from "@opencord/shared/constants";
 import { describe, expect, it } from "vitest";
 
 import { createRandom } from "../../modules/demo/corpus.js";
+import type { SeededUser } from "../../modules/demo/provision.js";
 import { PIN_LIMIT } from "../../modules/messages/pins/queries.js";
-import type { SeededUser } from "./community.js";
 import {
   type DensityRow,
   planDensity,

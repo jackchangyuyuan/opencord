@@ -15,6 +15,7 @@
     "test:coverage": "vitest run --coverage",
     "db:generate": "drizzle-kit generate",
     "db:drop": "drizzle-kit drop",
+    "db:bootstrap": "tsx --env-file=../../.env src/db/bootstrap.ts",
     "db:migrate": "tsx --env-file=../../.env src/db/migrate.ts",
     "db:seed": "tsx --env-file=../../.env src/db/seed/index.ts"
   },
@@ -23,6 +24,7 @@
     "@aws-sdk/s3-presigned-post": "^3.1127.0",
     "@aws-sdk/s3-request-presigner": "^3.1127.0",
     "@better-auth/drizzle-adapter": "^1.7.2",
+    "@faker-js/faker": "^10.6.0",
     "@opencord/shared": "workspace:*",
     "@socket.io/redis-adapter": "^8.3.0",
     "better-auth": "^1.7.2",
@@ -39,7 +41,6 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@faker-js/faker": "^10.6.0",
     "@opencord/eslint-config": "workspace:*",
     "@opencord/typescript-config": "workspace:*",
     "@types/express": "^5.0.6",

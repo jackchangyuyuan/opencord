@@ -1,7 +1,7 @@
 import type { Faker } from "@faker-js/faker";
 import { USERNAME_MAX_LENGTH } from "@opencord/shared/constants";
 
-import { SEED_USERNAME_PREFIX } from "../../modules/demo/dataset.js";
+import { SEED_USERNAME_PREFIX } from "./dataset.js";
 import { seededFaker } from "./faker.js";
 
 const PERSONA_SEED = 20260913;
@@ -192,8 +192,9 @@ export async function personasFor(count: number): Promise<Persona[]> {
       // .invalid can never route mail (RFC 2606), and the address inherits the
       // username's uniqueness, which users.email requires.
       email: `${username}@seed.invalid`,
-      // users.image is the column that carries an external portrait, and Faker
-      // serves these from jsDelivr.
+      // users.image is the column that carries an external portrait (SPEC
+      // 11.5), and Faker serves these from jsDelivr, which is why the
+      // production img-src names that host beside the two OAuth avatar hosts.
       image: faker.image.personPortrait({ size: PORTRAIT_SIZE }),
       ...profileFor(faker, draw),
     };

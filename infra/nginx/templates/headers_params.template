@@ -9,7 +9,7 @@
 # API signs its media URLs for or every image is blocked with a symptom that
 # looks nothing like a configuration mismatch.
 
-add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: ${STORAGE_PUBLIC_ORIGIN} https://lh3.googleusercontent.com https://avatars.githubusercontent.com; font-src 'self'; connect-src 'self' ${STORAGE_PUBLIC_ORIGIN}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
+add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: ${STORAGE_PUBLIC_ORIGIN} https://lh3.googleusercontent.com https://avatars.githubusercontent.com https://cdn.jsdelivr.net; font-src 'self'; connect-src 'self' ${STORAGE_PUBLIC_ORIGIN}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
 add_header X-Content-Type-Options "nosniff" always;
 add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 add_header X-Frame-Options "DENY" always;

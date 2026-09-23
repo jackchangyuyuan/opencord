@@ -4,7 +4,7 @@ import {
 } from "@opencord/shared/constants";
 import { describe, expect, it } from "vitest";
 
-import { seededFaker } from "./faker.js";
+import { seededFaker } from "../../modules/demo/faker.js";
 import { IMAGE_SEED, seedImage } from "./images.js";
 
 const PNG_SIGNATURE = "89504e470d0a1a0a";

@@ -1,11 +1,11 @@
 import { logger } from "../../lib/logger.js";
 import { createRandom } from "../../modules/demo/corpus.js";
+import { seedCommunity } from "../../modules/demo/provision.js";
+import { seedSandboxTemplate } from "../../modules/demo/sandbox.js";
 import { db } from "../index.js";
 import { clear } from "./clear.js";
-import { seedCommunity } from "./community.js";
 import { DENSITY_SEED, seedDensity } from "./density.js";
 import { seedImageAttachments } from "./images.js";
-import { seedSandboxTemplate } from "./sandbox.js";
 
 const DEFAULT_MESSAGE_COUNT = 200_000;
 

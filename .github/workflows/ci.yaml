@@ -67,8 +67,10 @@ jobs:
       - name: Build the packages the API imports
         run: pnpm exec turbo run build --filter=@opencord/api^...
 
-      - name: Apply the migrations
-        run: pnpm --filter @opencord/api db:migrate
+      - name: Bootstrap as a fresh deployment would
+        run: |
+          pnpm --filter @opencord/api db:bootstrap
+          pnpm --filter @opencord/api db:bootstrap
 
       - name: Seed the development corpus
         run: pnpm --filter @opencord/api db:seed 4000

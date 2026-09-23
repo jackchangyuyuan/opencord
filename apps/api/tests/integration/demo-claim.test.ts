@@ -17,8 +17,8 @@ import {
   messages,
   servers,
 } from "../../src/db/schema/index.js";
-import { seedCommunity } from "../../src/db/seed/community.js";
-import { seedSandboxTemplate } from "../../src/db/seed/sandbox.js";
+import { seedCommunity } from "../../src/modules/demo/provision.js";
+import { seedSandboxTemplate } from "../../src/modules/demo/sandbox.js";
 import { requireTestDatabase } from "../setup.js";
 
 const password = "correct horse battery staple";

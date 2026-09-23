@@ -3,14 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Permissions } from "@opencord/shared/permissions";
 import { sql } from "drizzle-orm";
 
-import {
-  createRandom,
-  messageBody,
-  timeline,
-  topicFor,
-} from "../../modules/demo/corpus.js";
-import { COMMUNITY_SERVER_NAMES } from "../../modules/demo/dataset.js";
-import { db } from "../index.js";
+import { db, type Transaction } from "../../db/index.js";
 import {
   auditLog,
   channelRoleOverwrites,
@@ -21,8 +14,14 @@ import {
   serverMembers,
   servers,
   users,
-} from "../schema/index.js";
+} from "../../db/schema/index.js";
+import { lockDemoProvisioning } from "../../lib/advisory-locks.js";
+import { createRandom, messageBody, timeline, topicFor } from "./corpus.js";
+import { COMMUNITY_SERVER_NAMES } from "./dataset.js";
 import { type Persona, personasFor } from "./personas.js";
+import { seedSandboxTemplate } from "./sandbox.js";
+
+export type Executor = Transaction | typeof db;
 
 const BATCH = 2000;
 
@@ -161,21 +160,24 @@ export interface SeededUser extends Persona {
   id: string;
 }
 
-export async function createPersonaUsers(count: number): Promise<SeededUser[]> {
+export async function createPersonaUsers(
+  count: number,
+  executor: Executor = db,
+): Promise<SeededUser[]> {
   const seeded = (await personasFor(count)).map((persona) => ({
     ...persona,
     id: randomUUID(),
   }));
 
   for (let index = 0; index < seeded.length; index += BATCH) {
-    await db.insert(users).values(
+    await executor.insert(users).values(
       seeded.slice(index, index + BATCH).map((persona) => ({
         id: persona.id,
         name: persona.name,
         email: persona.email,
         emailVerified: true,
-        username: persona.username,
         image: persona.image,
+        username: persona.username,
         description: persona.description,
         customStatus: persona.customStatus,
         customStatusEmoji: persona.customStatusEmoji,
@@ -199,11 +201,14 @@ interface InsertedMessage {
 // by construction. The shift is measured against clock_timestamp(), not now():
 // now() is fixed for the whole statement, so a 2000-row batch would push its
 // later rows into the future and let one channel's tail overtake another's head.
-async function insertMessages(rows: InsertedMessage[]): Promise<void> {
+async function insertMessages(
+  rows: InsertedMessage[],
+  executor: Executor = db,
+): Promise<void> {
   for (let index = 0; index < rows.length; index += BATCH) {
     const batch = rows.slice(index, index + BATCH);
 
-    await db.insert(messages).values(
+    await executor.insert(messages).values(
       batch.map((row) => ({
         id: sql<string>`uuidv7(${row.createdAt.toISOString()}::timestamptz - clock_timestamp())`,
         channelId: row.channelId,
@@ -216,8 +221,8 @@ async function insertMessages(rows: InsertedMessage[]): Promise<void> {
   }
 }
 
-export async function repairWatermarks(): Promise<void> {
-  await db.execute(sql`
+export async function repairWatermarks(executor: Executor = db): Promise<void> {
+  await executor.execute(sql`
     with newest as (
       select distinct on (channel_id) channel_id, id
         from messages
@@ -253,8 +258,9 @@ async function createServer(
   owner: SeededUser,
   plan: ChannelPlan[],
   rolePlan: RolePlan[],
+  executor: Executor = db,
 ): Promise<SeededServer> {
-  const [server] = await db
+  const [server] = await executor
     .insert(servers)
     .values({ name, ownerId: owner.id, demoRole: "community" })
     .returning({ id: servers.id });
@@ -282,7 +288,7 @@ async function createServer(
     })),
   ];
 
-  const inserted = await db
+  const inserted = await executor
     .insert(roles)
     .values(roleRows)
     .returning({ id: roles.id, name: roles.name });
@@ -297,7 +303,7 @@ async function createServer(
     return found.id;
   };
 
-  const channelRows = await db
+  const channelRows = await executor
     .insert(channels)
     .values(
       plan.map((entry, position) => ({
@@ -323,7 +329,7 @@ async function createServer(
       continue;
     }
 
-    await db.insert(channelRoleOverwrites).values([
+    await executor.insert(channelRoleOverwrites).values([
       {
         channelId,
         serverId: server.id,
@@ -354,9 +360,10 @@ async function createServer(
 async function joinEveryone(
   server: SeededServer,
   people: SeededUser[],
+  executor: Executor = db,
 ): Promise<void> {
   for (let index = 0; index < people.length; index += BATCH) {
-    await db
+    await executor
       .insert(serverMembers)
       .values(
         people
@@ -379,7 +386,7 @@ async function joinEveryone(
   });
 
   for (let index = 0; index < assignments.length; index += BATCH) {
-    await db
+    await executor
       .insert(memberRoles)
       .values(assignments.slice(index, index + BATCH))
       .onConflictDoNothing();
@@ -389,6 +396,7 @@ async function joinEveryone(
 async function writeAuditTrail(
   server: SeededServer,
   people: SeededUser[],
+  executor: Executor = db,
 ): Promise<void> {
   const [actor, target] = people;
 
@@ -396,7 +404,7 @@ async function writeAuditTrail(
     return;
   }
 
-  await db.insert(auditLog).values([
+  await executor.insert(auditLog).values([
     {
       serverId: server.id,
       actorId: actor.id,
@@ -440,9 +448,11 @@ export interface CommunityResult {
 
 export async function seedCommunity(
   messageCount: number,
+  memberCount: number = MEMBER_COUNT,
+  executor: Executor = db,
 ): Promise<CommunityResult> {
   const random = createRandom(20260913);
-  const people = await createPersonaUsers(MEMBER_COUNT);
+  const people = await createPersonaUsers(memberCount, executor);
   const [owner] = people;
 
   if (owner === undefined) {
@@ -454,17 +464,19 @@ export async function seedCommunity(
     owner,
     HQ_CHANNELS,
     HQ_ROLES,
+    executor,
   );
   const lounge = await createServer(
     COMMUNITY_SERVER_NAMES[1],
     owner,
     LOUNGE_CHANNELS,
     LOUNGE_ROLES,
+    executor,
   );
 
   for (const server of [hq, lounge]) {
-    await joinEveryone(server, people);
-    await writeAuditTrail(server, people);
+    await joinEveryone(server, people, executor);
+    await writeAuditTrail(server, people, executor);
   }
 
   const endMs = Date.now() - 60 * 60 * 1000;
@@ -508,12 +520,12 @@ export async function seedCommunity(
         };
       });
 
-      await insertMessages(rows);
+      await insertMessages(rows, executor);
       written += rows.length;
     }
   }
 
-  await repairWatermarks();
+  await repairWatermarks(executor);
 
   return {
     people,
@@ -523,4 +535,45 @@ export async function seedCommunity(
     messageCount: written,
     newestAt: new Date(endMs),
   };
+}
+
+export const DEMO_MEMBER_COUNT = 48;
+export const DEMO_MESSAGE_COUNT = 4000;
+
+export interface DemoDataset {
+  community: CommunityResult;
+  sandboxServerId: string;
+}
+
+export async function provisionDemoDataset(
+  messageCount: number = DEMO_MESSAGE_COUNT,
+  memberCount: number = DEMO_MEMBER_COUNT,
+  executor: Executor = db,
+): Promise<DemoDataset> {
+  const community = await seedCommunity(messageCount, memberCount, executor);
+  const sandbox = await seedSandboxTemplate(community.people, executor);
+
+  return { community, sandboxServerId: sandbox.serverId };
+}
+
+export async function ensureDemoDataset(
+  messageCount: number = DEMO_MESSAGE_COUNT,
+  memberCount: number = DEMO_MEMBER_COUNT,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    await lockDemoProvisioning(tx);
+
+    const existing = await tx.query.servers.findFirst({
+      columns: { id: true },
+      where: { demoRole: "template" },
+    });
+
+    if (existing !== undefined) {
+      return false;
+    }
+
+    await provisionDemoDataset(messageCount, memberCount, tx);
+
+    return true;
+  });
 }

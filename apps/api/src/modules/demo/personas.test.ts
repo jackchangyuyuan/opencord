@@ -6,7 +6,7 @@ import {
 } from "@opencord/shared/schemas";
 import { describe, expect, it } from "vitest";
 
-import { SEED_USERNAME_PREFIX } from "../../modules/demo/dataset.js";
+import { SEED_USERNAME_PREFIX } from "./dataset.js";
 import { personasFor } from "./personas.js";
 
 describe("the seed personas", () => {
@@ -21,7 +21,7 @@ describe("the seed personas", () => {
     }
   });
 
-  it("keeps usernames and addresses unique however Faker repeats a name", async () => {
+  it("keeps usernames and addresses unique however often a surname repeats", async () => {
     const personas = await personasFor(150);
 
     expect(new Set(personas.map((persona) => persona.username)).size).toBe(
@@ -32,10 +32,28 @@ describe("the seed personas", () => {
     );
   });
 
-  it("gives every persona a name and a portrait", async () => {
+  it("gives every persona a portrait the content policy allows", async () => {
+    for (const persona of await personasFor(120)) {
+      const portrait = new URL(persona.image);
+
+      expect(portrait.origin).toBe("https://cdn.jsdelivr.net");
+      expect(portrait.pathname).toMatch(
+        /^\/gh\/faker-js\/assets-person-portrait\/[a-z]+\/128\/\d+\.jpg$/,
+      );
+    }
+  });
+
+  it("draws portraits that vary across the cast", async () => {
+    const personas = await personasFor(120);
+
+    expect(
+      new Set(personas.map((persona) => persona.image)).size,
+    ).toBeGreaterThan(personas.length / 2);
+  });
+
+  it("gives every persona a two-part display name", async () => {
     for (const persona of await personasFor(40)) {
       expect(persona.name).toMatch(/^\S+ \S+$/);
-      expect(persona.image).toMatch(/^https:\/\/\S+\.jpg$/);
     }
   });
 
